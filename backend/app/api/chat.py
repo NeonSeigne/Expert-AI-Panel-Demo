@@ -33,6 +33,7 @@ from app.services.models import (
     clamp_conversation_limits,
 )
 from app.services.auto_select import auto_select_participants
+from app.services.prompts.catalog import build_prompt_catalog
 from app.services.orchestrator import (
     create_session,
     get_session,
@@ -192,6 +193,24 @@ async def api_generate_role_freeform(req: GenerateRoleFreeformRequest):
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Prompt catalog (Transparency: "View current chat prompts")
+# ---------------------------------------------------------------------------
+
+@router.get("/chat/prompts/catalog")
+async def api_chat_prompts_catalog():
+    """Return every prompt template the orchestrator and participants
+    use during a chat, grouped by phase, each with a short purpose and
+    a list of runtime template variables. Used by the
+    PromptCatalogModal in the settings menu's Transparency section.
+
+    Shape:
+      {"groups": [{"title": "...", "items": [{"name", "purpose",
+       "variables", "template"}]}, ...]}
+    """
+    return build_prompt_catalog()
 
 
 # ---------------------------------------------------------------------------

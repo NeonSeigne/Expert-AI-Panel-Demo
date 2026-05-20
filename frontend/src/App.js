@@ -7,6 +7,7 @@ import ExpertPersonaModal from './components/ExpertPersonaModal';
 import ChatTableView from './components/ChatTableView';
 import CredentialSummaryModal from './components/CredentialSummaryModal';
 import ConversationLimitsModal from './components/ConversationLimitsModal';
+import PromptCatalogModal from './components/PromptCatalogModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
@@ -14,6 +15,7 @@ import {
   exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
   autoSelectParticipants,
+  fetchPromptCatalog,
   getRateLimitStatus,
 } from './utils/api';
 import * as storage from './utils/storage';
@@ -93,6 +95,10 @@ export default function App() {
     !!persisted.auto_select_mode,
   );
   const [priorManualSelection, setPriorManualSelection] = useState(null);
+  // Prompt catalog: lazily fetched on first open, then cached for the
+  // rest of the session. The catalog is static per backend deploy.
+  const [promptCatalog, setPromptCatalog] = useState(null);
+  const [promptCatalogOpen, setPromptCatalogOpen] = useState(false);
 
   const abortRef = useRef(null);
 
@@ -376,6 +382,20 @@ export default function App() {
     storage.setConversationLimits({});
   }, []);
 
+  // ─── Prompt catalog (Transparency) ─────────────────────────────
+  const handleShowPromptCatalog = useCallback(async () => {
+    if (!promptCatalog) {
+      try {
+        const data = await fetchPromptCatalog();
+        setPromptCatalog(data);
+      } catch (err) {
+        console.error('Prompt catalog fetch failed:', err);
+        return;
+      }
+    }
+    setPromptCatalogOpen(true);
+  }, [promptCatalog]);
+
   // ─── Build start payload ────────────────────────────────────────
   // `participantsOverride`, if provided, replaces the
   // selectedParticipants-derived list (used by the auto-select flow
@@ -655,6 +675,7 @@ export default function App() {
         onShowTableView={handleShowTableView}
         onShowCredentials={handleShowCredentials}
         hasCredentials={!!sessionId}
+        onShowPromptCatalog={handleShowPromptCatalog}
         onShowConversationLimits={handleShowConversationLimits}
         conversationLimitsOverridden={Object.keys(limitsOverrides).length > 0}
         onDownloadChatTxt={handleDownloadTxt}
@@ -732,6 +753,11 @@ export default function App() {
         onClose={() => setLimitsOpen(false)}
         onChange={handleConversationLimitsChange}
         onResetAll={handleConversationLimitsResetAll}
+      />
+      <PromptCatalogModal
+        isOpen={promptCatalogOpen}
+        catalog={promptCatalog}
+        onClose={() => setPromptCatalogOpen(false)}
       />
     </div>
   );

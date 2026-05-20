@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ChevronRight, Download, Settings2, Search,
   Square, CheckSquare, UserPlus, Table2, ScrollText, SlidersHorizontal,
+  BookOpen,
 } from 'lucide-react';
 
 /**
@@ -35,6 +36,7 @@ export default function DevMenu({
   onShowTableView,
   onShowCredentials,
   hasCredentials,
+  onShowPromptCatalog,
   onShowConversationLimits,
   conversationLimitsOverridden,
   onDownloadChatTxt,
@@ -225,6 +227,14 @@ export default function DevMenu({
             >
               <ScrollText size={14} className="dev-check-icon" />
               View Credential Summary…
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </button>
+            <button
+              onClick={() => { onShowPromptCatalog?.(); setOpen(false); }}
+              title="View every prompt template the orchestrator and participants use, grouped by phase."
+            >
+              <BookOpen size={14} className="dev-check-icon" />
+              View current chat prompts…
               <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
 

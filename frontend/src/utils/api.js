@@ -180,6 +180,17 @@ export async function fetchTableView(sessionId) {
 }
 
 /**
+ * Fetch the catalog of every prompt template the orchestrator and
+ * participants use, grouped by phase and annotated with purpose and
+ * runtime variables. Backs the "View current chat prompts" modal.
+ */
+export async function fetchPromptCatalog() {
+  const resp = await fetch(`${API_BASE}/api/chat/prompts/catalog`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('Failed to fetch prompt catalog');
+  return resp.json();
+}
+
+/**
  * Ask the backend to pick the top `count` participants from the
  * candidate pool by relevance to the question. Used by the
  * "Select N Automatically" toggle in the participants dropdown.

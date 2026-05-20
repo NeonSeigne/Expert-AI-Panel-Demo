@@ -1175,3 +1175,112 @@
   color: var(--text-primary);
   font-size: 13px;
 }
+
+
+/* ── Prompt catalog modal ─────────────────────────────────────────
+   Re-uses .ccai-credentials-overlay/.ccai-credentials-card shell.
+   The classes below style the per-group sections and per-item
+   purpose / variables / template blocks. */
+
+.ccai-prompt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+}
+
+.ccai-prompt-group + .ccai-prompt-group {
+  margin-top: 4px;
+}
+
+.ccai-prompt-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 6px;
+}
+
+.ccai-prompt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.ccai-prompt-item + .ccai-prompt-item {
+  border-top: 1px dashed var(--border-primary);
+  padding-top: 12px;
+}
+
+.ccai-prompt-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ccai-prompt-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-prompt-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ccai-prompt-copy-btn:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.ccai-prompt-purpose {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.ccai-prompt-vars {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ccai-prompt-vars code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11.5px;
+}
+
+.ccai-prompt-template {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+}
