@@ -59,6 +59,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState(null);
   const [sessionParticipants, setSessionParticipants] = useState([]);
   const [pause, setPause] = useState(null);
+  const [activeQuestion, setActiveQuestion] = useState('');
 
   // Modals
   const [expertModalOpen, setExpertModalOpen] = useState(false);
@@ -346,6 +347,7 @@ export default function App() {
     setSessionId(null);
     setSessionParticipants([]);
     setPause(null);
+    setActiveQuestion(theQuestion.trim());
 
     try {
       await startChat(
@@ -482,6 +484,7 @@ export default function App() {
             disabled={startDisabled}
             isRunning={isRunning}
             disabledReason={startDisabledReason}
+            activeQuestion={activeQuestion}
           />
           <ChatArea
             messages={messages}

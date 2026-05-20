@@ -68,7 +68,6 @@ from app.services.models import (
 from app.services.prompts import (
     CONSENSUS_ALLIED_PROMPT,
     CONSENSUS_SOLO_PROMPT,
-    CONSENSUS_TARGETED_RESPONSE_PROMPT,
     CONTRIBUTION_SUMMARY_PROMPT,
     CRITIQUE_PROMPT,
     FINALIZATION_PROMPT,
@@ -79,6 +78,7 @@ from app.services.prompts import (
     PARTICIPANT_BASE_DIRECTIVE,
     STATUS_ASSESSMENT_PROMPT,
     TARGETED_FOLLOWUP_PROMPT,
+    TARGETED_FOLLOWUP_FROM_PARTICIPANT_PROMPT,
 )
 from app.utils.sanitize import strip_thinking
 
@@ -151,6 +151,82 @@ def _participant_roster_string(
 ) -> str:
     others = [p.name for p in participants if p.participant_id != speaker.participant_id]
     return ", ".join(others) if others else "(no other participants)"
+
+
+# Per-prompt cap on how much of a long pending-thread message we quote back
+# to the speaker. The full message is still in the transcript above; this
+# block is a "what specifically is owed to you" reminder, not a re-render.
+_PENDING_TRUNCATE_CHARS = 600
+
+
+def _pending_addressed_for(
+    session: Session,
+    speaker: Participant,
+) -> list[tuple[str, str, str]]:
+    """Return (asker_id, asker_name, message_text) for participant messages
+    that addressed `speaker` since `speaker`'s last own-message turn.
+
+    Used to (1) inject an "Open threads directed at you" block into per-
+    speaker prompt templates and (2) populate the `replying_to` field on
+    the speaker's outgoing message so the frontend can render a
+    "Replying to X, Y" pill above the bubble.
+    """
+    last_own_idx = -1
+    for i, m in enumerate(session.messages):
+        if (
+            m.get("role") == "participant"
+            and m.get("speaker_id") == speaker.participant_id
+        ):
+            last_own_idx = i
+
+    pending: list[tuple[str, str, str]] = []
+    for m in session.messages[last_own_idx + 1:]:
+        if m.get("role") != "participant":
+            continue
+        if m.get("addressed_to") != speaker.participant_id:
+            continue
+        asker_id = m.get("speaker_id") or "unknown"
+        asker_name = m.get("speaker_name") or "another participant"
+        text = (m.get("text") or "").strip()
+        if not text:
+            continue
+        pending.append((asker_id, asker_name, text))
+    return pending
+
+
+def _format_pending_block(
+    pending: list[tuple[str, str, str]],
+) -> str:
+    """Render the open-threads section that gets interpolated into per-
+    speaker prompt templates. Always non-empty so templates read naturally;
+    we explicitly print "(none)" when there are no open threads.
+    """
+    if not pending:
+        return (
+            "Open threads directed at you since your last turn: (none).\n\n"
+        )
+    lines = ["Open threads directed at you since your last turn:"]
+    for _asker_id, asker_name, text in pending:
+        snippet = text
+        if len(snippet) > _PENDING_TRUNCATE_CHARS:
+            snippet = snippet[:_PENDING_TRUNCATE_CHARS].rstrip() + "..."
+        lines.append(f'  - {asker_name} said to you: "{snippet}"')
+    return "\n".join(lines) + "\n\n"
+
+
+def _replying_to_ids(pending: list[tuple[str, str, str]]) -> list[str]:
+    """Stable, de-duplicated list of asker participant_ids extracted from a
+    pending-thread list. Used to populate the message's `replying_to`
+    field so the frontend can render the "Replying to X, Y" pill.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for asker_id, _name, _text in pending:
+        if asker_id in seen:
+            continue
+        seen.add(asker_id)
+        out.append(asker_id)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +421,7 @@ def _add_participant_message(
     phase: Phase,
     elapsed: float,
     addressed_to: str | None = None,
+    replying_to: list[str] | None = None,
 ) -> dict[str, Any]:
     msg = {
         "speaker_id": participant.participant_id,
@@ -355,6 +432,12 @@ def _add_participant_message(
         "timestamp": time.time(),
         "elapsed_seconds": round(elapsed, 2),
         "addressed_to": addressed_to,
+        # `replying_to` mirrors the pending-thread list we showed the
+        # speaker at turn-start: ordered, de-duplicated participant_ids of
+        # everyone whose questions this turn was supposed to address.
+        # Empty list when there were no open threads. The frontend renders
+        # this as a "Replying to X, Y" pill above the bubble.
+        "replying_to": list(replying_to) if replying_to else [],
         "model_id": participant.model_id,
         "model_display": participant.display_name,
     }
@@ -452,11 +535,17 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
     actives = _active_participants(session)
     for p in actives:
         transcript = _format_history(session.messages)
+        # Snapshot pending threads BEFORE the call so we can both render
+        # them in the prompt and stamp them onto the outgoing message as
+        # `replying_to` (frontend pill).
+        pending = _pending_addressed_for(session, p)
+        pending_block = _format_pending_block(pending)
         prompt = CRITIQUE_PROMPT.format(
             round_number=round_number,
             question=session.question,
             credential_summary=cred_block,
             transcript=transcript,
+            pending_block=pending_block,
         )
         text, elapsed, ok = await _call_participant(
             session=session, participant=p,
@@ -488,6 +577,7 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
         msg = _add_participant_message(
             session, p, text, phase=session.phase, elapsed=elapsed,
             addressed_to=addressed,
+            replying_to=_replying_to_ids(pending),
         )
         yield _sse("message", _msg_payload(msg))
 
@@ -544,10 +634,12 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             open_qs = parsed.get("open_questions") or []
 
         if opinions_solidified or not open_qs:
-            yield _sse("orchestrator", {
-                "kind": "status",
-                "text": "Opinions appear solidified - moving to finalization.",
-            })
+            msg = _add_orchestrator_message(
+                session,
+                "Opinions appear solidified - moving to finalization.",
+                kind="status",
+            )
+            yield _sse("orchestrator", _msg_payload(msg))
             return
 
         # Otherwise run targeted follow-ups
@@ -558,19 +650,46 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             if not pid or pid not in active_ids or not question_text:
                 continue
             target = next(p for p in session.participants if p.participant_id == pid)
-            announce = (
-                f"The orchestrator has a follow-up for {target.name}: "
-                f"\"{question_text}\""
-            )
+
+            # Decide synthesized vs verbatim. Source of truth is
+            # asker_participant_id - if it resolves to a real, *different*,
+            # active participant we treat the question as verbatim from
+            # them. Otherwise we treat it as orchestrator-synthesized.
+            asker_id = (oq.get("asker_participant_id") or "").strip() or None
+            asker: Participant | None = None
+            if asker_id and asker_id in active_ids and asker_id != pid:
+                asker = next(
+                    p for p in session.participants
+                    if p.participant_id == asker_id
+                )
+
+            if asker is not None:
+                announce = (
+                    f"{asker.name} raised a question earlier, to "
+                    f"{target.name}: \"{question_text}\""
+                )
+            else:
+                announce = (
+                    f"I have a follow-up question for {target.name}: "
+                    f"\"{question_text}\""
+                )
             announce_msg = _add_orchestrator_message(session, announce, kind="status")
             yield _sse("orchestrator", _msg_payload(announce_msg))
 
             transcript = _format_history(session.messages)
-            prompt2 = TARGETED_FOLLOWUP_PROMPT.format(
-                transcript=transcript,
-                credential_summary=cred_block,
-                targeted_question=question_text,
-            )
+            if asker is not None:
+                prompt2 = TARGETED_FOLLOWUP_FROM_PARTICIPANT_PROMPT.format(
+                    transcript=transcript,
+                    credential_summary=cred_block,
+                    targeted_question=question_text,
+                    asker_name=asker.name,
+                )
+            else:
+                prompt2 = TARGETED_FOLLOWUP_PROMPT.format(
+                    transcript=transcript,
+                    credential_summary=cred_block,
+                    targeted_question=question_text,
+                )
             text, elapsed, ok = await _call_participant(
                 session=session, participant=target,
                 user_prompt=prompt2,
@@ -583,8 +702,13 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
                     "phase": session.phase.value,
                 })
                 continue
+            # When the orchestrator is relaying a verbatim question from
+            # another participant, mark this turn as replying to that
+            # asker so the frontend can render the "Replying to X" pill.
+            replying_to = [asker.participant_id] if asker is not None else []
             msg = _add_participant_message(
                 session, target, text, phase=session.phase, elapsed=elapsed,
+                replying_to=replying_to,
             )
             yield _sse("message", _msg_payload(msg))
 
@@ -595,10 +719,12 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
                 async for chunk in _wait_for_continue(session, "orchestrator"):
                     yield chunk
 
-    yield _sse("orchestrator", {
-        "kind": "status",
-        "text": "Status assessment limit reached - moving to finalization.",
-    })
+    msg = _add_orchestrator_message(
+        session,
+        "Moving to finalization.",
+        kind="status",
+    )
+    yield _sse("orchestrator", _msg_payload(msg))
 
 
 async def _phase_finalization(session: Session) -> AsyncIterator[str]:
@@ -609,10 +735,13 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
     actives = _active_participants(session)
     for p in actives:
         transcript = _format_history(session.messages)
+        pending = _pending_addressed_for(session, p)
+        pending_block = _format_pending_block(pending)
         prompt = FINALIZATION_PROMPT.format(
             question=session.question,
             credential_summary=cred_block,
             transcript=transcript,
+            pending_block=pending_block,
         )
         text, elapsed, ok = await _call_participant(
             session=session, participant=p,
@@ -629,6 +758,7 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
         session.final_opinions[p.participant_id] = text
         msg = _add_participant_message(
             session, p, text, phase=session.phase, elapsed=elapsed,
+            replying_to=_replying_to_ids(pending),
         )
         yield _sse("message", _msg_payload(msg))
 
@@ -655,17 +785,29 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
     _bump_orchestrator_count(session)
     session.alliance_groups = groups
 
+    # Render alliance group members using the same display names shown
+    # in the sidebar (Participant.name), not raw participant_ids.
+    id_to_name = {p.participant_id: p.name for p in actives}
     announce = "Alliance groups detected: " + "; ".join(
-        f"\"{g.get('stance', '')}\" -> [{', '.join(g.get('members') or [])}]"
+        f"\"{g.get('stance', '')}\" -> ["
+        + ", ".join(
+            id_to_name.get(m, m) for m in (g.get("members") or [])
+        )
+        + "]"
         for g in groups
     )
     msg = _add_orchestrator_message(session, announce, kind="status")
     yield _sse("orchestrator", _msg_payload(msg))
 
     # Round-robin among active participants, but yield to the addressed-to
-    # target whenever the previous message named one explicitly.
+    # target whenever the previous message named one explicitly. To keep
+    # two participants from monopolizing the floor with an A->B->A->B
+    # loop, we cap consecutive addressed-to routings at DYAD_CAP. After
+    # that many in a row, we force a round-robin pick on the next turn.
     queue: list[Participant] = list(actives)
     last_addressed: str | None = None
+    dyad_run: int = 0
+    DYAD_CAP = 2  # one full A->B->A exchange, then rotate
 
     # Hard backstop on this phase: if we make a lot of consensus turns
     # without resolving, exit and let closure handle it. The orchestrator-
@@ -676,21 +818,27 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
     while consensus_turns < max_consensus_turns:
         consensus_turns += 1
 
-        # Pick speaker
-        if last_addressed:
+        # Pick speaker. Prefer the addressed-to target (dyadic exchange)
+        # only while we're under the consecutive-routing cap. Once the
+        # cap is hit, force a round-robin pick so a third voice can join.
+        if last_addressed and dyad_run < DYAD_CAP:
             speaker = next(
                 (p for p in actives if p.participant_id == last_addressed),
                 None,
             )
             if speaker is None:
                 speaker = queue[0] if queue else actives[0]
+                dyad_run = 0
             else:
                 queue = [p for p in queue if p.participant_id != speaker.participant_id]
+                dyad_run += 1
             last_addressed = None
         else:
             if not queue:
                 queue = list(actives)
             speaker = queue.pop(0)
+            dyad_run = 0
+            last_addressed = None
 
         # Decide allied vs solo prompt
         speaker_group, other_groups = _find_speaker_group(speaker, session.alliance_groups)
@@ -698,6 +846,10 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
             session, speaker, speaker_group, other_groups,
             actives, cred_block,
         )
+
+        # Snapshot pending threads BEFORE the call so the outgoing
+        # message records who this turn was supposed to be replying to.
+        pending = _pending_addressed_for(session, speaker)
 
         text, elapsed, ok = await _call_participant(
             session=session, participant=speaker,
@@ -725,6 +877,7 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         msg = _add_participant_message(
             session, speaker, text, phase=session.phase, elapsed=elapsed,
             addressed_to=addressed,
+            replying_to=_replying_to_ids(pending),
         )
         yield _sse("message", _msg_payload(msg))
 
@@ -748,16 +901,20 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
             _bump_orchestrator_count(session)
             if status.get("status") == "majority":
                 session.alliance_groups = await _refresh_alliance_groups(session, actives)
-                yield _sse("orchestrator", {
-                    "kind": "status",
-                    "text": f"Majority reached. {status.get('rationale', '')}".strip(),
-                })
+                msg = _add_orchestrator_message(
+                    session,
+                    f"Majority reached. {status.get('rationale', '')}".strip(),
+                    kind="status",
+                )
+                yield _sse("orchestrator", _msg_payload(msg))
                 return
             if status.get("status") == "unproductive":
-                yield _sse("orchestrator", {
-                    "kind": "status",
-                    "text": f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
-                })
+                msg = _add_orchestrator_message(
+                    session,
+                    f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
+                    kind="status",
+                )
+                yield _sse("orchestrator", _msg_payload(msg))
                 return
             # else: productive - keep going
 
@@ -813,23 +970,16 @@ def _build_consensus_prompt(
     cred_block: str,
 ) -> str:
     transcript = _format_history(session.messages)
+    pending_block = _format_pending_block(
+        _pending_addressed_for(session, speaker)
+    )
 
-    # If the previous message addressed this speaker by id, route a
-    # targeted-response prompt instead of the standard allied/solo flow.
-    if session.messages:
-        last = session.messages[-1]
-        if (
-            last.get("role") == "participant"
-            and last.get("addressed_to") == speaker.participant_id
-        ):
-            return CONSENSUS_TARGETED_RESPONSE_PROMPT.format(
-                addressed_by_name=last.get("speaker_name", "another participant"),
-                addressed_message=last.get("text", ""),
-                question=session.question,
-                credential_summary=cred_block,
-                transcript=transcript,
-            )
-
+    # NOTE: The "speaker is whoever was addressed last" routing happens in
+    # _phase_consensus, NOT here. This function only renders the prompt the
+    # speaker receives. Whatever needs answering shows up in pending_block,
+    # so a single unified allied/solo template handles both targeted and
+    # broadcast turns - the prompt's "FIRST address open threads" rule
+    # naturally focuses the speaker on whoever was just talking to them.
     if speaker_group and len(speaker_group.get("members") or []) > 1:
         members = ", ".join(
             p.name for p in actives
@@ -842,6 +992,7 @@ def _build_consensus_prompt(
             question=session.question,
             credential_summary=cred_block,
             transcript=transcript,
+            pending_block=pending_block,
         )
 
     other_groups_block = "\n".join(
@@ -856,6 +1007,7 @@ def _build_consensus_prompt(
         question=session.question,
         credential_summary=cred_block,
         transcript=transcript,
+        pending_block=pending_block,
     )
 
 

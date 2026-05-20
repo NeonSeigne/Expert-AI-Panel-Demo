@@ -19,6 +19,46 @@ _MAX_COMPLETION_TOKEN_MODELS = {
 }
 _NO_TEMPERATURE_MODELS = {"o1", "o1-mini", "o1-preview", "o3", "o3-mini", "o4-mini"}
 
+# Reserve a few tokens for chat-template framing the server tacks on (the
+# vLLM server and OpenAI both add a small overhead per request that our
+# input estimate doesn't account for).
+_INPUT_SAFETY_MARGIN = 128
+# Floor: never request fewer than this many output tokens, even if input
+# is huge - we'd rather get a truncated reply than no reply at all.
+_MIN_OUTPUT_TOKENS = 64
+
+
+def _estimate_input_tokens(messages: list[dict[str, str]]) -> int:
+    """Crude chars/4 token estimate matching context_budget's heuristic."""
+    total = 0
+    for m in messages:
+        content = m.get("content") or ""
+        total += max(1, len(content) // 4)
+        total += 4  # per-message framing overhead
+    return total
+
+
+def _resolve_effective_max(
+    model: str, requested: int, messages: list[dict[str, str]],
+) -> tuple[int, int, int]:
+    """Compute the actual max_tokens to send.
+
+    The ×4 multiplier exists so thinking models can spend tokens on
+    reasoning before producing the visible answer. On wide-window models
+    (128K+) it costs nothing. On narrow-window models (e.g. Neon 8K) it
+    can ask for more output tokens than the server will allow given the
+    input. Cap it to the actual headroom.
+
+    Returns (effective_max, input_estimate, window).
+    """
+    from app.services.context_budget import context_window_for
+
+    window = context_window_for(model)
+    input_estimate = _estimate_input_tokens(messages)
+    headroom = max(_MIN_OUTPUT_TOKENS, window - input_estimate - _INPUT_SAFETY_MARGIN)
+    effective_max = max(_MIN_OUTPUT_TOKENS, min(requested * 4, headroom))
+    return effective_max, input_estimate, window
+
 
 def _get_client() -> httpx.AsyncClient:
     global _shared_client
@@ -50,7 +90,16 @@ async def openai_chat_completion(
     needs_mct = any(model.startswith(prefix) for prefix in _MAX_COMPLETION_TOKEN_MODELS)
     skip_temp = any(model.startswith(prefix) for prefix in _NO_TEMPERATURE_MODELS)
 
-    effective_max = max_tokens * 4
+    effective_max, input_estimate, window = _resolve_effective_max(
+        model, max_tokens, messages,
+    )
+    if effective_max < max_tokens * 4:
+        LOG.info(
+            "Capped max_tokens for %s: requested %d (x4=%d), input ~=%d, "
+            "window=%d, sending %d",
+            model, max_tokens, max_tokens * 4, input_estimate, window,
+            effective_max,
+        )
     effective_timeout = max(timeout * 2, 120) if timeout else timeout
 
     body: dict[str, Any] = {

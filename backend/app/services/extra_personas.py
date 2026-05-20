@@ -21,7 +21,7 @@ class ExtraPersonaSpec:
 EXTRA_PERSONAS: list[ExtraPersonaSpec] = [
     ExtraPersonaSpec(
         participant_id="extra_pragmatic_generalist",
-        name="The Pragmatic Generalist",
+        name="Pragmatic Finance Expert",
         default_model_id="gpt-5.4",
         role_prompt=(
             "You are The Pragmatic Generalist with a complementary specialty in "
@@ -42,7 +42,7 @@ EXTRA_PERSONAS: list[ExtraPersonaSpec] = [
     ),
     ExtraPersonaSpec(
         participant_id="extra_skeptical_critic",
-        name="The Skeptical Critic",
+        name="Skeptical Philosopher",
         default_model_id="gemini-2.5-flash",
         role_prompt=(
             "You are The Skeptical Critic with a complementary specialty in "
@@ -63,7 +63,7 @@ EXTRA_PERSONAS: list[ExtraPersonaSpec] = [
     ),
     ExtraPersonaSpec(
         participant_id="extra_empathetic_humanist",
-        name="The Empathetic Humanist",
+        name="Empathetic Historian",
         default_model_id="devstral-2512",
         role_prompt=(
             "You are The Empathetic Humanist with a complementary specialty in "
@@ -85,7 +85,7 @@ EXTRA_PERSONAS: list[ExtraPersonaSpec] = [
     ),
     ExtraPersonaSpec(
         participant_id="extra_data_driven_analyst",
-        name="The Data-Driven Analyst",
+        name="Data-Driven Geologist",
         default_model_id="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         role_prompt=(
             "You are The Data-Driven Analyst with a complementary specialty in "

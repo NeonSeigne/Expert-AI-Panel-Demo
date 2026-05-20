@@ -20,10 +20,10 @@
       "text": "Our rural town in central Pennsylvania has roughly 1,800 residents and a 1960s-era municipal water system that has had three boil-water advisories in the last two years. We have a small budget and an aging volunteer water board. The state has offered a 50% matching grant but only if we commit to a project plan within nine months. The three options on the table are: (a) replace the existing main lines incrementally over twelve years, (b) consolidate with a neighboring town's larger system, losing local control but gaining redundancy, or (c) install a smaller modern treatment plant of our own with recurring maintenance contracts. Residents are split, and the median household income is around $52,000."
     },
     {
-      "id": "elder_parent",
-      "category": "family",
-      "title": "Aging parent who wants to stay in their home",
-      "text": "My 82-year-old father lives alone in the rural Midwest after losing my mother last year. He's mentally sharp, drives short distances, and absolutely insists on staying in the house they built together. In the last six months he's had two minor falls (no fractures), forgot to take his blood pressure medication twice, and started to lose weight. My sister and I both live three to four hours away with full-time jobs and our own kids. He has roughly $90,000 in savings beyond Social Security and the house is paid off. We're trying to figure out the right next step that respects his autonomy without ignoring the warning signs."
+      "id": "acquisition_decision",
+      "category": "business / M&A",
+      "title": "Founder weighing an acquisition offer for an 18-year-old specialty business",
+      "text": "I'm the founder and CEO of a 65-person specialty chemicals company in Indiana that I bootstrapped 18 years ago. We do about $24M in annual revenue at 14% margins and have a strong reputation in our niche. A publicly traded competitor has approached us with an offer of 1.4x revenue (~$33.6M, 70% cash and 30% in their public stock with a two-year lockup), conditional on me staying for three years to lead the integrated unit. If we don't sell, we'd likely keep growing at 6-8% per year, but our biggest customer - currently 28% of revenue - is showing signs of bringing more work in-house, and the capex for the next-generation production line we'd need is around $8M. My family's wealth is heavily tied up in the company. My wife has mixed feelings, my COO wants to buy in if I sell out gradually, and several long-time customers have quietly asked us to stay independent. What's the right move and what should I weigh most heavily?"
     },
     {
       "id": "ai_in_classroom",
@@ -56,10 +56,10 @@
       "text": "I'm 41, somewhat overweight, with borderline-high blood pressure and slightly elevated LDL cholesterol. My doctor wants me to lose roughly 30 pounds and lower my blood pressure without yet starting medication. I have done short stints with several diets over the years - low carb, intermittent fasting, Mediterranean, and a vegan stretch - and lost weight on each before regaining it. I have a desk job, two school-age kids, and I cook most of our meals. I'm not interested in supplements with weak evidence, but I am willing to commit to a structured plan if it's actually likely to work for someone like me long-term. What should the plan look like, and what trade-offs am I implicitly making by picking one?"
     },
     {
-      "id": "early_retirement",
-      "category": "personal finance",
-      "title": "FIRE-curious couple weighing semi-retirement at 50",
-      "text": "My spouse and I are both 50, two kids in college, a paid-off house in Minnesota, and about $1.6M in retirement and brokerage accounts (~80% in low-cost index funds). Our combined gross income is ~$240k/year and we save aggressively. We're not unhappy at our jobs but we're also not in love with them. We're debating whether to keep working at full pace through 60, semi-retire next year by both moving to ~25 hours/week each (income halves), or one of us fully retires and the other continues full time. We expect health-care costs to be the wildest variable. None of us has a strong intuition about how a 30-40 year retirement actually plays out financially or psychologically."
+      "id": "community_park_grant",
+      "category": "civic / nonprofit",
+      "title": "Allocating a one-time $180K grant for a small-town park",
+      "text": "I'm on the volunteer board for a 4-acre community park in our small Oregon town of about 2,400 residents. The park has aging playground equipment from the late 1990s, a baseball diamond mostly used by the over-50 league, and a wooded picnic area. Our annual operating budget is $35,000. We've just been offered a one-time $180,000 grant from a regional foundation, but it must be committed to a project plan within 18 months and the project must be substantially complete within three years. The board is split three ways: (a) replace all the playground equipment with modern, ADA-compliant structures - the most visibly popular choice with young families, (b) build a small pavilion plus about a dozen community-garden plots, which would attract a different demographic and serve year-round but has more uncertain demand, or (c) install a modest skatepark and pump track that our teens have repeatedly asked for, which would be controversial with our older voters. Whatever we pick, ongoing maintenance comes out of the same $35K annual budget, and the grant doesn't fund staffing. What should we do?"
     }
   ]
 }

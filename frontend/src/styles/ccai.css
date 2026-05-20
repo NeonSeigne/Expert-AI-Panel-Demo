@@ -644,14 +644,153 @@
 }
 
 
-/* ── Bubble model line + stepper ───────────────────────────────── */
+/* ── Active-question chip (next to Stop Chat) ─────────────────── */
 
-.ccai-bubble-model {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text-muted);
+/* The chip caps at roughly two lines tall and scrolls vertically for
+   longer prompts. The full prompt is also exposed via the title
+   attribute for hover tooltips. */
+.ccai-active-question {
+  flex: 1;
+  min-width: 0;
+  max-height: 60px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
+
+.ccai-active-question-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-right: 6px;
+}
+
+.ccai-active-question-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+
+/* ── Conversation threading & addressing cues ─────────────────────
+   Lightweight visual aids that help a human reader follow who is
+   speaking to whom. Backed by the message's `addressed_to` field
+   (one participant id) and `replying_to` field (list of asker ids
+   the speaker had open threads with at turn start).
+   ────────────────────────────────────────────────────────────────── */
+
+/* Indent + thread line when a participant message is a direct reply
+   to the immediately previous participant message. We don't fully
+   nest replies because N-participant chats turn into trees fast;
+   this is a single-level visual hint, not full threading. */
+.ccai-message-row.ccai-message-row-reply {
+  margin-left: 28px;
+  padding-left: 12px;
+  position: relative;
+}
+
+.ccai-message-row.ccai-message-row-reply::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border-primary);
+  opacity: 0.6;
+}
+
+/* "Replying to: X, Y" pill above the bubble, colored with the
+   speaker's tone. Mirrors the pending-thread list the orchestrator
+   showed the speaker at turn-start. Stays small and unobtrusive. */
+.ccai-replying-to-pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  background: var(--card-bg);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "→ Addressee" chip in the speaker line. The addressee name is a
+   clickable button that scrolls the chat to that participant's most
+   recent message before this one. */
+.ccai-addressee-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.ccai-addressee-arrow {
+  display: inline-block;
+  vertical-align: middle;
+  opacity: 0.7;
+}
+
+.ccai-addressee-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+  transition: text-decoration-style 0.1s ease, opacity 0.1s ease;
+}
+
+.ccai-addressee-link:hover {
+  text-decoration-style: solid;
+  opacity: 1;
+}
+
+.ccai-addressee-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Flash highlight applied to the scroll-target when the user clicks an
+   addressee chip. Makes the destination obvious for a beat. */
+.ccai-flash-highlight .message-bubble {
+  animation: ccai-flash 1.4s ease-out;
+}
+
+@keyframes ccai-flash {
+  0% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+
+
+/* ── Stepper ───────────────────────────────────────────────────── */
 
 .ccai-stepper-row {
   display: flex;

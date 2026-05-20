@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Shuffle, Square } from 'lucide-react';
+import { Play, Shuffle } from 'lucide-react';
 
 /**
  * "Let Them Start" picks a random demo question from the bank.
@@ -15,6 +15,7 @@ export default function ChatControls({
   disabled,
   isRunning,
   disabledReason,
+  activeQuestion,
 }) {
   const [text, setText] = useState('');
   const placeholder = disabled
@@ -23,10 +24,20 @@ export default function ChatControls({
   return (
     <div className="chat-controls">
       {isRunning ? (
-        <button className="btn-stop" onClick={onStop}>
-          <Square size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-          Stop Chat
-        </button>
+        <>
+          <button className="btn-stop" onClick={onStop}>
+            Stop Chat
+          </button>
+          {activeQuestion && (
+            <div
+              className="ccai-active-question"
+              title={activeQuestion}
+            >
+              <span className="ccai-active-question-label">Question:</span>
+              <span className="ccai-active-question-text">{activeQuestion}</span>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <button

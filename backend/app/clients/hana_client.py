@@ -172,7 +172,7 @@ class HanaClient:
     ) -> None:
         """Merge models from OpenAI-compatible GET /v1/models (NeonGeckoCom/brainforge-webapp pattern)."""
         base = (settings.neon_security_vllm_base_url or "").strip().rstrip("/")
-        key = (settings.hana_password_klatchat or "").strip()
+        key = (settings.vllm_api_key or "").strip()
         if not base or not key:
             return
         url = f"{base}/v1/models"
@@ -286,7 +286,7 @@ class HanaClient:
             vanilla = {
                 "id": "vanilla",
                 "persona_name": "vanilla",
-                "description": "Set HANA_KLATCHAT_PASSWORD to the 4090-x1-3 OpenAI API key (same as HF Space) so vLLM discovery works; persona prompts come from HANA when allowed.",
+                "description": "Set VLLM_API_KEY to the 4090-x1-3 vLLM Bearer token (same as HF Space API_KEY) so vLLM discovery works; persona prompts come from HANA when allowed.",
                 "system_prompt": None,
                 "enabled": True,
             }
@@ -309,7 +309,21 @@ class HanaClient:
         models = self._parse_models_payload(resp.json())
         seen = {m["model_id"] for m in models}
 
-        if (settings.hana_password_klatchat or "").strip() and (settings.neon_security_vllm_base_url or "").strip():
+        # The direct-vLLM merge is the HuggingFace-deployment fallback path:
+        # it talks directly to 4090-x1-3 because the HF runtime can't reach
+        # HANA. In local dev, HANA itself returns BrainForge/Security in the
+        # standard get_models response and proxies inference to 4090-x1-3
+        # for us, so the merge is redundant. Skip it whenever HANA already
+        # gave us Security. (Gated on VLLM_API_KEY, the Bearer token for
+        # the direct vLLM endpoint - distinct from the HANA login.)
+        hana_has_security = any(
+            "security" in (mid or "").lower() for mid in seen
+        )
+        if (
+            (settings.vllm_api_key or "").strip()
+            and (settings.neon_security_vllm_base_url or "").strip()
+            and not hana_has_security
+        ):
             await self._merge_direct_vllm_security_models(models, seen)
 
         await self._append_supplement_models(models)

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import MessageBubble from './MessageBubble';
 import OrchestratorMessage from './OrchestratorMessage';
 import FailsafePauseBanner from './FailsafePauseBanner';
@@ -20,18 +20,20 @@ export default function ChatArea({
   showResponseTime,
   showChatStats,
 }) {
-  const endRef = useRef(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, systemMessages, statusText, pause]);
-
   const speakerIdxFor = useMemo(() => {
     const map = {};
     (participants || []).forEach((p, i) => {
       map[p.participant_id] = i;
     });
     return map;
+  }, [participants]);
+
+  const participantNameById = useMemo(() => {
+    const m = {};
+    (participants || []).forEach((p) => {
+      m[p.participant_id] = p.name;
+    });
+    return m;
   }, [participants]);
 
   const hasContent = (messages?.length || 0) + (systemMessages?.length || 0) > 0;
@@ -55,14 +57,18 @@ export default function ChatArea({
       )}
       {(messages || []).map((msg, i) => {
         if (msg.role === 'orchestrator') {
-          return <OrchestratorMessage key={i} message={msg} />;
+          return <OrchestratorMessage key={i} message={msg} messageIdx={i} />;
         }
         const idx = speakerIdxFor[msg.speaker_id] ?? i;
+        const prev = i > 0 ? messages[i - 1] : null;
         return (
           <MessageBubble
             key={i}
             message={msg}
             idx={idx}
+            messageIdx={i}
+            prevMessage={prev}
+            participantNameById={participantNameById}
             showResponseTime={showResponseTime}
           />
         );
@@ -87,7 +93,6 @@ export default function ChatArea({
           <span>{statusText}</span>
         </div>
       )}
-      <div ref={endRef} />
     </div>
   );
 }

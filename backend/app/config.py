@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Comma-separated model_id values to merge via get_personas when get_models omits them (needs HANA access)
     hana_neon_model_supplement_ids: str = "BrainForge/Security@2026.03.18"
 
+    # OpenAI-compatible Bearer token for direct vLLM endpoints
+    # (e.g. https://4090-x1-3.neonaiservices2.com/vllm0/v1). Distinct
+    # from any HANA login credential. Sent as Authorization: Bearer.
     vllm_api_key: str = ""
 
     fireworks_api_key: str = ""
@@ -45,10 +48,14 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def _neon_security_direct_vllm_enabled(self, hana_model_id: str) -> bool:
-        """BrainForge/Security on 4090-x1-3: same pattern as brainforge-webapp (direct vLLM + API key)."""
+        """BrainForge/Security on 4090-x1-3: same pattern as brainforge-webapp (direct vLLM + API key).
+
+        Gated on VLLM_API_KEY (the Bearer token sent to the vLLM
+        /v1/chat/completions endpoint), NOT the HANA klatchat password.
+        """
         if "security" not in (hana_model_id or "").lower():
             return False
-        return bool((self.hana_password_klatchat or "").strip() and (self.neon_security_vllm_base_url or "").strip())
+        return bool((self.vllm_api_key or "").strip() and (self.neon_security_vllm_base_url or "").strip())
 
     @property
     def providers(self) -> list[dict]:
@@ -191,7 +198,7 @@ class Settings(BaseSettings):
                 if self._neon_security_direct_vllm_enabled(hana_model_id):
                     out["neon_direct_vllm"] = True
                     out["vllm_base_url"] = f"{self.neon_security_vllm_base_url.rstrip('/')}/v1"
-                    out["vllm_api_key"] = self.hana_password_klatchat
+                    out["vllm_api_key"] = self.vllm_api_key
                 return out
 
         for prov in self.providers:
