@@ -11,8 +11,9 @@ import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
   getSpeedPriority, setSpeedPriority, getAuthStatus,
-  exportChat, exportApiLog, fetchTableView, fetchCredentials,
+  exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
+  autoSelectParticipants,
   getRateLimitStatus,
 } from './utils/api';
 import * as storage from './utils/storage';
@@ -84,6 +85,14 @@ export default function App() {
     persisted.conversation_limits || {},
   );
   const [limitsOpen, setLimitsOpen] = useState(false);
+  // Auto-select toggle: when on, the participant dropdown defers
+  // selection to the orchestrator LLM at /chat/start time. We also
+  // snapshot the user's manual selection before turning it on so we
+  // can restore it when it's turned back off.
+  const [autoSelectMode, setAutoSelectMode] = useState(
+    !!persisted.auto_select_mode,
+  );
+  const [priorManualSelection, setPriorManualSelection] = useState(null);
 
   const abortRef = useRef(null);
 
@@ -230,6 +239,21 @@ export default function App() {
     });
   }, []);
 
+  // ─── Auto-select toggle ─────────────────────────────────────────
+  // When turning ON, snapshot the current manual selection so we can
+  // restore it on OFF. The actual LLM ranking happens in handleStart
+  // (so the user's question is available); this just flips the mode.
+  const handleToggleAutoSelectMode = useCallback((on) => {
+    if (on && !autoSelectMode) {
+      setPriorManualSelection([...selectedIds]);
+    } else if (!on && autoSelectMode && priorManualSelection !== null) {
+      setSelectedIds(priorManualSelection);
+      setPriorManualSelection(null);
+    }
+    setAutoSelectMode(!!on);
+    storage.setAutoSelectMode(!!on);
+  }, [autoSelectMode, selectedIds, priorManualSelection]);
+
   // ─── Expert persona ops ─────────────────────────────────────────
   const handleOpenExpertModal = useCallback((personaOrNull) => {
     setExpertEditing(personaOrNull);
@@ -353,11 +377,13 @@ export default function App() {
   }, []);
 
   // ─── Build start payload ────────────────────────────────────────
-  const buildStartPayload = useCallback((theQuestion) => {
-    const enabledParticipants = selectedParticipants.filter(
-      p => enabledMap[p.participant_id] !== false,
-    );
-    const participants = enabledParticipants.map(p => ({
+  // `participantsOverride`, if provided, replaces the
+  // selectedParticipants-derived list (used by the auto-select flow
+  // because the freshly-chosen list isn't in state yet when we need it).
+  const buildStartPayload = useCallback((theQuestion, participantsOverride) => {
+    const baseList = participantsOverride
+      ?? selectedParticipants.filter(p => enabledMap[p.participant_id] !== false);
+    const participants = baseList.map(p => ({
       participant_id: p.participant_id,
       kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
         : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
@@ -365,7 +391,7 @@ export default function App() {
       role_prompt: p.role_prompt || null,
       model_id_override: modelAssignments[p.participant_id] || null,
     }));
-    const expert_payload = enabledParticipants
+    const expert_payload = baseList
       .filter(p => (p.kind || '').startsWith('expert'))
       .map(p => ({
         participant_id: p.participant_id,
@@ -405,23 +431,94 @@ export default function App() {
   // ─── Start chat ─────────────────────────────────────────────────
   const handleStart = useCallback(async (theQuestion) => {
     if (!theQuestion || !theQuestion.trim()) return;
-    if (enabledSelectedCount < 2) return;
+    // In auto-select mode the dropdown has no manual picks - skip the
+    // pre-flight count check and validate the chosen pool below instead.
+    if (!autoSelectMode && enabledSelectedCount < 2) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
     setIsRunning(true);
     setMessages([]);
     setSystemMessages([]);
-    setStatusText('Starting conversation...');
+    setStatusText(
+      autoSelectMode ? 'Picking participants...' : 'Starting conversation...',
+    );
     setSessionId(null);
     setSessionParticipants([]);
     setPause(null);
     setActiveQuestion(theQuestion.trim());
     setCredentialsData(null);
 
+    // Resolve the final participant list. When auto-select is on, ask
+    // the orchestrator to rank every available candidate; otherwise
+    // fall through to the user's manual selection.
+    let resolvedParticipants = null;
+    if (autoSelectMode) {
+      const candidatePool = Object.values(allCatalogParticipants);
+      if (candidatePool.length < 2) {
+        setIsRunning(false);
+        setStatusText('');
+        setSystemMessages(prev => [...prev, {
+          text: 'Auto-select needs at least 2 candidate participants available.',
+        }]);
+        return;
+      }
+      const candidatesPayload = candidatePool.map(p => ({
+        participant_id: p.participant_id,
+        name: p.name,
+        role_prompt: p.role_prompt || '',
+        kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
+          : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
+        model_id: modelAssignments[p.participant_id]
+          || p.model_id || p.default_model_id || '',
+      }));
+      try {
+        const result = await autoSelectParticipants({
+          question: theQuestion.trim(),
+          count: maxParticipants,
+          candidates: candidatesPayload,
+          orchestrator_model_id: orchestratorModel,
+        });
+        const chosenIds = result.selected || [];
+        resolvedParticipants = chosenIds
+          .map(id => allCatalogParticipants[id])
+          .filter(Boolean);
+        if (resolvedParticipants.length < 2) {
+          setIsRunning(false);
+          setStatusText('');
+          setSystemMessages(prev => [...prev, {
+            text: 'Auto-select returned too few participants. '
+              + 'Turn auto-select off and pick manually.',
+          }]);
+          return;
+        }
+        // Reflect the pick in the sidebar.
+        setSelectedIds(chosenIds);
+        setEnabledMap(prev => {
+          const next = { ...prev };
+          for (const id of chosenIds) next[id] = true;
+          return next;
+        });
+        if (result.rationale) {
+          setSystemMessages(prev => [...prev, {
+            text: `Auto-select rationale: ${result.rationale}`,
+          }]);
+        }
+        setStatusText('Starting conversation...');
+      } catch (err) {
+        console.error('Auto-select failed:', err);
+        setIsRunning(false);
+        setStatusText('');
+        setSystemMessages(prev => [...prev, {
+          text: `Auto-select failed: ${err.message}`,
+        }]);
+        return;
+      }
+    }
+
     try {
       await startChat(
-        buildStartPayload(theQuestion),
+        buildStartPayload(theQuestion, resolvedParticipants),
         {
           onSession: (data) => {
             setSessionId(data.session_id);
@@ -495,7 +592,11 @@ export default function App() {
       abortRef.current = null;
       getAuthStatus().then(setAuth).catch(() => {});
     }
-  }, [buildStartPayload, enabledSelectedCount, dailyLimit]);
+  }, [
+    buildStartPayload, enabledSelectedCount, dailyLimit,
+    autoSelectMode, allCatalogParticipants, modelAssignments,
+    maxParticipants, orchestratorModel,
+  ]);
 
   const handleStartRandom = useCallback(() => {
     if (demoQuestions.length === 0) {
@@ -506,8 +607,17 @@ export default function App() {
     handleStart(q.text);
   }, [demoQuestions, handleStart]);
 
-  const startDisabled = isRunning || enabledSelectedCount < 2;
-  const startDisabledReason = enabledSelectedCount < 2
+  // In auto-select mode we don't require manual picks - the orchestrator
+  // will choose them at /chat/start time, so just need 2+ candidates
+  // available in the catalog.
+  const autoSelectReady = autoSelectMode
+    && Object.keys(allCatalogParticipants).length >= 2;
+  const startDisabled = isRunning
+    || (!autoSelectMode && enabledSelectedCount < 2)
+    || (autoSelectMode && !autoSelectReady);
+  const startDisabledReason = autoSelectMode
+    ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
+    : enabledSelectedCount < 2
     ? 'Add at least 2 active participants to start.'
     : '';
 
@@ -524,6 +634,8 @@ export default function App() {
         maxParticipants={maxParticipants}
         onToggleParticipant={handleToggleParticipant}
         onOpenExpertModal={handleOpenExpertModal}
+        autoSelectMode={autoSelectMode}
+        onToggleAutoSelectMode={handleToggleAutoSelectMode}
 
         allModels={allModelsFlat}
         orchestratorModel={orchestratorModel}
@@ -560,6 +672,8 @@ export default function App() {
           modelAssignments={modelAssignments}
           onToggleEnabled={handleSidebarToggleEnabled}
           onRemove={handleSidebarRemove}
+          autoSelectMode={autoSelectMode}
+          maxParticipants={maxParticipants}
         />
         <div className="content">
           <ChatControls

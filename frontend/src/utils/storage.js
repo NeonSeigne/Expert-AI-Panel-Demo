@@ -24,6 +24,10 @@ const DEFAULTS = {
   // so storing whatever the user typed (including stale values from
   // an earlier session) is safe.
   conversation_limits: {},
+  // When true, the participants dropdown shows "Select N Automatically"
+  // as the active mode and the per-persona checkboxes are hidden.
+  // The auto-select happens just before /chat/start.
+  auto_select_mode: false,
 };
 
 function readAll() {
@@ -95,4 +99,8 @@ export function setTheme(theme) {
 
 export function setConversationLimits(limitsMap) {
   return patchState({ conversation_limits: limitsMap || {} });
+}
+
+export function setAutoSelectMode(on) {
+  return patchState({ auto_select_mode: !!on });
 }

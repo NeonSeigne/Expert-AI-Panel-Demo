@@ -32,6 +32,7 @@ from app.services.models import (
     Session,
     clamp_conversation_limits,
 )
+from app.services.auto_select import auto_select_participants
 from app.services.orchestrator import (
     create_session,
     get_session,
@@ -95,6 +96,27 @@ class ParticipantSelectionPayload(BaseModel):
     name: str
     role_prompt: str | None = None
     model_id_override: str | None = None
+
+
+class AutoSelectCandidate(BaseModel):
+    """One row of the candidate pool sent to the auto-select endpoint."""
+
+    participant_id: str
+    name: str
+    role_prompt: str = ""
+    kind: str = ""
+    model_id: str = ""
+
+
+class AutoSelectRequest(BaseModel):
+    """Body of POST /api/chat/auto-select-participants."""
+
+    question: str
+    count: int = 5
+    candidates: list[AutoSelectCandidate]
+    # Optional: pin the orchestrator model used for ranking. Defaults
+    # to the configured global orchestrator model.
+    orchestrator_model_id: str | None = None
 
 
 class StartChatRequest(BaseModel):
@@ -169,6 +191,39 @@ async def api_generate_role_freeform(req: GenerateRoleFreeformRequest):
     )
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Auto-select participants (LLM-based ranking for "Select N Automatically")
+# ---------------------------------------------------------------------------
+
+@router.post("/chat/auto-select-participants")
+async def api_auto_select_participants(req: AutoSelectRequest):
+    """Rank the candidate pool by relevance to the question and return
+    the top `count` participant_ids. The frontend calls this just
+    before /chat/start when the user has the auto-select toggle on.
+
+    Returns: {"selected": [id, ...], "rationale": "short string"}.
+    `selected` is exactly `count` long unless the candidate pool is
+    smaller. Invalid / hallucinated ids are silently dropped and
+    padded with the next unused candidates.
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(400, "Question is required")
+    if not req.candidates:
+        raise HTTPException(400, "At least one candidate is required")
+    if req.count < 1:
+        raise HTTPException(400, "count must be >= 1")
+
+    candidates_payload = [c.dict() for c in req.candidates]
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
+    result = await auto_select_participants(
+        orchestrator_model_id=orchestrator_id,
+        question=req.question,
+        candidates=candidates_payload,
+        count=req.count,
+    )
     return result
 
 

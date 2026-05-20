@@ -35,6 +35,7 @@ from app.services.prompts.closure import (
     NO_CONSENSUS_REPORT_PROMPT,
     CONTRIBUTION_SUMMARY_PROMPT,
 )
+from app.services.prompts.auto_select import AUTO_SELECT_PARTICIPANTS_PROMPT
 
 __all__ = [
     "PARTICIPANT_BASE_DIRECTIVE",
@@ -57,4 +58,5 @@ __all__ = [
     "MAJORITY_REPORT_PROMPT",
     "NO_CONSENSUS_REPORT_PROMPT",
     "CONTRIBUTION_SUMMARY_PROMPT",
+    "AUTO_SELECT_PARTICIPANTS_PROMPT",
 ]

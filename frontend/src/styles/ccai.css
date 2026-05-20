@@ -1119,3 +1119,59 @@
   color: var(--text-secondary);
   line-height: 1.45;
 }
+
+
+/* ── Auto-select participants (dropdown + sidebar placeholder) ──── */
+
+.ccai-dropdown-autoselect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ccai-dropdown-autoselect:hover {
+  border-color: var(--accent-primary, var(--text-primary));
+}
+
+.ccai-dropdown-autoselect-on {
+  background: var(--accent-primary, var(--bg-primary));
+  color: var(--bg-primary, var(--text-primary));
+  border-color: transparent;
+}
+
+.ccai-dropdown-autoselect-help {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 6px 4px 0;
+  line-height: 1.4;
+}
+
+.ccai-dropdown-section-muted {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ccai-sidebar-autoselect-empty {
+  margin: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ccai-sidebar-autoselect-empty strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}

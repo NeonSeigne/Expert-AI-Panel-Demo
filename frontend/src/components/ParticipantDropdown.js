@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Users, Plus, ChevronDown } from 'lucide-react';
+import { Users, Plus, ChevronDown, Wand2, Check } from 'lucide-react';
 
 /**
  * Header dropdown that lists every available participant the user can
@@ -7,6 +7,11 @@ import { Users, Plus, ChevronDown } from 'lucide-react';
  *   - Neon (HANA personas, vanilla/RAG already filtered server-side)
  *   - Extra (the four bundled non-Neon-LLM personas)
  *   - Expert (user-created, stored in localStorage)
+ *
+ * A top-of-list "Select N Automatically" toggle defers the choice to
+ * the orchestrator LLM: when enabled, manual checkboxes are visually
+ * disabled and the actual picks happen at /chat/start time via the
+ * /api/chat/auto-select-participants endpoint.
  *
  * Selecting a participant adds them to the active conversation list. The
  * "Create Expert Persona..." entry opens the modal.
@@ -18,6 +23,8 @@ export default function ParticipantDropdown({
   maxParticipants,
   onToggleParticipant,
   onOpenExpertModal,
+  autoSelectMode,
+  onToggleAutoSelectMode,
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -34,21 +41,61 @@ export default function ParticipantDropdown({
 
   const isSelected = (id) => selectedIds.includes(id);
   const atCap = selectedIds.length >= maxParticipants;
+  // When auto-select is on, checkboxes are deferred entirely - the
+  // orchestrator picks at start time, so user picks are ignored.
+  const checkboxDisabledForAuto = !!autoSelectMode;
 
   return (
     <div className="ccai-dropdown-wrap" ref={ref}>
       <button
         className="btn-sm btn-outline ccai-dropdown-trigger"
         onClick={() => setOpen(o => !o)}
-        title="Add or remove participants"
+        title={
+          autoSelectMode
+            ? 'Auto-select mode: participants picked at chat start by the orchestrator'
+            : 'Add or remove participants'
+        }
       >
         <Users size={14} />
-        <span>Participants ({selectedIds.length}/{maxParticipants})</span>
+        <span>
+          {autoSelectMode
+            ? 'Participants Auto Selected'
+            : `Participants (${selectedIds.length}/${maxParticipants})`}
+        </span>
         <ChevronDown size={12} />
       </button>
       {open && (
         <div className="ccai-dropdown-panel">
           <div className="ccai-dropdown-section">
+            <button
+              type="button"
+              className={
+                'ccai-dropdown-autoselect' +
+                (autoSelectMode ? ' ccai-dropdown-autoselect-on' : '')
+              }
+              onClick={() => onToggleAutoSelectMode?.(!autoSelectMode)}
+              title={
+                autoSelectMode
+                  ? 'Turn off auto-select and resume manual picking'
+                  : 'Defer participant selection until chat start; the orchestrator will pick the most relevant.'
+              }
+            >
+              {autoSelectMode ? <Check size={14} /> : <Wand2 size={14} />}
+              <span>Select {maxParticipants} Automatically</span>
+            </button>
+            <div className="ccai-dropdown-autoselect-help">
+              {autoSelectMode
+                ? 'The orchestrator will pick the most relevant participants for your question when you start the chat.'
+                : 'Or pick manually from the lists below.'}
+            </div>
+          </div>
+          <div className="ccai-dropdown-divider" />
+          <div
+            className={
+              'ccai-dropdown-section' +
+              (checkboxDisabledForAuto ? ' ccai-dropdown-section-muted' : '')
+            }
+          >
             <div className="ccai-dropdown-section-title">Neon.ai Personas</div>
             {(catalog?.neon || []).length === 0 && (
               <div className="ccai-dropdown-empty">
@@ -60,26 +107,44 @@ export default function ParticipantDropdown({
                 key={p.participant_id}
                 participant={p}
                 checked={isSelected(p.participant_id)}
-                disabledForAdd={atCap && !isSelected(p.participant_id)}
+                disabledForAdd={
+                  checkboxDisabledForAuto
+                  || (atCap && !isSelected(p.participant_id))
+                }
+                autoSelectActive={checkboxDisabledForAuto}
                 onToggle={() => onToggleParticipant(p, 'neon')}
               />
             ))}
           </div>
           <div className="ccai-dropdown-divider" />
-          <div className="ccai-dropdown-section">
+          <div
+            className={
+              'ccai-dropdown-section' +
+              (checkboxDisabledForAuto ? ' ccai-dropdown-section-muted' : '')
+            }
+          >
             <div className="ccai-dropdown-section-title">Extra Personas</div>
             {(catalog?.extra || []).map((p) => (
               <DropdownItem
                 key={p.participant_id}
                 participant={p}
                 checked={isSelected(p.participant_id)}
-                disabledForAdd={atCap && !isSelected(p.participant_id)}
+                disabledForAdd={
+                  checkboxDisabledForAuto
+                  || (atCap && !isSelected(p.participant_id))
+                }
+                autoSelectActive={checkboxDisabledForAuto}
                 onToggle={() => onToggleParticipant(p, 'extra')}
               />
             ))}
           </div>
           <div className="ccai-dropdown-divider" />
-          <div className="ccai-dropdown-section">
+          <div
+            className={
+              'ccai-dropdown-section' +
+              (checkboxDisabledForAuto ? ' ccai-dropdown-section-muted' : '')
+            }
+          >
             <div className="ccai-dropdown-section-title">Expert Personas</div>
             {(expertPersonas || []).length === 0 && (
               <div className="ccai-dropdown-empty">
@@ -91,7 +156,11 @@ export default function ParticipantDropdown({
                 key={p.participant_id}
                 participant={p}
                 checked={isSelected(p.participant_id)}
-                disabledForAdd={atCap && !isSelected(p.participant_id)}
+                disabledForAdd={
+                  checkboxDisabledForAuto
+                  || (atCap && !isSelected(p.participant_id))
+                }
+                autoSelectActive={checkboxDisabledForAuto}
                 onToggle={() => onToggleParticipant(p, 'expert')}
               />
             ))}
@@ -109,7 +178,7 @@ export default function ParticipantDropdown({
   );
 }
 
-function DropdownItem({ participant, checked, disabledForAdd, onToggle }) {
+function DropdownItem({ participant, checked, disabledForAdd, autoSelectActive, onToggle }) {
   return (
     <label
       className={
@@ -117,7 +186,11 @@ function DropdownItem({ participant, checked, disabledForAdd, onToggle }) {
         (checked ? ' ccai-dropdown-item-checked' : '') +
         (disabledForAdd ? ' ccai-dropdown-item-disabled' : '')
       }
-      title={disabledForAdd ? 'Participant cap reached' : ''}
+      title={
+        autoSelectActive
+          ? 'Disabled while auto-select is on'
+          : (disabledForAdd ? 'Participant cap reached' : '')
+      }
     >
       <input
         type="checkbox"

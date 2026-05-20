@@ -180,6 +180,26 @@ export async function fetchTableView(sessionId) {
 }
 
 /**
+ * Ask the backend to pick the top `count` participants from the
+ * candidate pool by relevance to the question. Used by the
+ * "Select N Automatically" toggle in the participants dropdown.
+ *
+ * Returns: { selected: [participant_id, ...], rationale: "..." }
+ */
+export async function autoSelectParticipants({ question, count, candidates, orchestrator_model_id }) {
+  const resp = await fetch(`${API_BASE}/api/chat/auto-select-participants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, count, candidates, orchestrator_model_id }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Auto-select failed');
+  }
+  return resp.json();
+}
+
+/**
  * Fetch the user-tunable conversation-limit defaults, bounds, and
  * descriptions. The frontend uses this to render the "Conversation
  * limits" settings modal entirely from the server schema, so adding

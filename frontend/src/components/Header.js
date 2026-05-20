@@ -21,6 +21,8 @@ export default function Header({
   maxParticipants,
   onToggleParticipant,
   onOpenExpertModal,
+  autoSelectMode,
+  onToggleAutoSelectMode,
 
   // dev menu props passed straight through
   ...devProps
@@ -46,6 +48,8 @@ export default function Header({
           maxParticipants={maxParticipants}
           onToggleParticipant={onToggleParticipant}
           onOpenExpertModal={onOpenExpertModal}
+          autoSelectMode={autoSelectMode}
+          onToggleAutoSelectMode={onToggleAutoSelectMode}
         />
         <button
           className="icon-btn"
