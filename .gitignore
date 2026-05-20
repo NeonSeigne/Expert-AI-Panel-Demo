@@ -9,4 +9,6 @@ dist/
 .venv/
 venv/
 *.log
+docker-compose.override.yml
+.commit-msg.txt
 .commit-msg.txt

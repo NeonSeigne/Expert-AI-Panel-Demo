@@ -2,9 +2,10 @@ services:
   app:
     build: .
     ports:
-      # Match the HuggingFace Space app_port so docker compose and HF
-      # behave identically. The container always listens on 7860.
-      - "7860:7860"
+      # Container always listens on 7860 (matches HuggingFace Space
+      # app_port). Host port is overridable via CCAI_HOST_PORT in .env
+      # or the environment so local devs can sidestep port conflicts.
+      - "${CCAI_HOST_PORT:-7860}:7860"
     env_file:
       - .env
     environment:
