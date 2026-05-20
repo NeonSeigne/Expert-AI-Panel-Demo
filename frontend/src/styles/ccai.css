@@ -1018,3 +1018,104 @@
     width: 100vw;
   }
 }
+
+
+/* ── Conversation limits modal ────────────────────────────────────
+   Re-uses .ccai-credentials-overlay/.ccai-credentials-card/.ccai-
+   credentials-header/.ccai-credentials-body for the shell so the
+   look matches the credential summary modal. The classes below
+   style the per-section list and per-field stepper row. */
+
+.ccai-limits-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+}
+
+.ccai-limits-group + .ccai-limits-group {
+  margin-top: 4px;
+}
+
+.ccai-limits-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.ccai-limit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.ccai-limit-row + .ccai-limit-row {
+  border-top: 1px dashed var(--border-primary);
+  padding-top: 10px;
+}
+
+.ccai-limit-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ccai-limit-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-limit-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ccai-limit-input {
+  width: 64px;
+  padding: 4px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: right;
+}
+
+.ccai-limit-range {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ccai-limit-reset {
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ccai-limit-reset:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.ccai-limit-help {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}

@@ -6,11 +6,13 @@ import ChatArea from './components/ChatArea';
 import ExpertPersonaModal from './components/ExpertPersonaModal';
 import ChatTableView from './components/ChatTableView';
 import CredentialSummaryModal from './components/CredentialSummaryModal';
+import ConversationLimitsModal from './components/ConversationLimitsModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
   getSpeedPriority, setSpeedPriority, getAuthStatus,
   exportChat, exportApiLog, fetchTableView, fetchCredentials,
+  fetchConversationLimitsDefaults,
   getRateLimitStatus,
 } from './utils/api';
 import * as storage from './utils/storage';
@@ -73,6 +75,15 @@ export default function App() {
   // header. Reset on each new chat start.
   const [credentialsData, setCredentialsData] = useState(null);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  // Conversation limits: schema (defaults + bounds + descriptions)
+  // pulled from /api/chat/limits/defaults, plus a sparse map of the
+  // user's overrides persisted to localStorage. Empty map means
+  // "use server defaults". The schema lazy-loads on first open.
+  const [limitsSchema, setLimitsSchema] = useState(null);
+  const [limitsOverrides, setLimitsOverrides] = useState(
+    persisted.conversation_limits || {},
+  );
+  const [limitsOpen, setLimitsOpen] = useState(false);
 
   const abortRef = useRef(null);
 
@@ -313,6 +324,34 @@ export default function App() {
     } catch (err) { console.error('Credentials refresh failed:', err); }
   }, [sessionId]);
 
+  // ─── Conversation limits (settings) ────────────────────────────
+  // Lazy-load the schema on first open, then cache it for the rest
+  // of the session. The user's override map is already in state
+  // and persisted to localStorage; we hand it to the modal as the
+  // initial draft and re-persist on every change.
+  const handleShowConversationLimits = useCallback(async () => {
+    if (!limitsSchema) {
+      try {
+        const data = await fetchConversationLimitsDefaults();
+        setLimitsSchema(data);
+      } catch (err) {
+        console.error('Conversation-limit schema fetch failed:', err);
+        return;
+      }
+    }
+    setLimitsOpen(true);
+  }, [limitsSchema]);
+
+  const handleConversationLimitsChange = useCallback((next) => {
+    setLimitsOverrides(next);
+    storage.setConversationLimits(next);
+  }, []);
+
+  const handleConversationLimitsResetAll = useCallback(() => {
+    setLimitsOverrides({});
+    storage.setConversationLimits({});
+  }, []);
+
   // ─── Build start payload ────────────────────────────────────────
   const buildStartPayload = useCallback((theQuestion) => {
     const enabledParticipants = selectedParticipants.filter(
@@ -342,8 +381,10 @@ export default function App() {
       orchestrator_model_id: orchestratorModel,
       summarizer_model_id: summarizerModel,
       max_participants: maxParticipants,
+      // Sparse override map; backend clamps and falls back per-field.
+      limits: limitsOverrides,
     };
-  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants]);
+  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides]);
 
   // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -502,6 +543,8 @@ export default function App() {
         onShowTableView={handleShowTableView}
         onShowCredentials={handleShowCredentials}
         hasCredentials={!!sessionId}
+        onShowConversationLimits={handleShowConversationLimits}
+        conversationLimitsOverridden={Object.keys(limitsOverrides).length > 0}
         onDownloadChatTxt={handleDownloadTxt}
         onDownloadChatMd={handleDownloadMd}
         onDownloadCsvTable={handleDownloadCsvTable}
@@ -567,6 +610,14 @@ export default function App() {
         data={credentialsData}
         onClose={() => setCredentialsOpen(false)}
         onRefresh={handleRefreshCredentials}
+      />
+      <ConversationLimitsModal
+        isOpen={limitsOpen}
+        schema={limitsSchema}
+        overrides={limitsOverrides}
+        onClose={() => setLimitsOpen(false)}
+        onChange={handleConversationLimitsChange}
+        onResetAll={handleConversationLimitsResetAll}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ChevronRight, Download, Settings2, Search,
-  Square, CheckSquare, UserPlus, Table2, ScrollText,
+  Square, CheckSquare, UserPlus, Table2, ScrollText, SlidersHorizontal,
 } from 'lucide-react';
 
 /**
@@ -35,6 +35,8 @@ export default function DevMenu({
   onShowTableView,
   onShowCredentials,
   hasCredentials,
+  onShowConversationLimits,
+  conversationLimitsOverridden,
   onDownloadChatTxt,
   onDownloadChatMd,
   onDownloadCsvTable,
@@ -223,6 +225,29 @@ export default function DevMenu({
             >
               <ScrollText size={14} className="dev-check-icon" />
               View Credential Summary…
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </button>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Advanced</div>
+            <button
+              onClick={() => { onShowConversationLimits?.(); setOpen(false); }}
+              title="View and adjust the per-phase repetition limits and failsafe pause points."
+            >
+              <SlidersHorizontal size={14} className="dev-check-icon" />
+              Conversation limits…
+              {conversationLimitsOverridden && (
+                <span
+                  title="One or more limits are overridden from the defaults"
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 11,
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  (custom)
+                </span>
+              )}
               <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
 

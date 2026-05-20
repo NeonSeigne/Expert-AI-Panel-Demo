@@ -16,8 +16,13 @@ from app.services.context_budget import ContextSummary
 
 class Phase(str, Enum):
     INITIAL_OPINIONS = "initial_opinions"
+    # Critique-round phases: up to 4 rounds are supported (matches the
+    # max value of `ConversationLimits.critique_rounds`). The state
+    # machine looks the active phase up via `_critique_phase_for(n)`.
     CRITIQUE_ROUND_1 = "critique_round_1"
     CRITIQUE_ROUND_2 = "critique_round_2"
+    CRITIQUE_ROUND_3 = "critique_round_3"
+    CRITIQUE_ROUND_4 = "critique_round_4"
     STATUS_ASSESSMENT = "status_assessment"
     FINALIZATION = "finalization"
     CONSENSUS = "consensus"
@@ -35,10 +40,190 @@ MAX_MAX_PARTICIPANTS = 9
 
 # Failsafe defaults from the plan: pause every N=60 participant messages
 # (then every +20), and every M=100 orchestrator calls (then every +50).
+# These remain the *defaults* for ConversationLimits; the runtime values
+# come from Session.limits so the user can tune them per-conversation.
 PARTICIPANT_MESSAGE_PAUSE_AT = 60
 PARTICIPANT_MESSAGE_PAUSE_INC = 20
 ORCHESTRATOR_CALL_PAUSE_AT = 100
 ORCHESTRATOR_CALL_PAUSE_INC = 50
+
+
+@dataclass
+class ConversationLimits:
+    """Tunable repetition and failsafe limits for one CCAI session.
+
+    Defaults match the historical hard-coded values; the API layer
+    clamps user-supplied overrides via `clamp_conversation_limits` so
+    out-of-range values don't break the orchestrator. The frontend
+    gets the defaults + bounds + descriptions from
+    GET /api/chat/limits/defaults so the settings UI is server-driven.
+    """
+
+    # ── Discussion structure ──────────────────────────────────────
+    # How many critique turns each participant gets in Phase 2.
+    critique_rounds: int = 2
+    # How many times Phase 3 will surface a follow-up question
+    # (orchestrator-synthesized or relayed from a participant) before
+    # moving on to finalization. 0 skips Phase 3 entirely.
+    status_assessment_max: int = 3
+    # Phase 5 turn budget = this number x active participants. Higher
+    # means more back-and-forth before the conversation auto-ends.
+    consensus_turns_per_participant: int = 6
+    # In Phase 5, how many consecutive "addressed-to" routings (one
+    # participant addresses another, then is answered, etc.) before
+    # we force a round-robin pick. Prevents two participants from
+    # monopolizing the floor.
+    dyad_cap: int = 2
+    # If consensus fails the first time, how many additional attempts
+    # the orchestrator makes by surfacing a new factor for the group
+    # to consider. 0 disables retries.
+    stall_recovery_attempts: int = 1
+
+    # ── Reliability ──────────────────────────────────────────────
+    # If a participant's LLM call fails this many times in a row, the
+    # orchestrator auto-disables them for the rest of the chat.
+    auto_disable_failures: int = 3
+
+    # ── Failsafes ────────────────────────────────────────────────
+    # First pause point for participant messages (then increments).
+    participant_message_pause_at: int = PARTICIPANT_MESSAGE_PAUSE_AT
+    participant_message_pause_inc: int = PARTICIPANT_MESSAGE_PAUSE_INC
+    # First pause point for orchestrator-side LLM calls (then increments).
+    orchestrator_call_pause_at: int = ORCHESTRATOR_CALL_PAUSE_AT
+    orchestrator_call_pause_inc: int = ORCHESTRATOR_CALL_PAUSE_INC
+
+
+# (min, max) bounds for each limit field. Any user-supplied value is
+# clamped to this range server-side. Keep these conservative enough
+# to stop runaway conversations and tight enough to keep behavior
+# recognizable; widening is fine if a real use case emerges.
+CONVERSATION_LIMIT_BOUNDS: dict[str, tuple[int, int]] = {
+    "critique_rounds":                  (1, 4),
+    "status_assessment_max":            (0, 5),
+    "consensus_turns_per_participant":  (2, 12),
+    "dyad_cap":                         (1, 5),
+    "stall_recovery_attempts":          (0, 3),
+    "auto_disable_failures":            (1, 10),
+    "participant_message_pause_at":     (10, 500),
+    "participant_message_pause_inc":    (5, 100),
+    "orchestrator_call_pause_at":       (20, 500),
+    "orchestrator_call_pause_inc":      (10, 200),
+}
+
+
+# Human-readable descriptions surfaced in the settings UI alongside
+# each stepper. Group key controls the section header.
+CONVERSATION_LIMIT_DESCRIPTIONS: dict[str, dict[str, str]] = {
+    "critique_rounds": {
+        "group": "Discussion structure",
+        "label": "Critique rounds",
+        "help": (
+            "How many times each participant speaks in Phase 2 "
+            "(critique). More rounds give the group more chances to "
+            "challenge each other; fewer rounds wraps faster."
+        ),
+    },
+    "status_assessment_max": {
+        "group": "Discussion structure",
+        "label": "Status-assessment iterations",
+        "help": (
+            "Max number of follow-up questions the orchestrator may "
+            "surface in Phase 3 before moving to opinion finalization. "
+            "Set to 0 to skip the follow-up phase entirely."
+        ),
+    },
+    "consensus_turns_per_participant": {
+        "group": "Discussion structure",
+        "label": "Consensus turns per participant",
+        "help": (
+            "Multiplier on the Phase 5 (consensus) turn budget. The "
+            "actual cap is this number times the count of active "
+            "participants. Higher = more debate before timeout."
+        ),
+    },
+    "dyad_cap": {
+        "group": "Discussion structure",
+        "label": "Dyad cap",
+        "help": (
+            "In Phase 5, how many consecutive addressed-to replies "
+            "(A->B->A->...) are allowed before the orchestrator forces "
+            "a round-robin pick. Keeps two voices from monopolizing."
+        ),
+    },
+    "stall_recovery_attempts": {
+        "group": "Discussion structure",
+        "label": "Stall recovery attempts",
+        "help": (
+            "If the group can't reach majority and the conversation "
+            "stalls, how many extra attempts the orchestrator makes "
+            "by surfacing a new factor for the group to consider."
+        ),
+    },
+    "auto_disable_failures": {
+        "group": "Reliability",
+        "label": "Auto-disable after N failures",
+        "help": (
+            "If a participant's LLM fails this many times in a row, "
+            "the orchestrator removes them from the rest of the chat "
+            "rather than keep trying."
+        ),
+    },
+    "participant_message_pause_at": {
+        "group": "Failsafes",
+        "label": "First pause: participant messages",
+        "help": (
+            "Total participant messages allowed before the "
+            "conversation pauses for a 'Continue' confirmation."
+        ),
+    },
+    "participant_message_pause_inc": {
+        "group": "Failsafes",
+        "label": "Each subsequent pause: +N messages",
+        "help": (
+            "After the first pause, this many additional participant "
+            "messages are allowed before the next pause."
+        ),
+    },
+    "orchestrator_call_pause_at": {
+        "group": "Failsafes",
+        "label": "First pause: orchestrator calls",
+        "help": (
+            "Total orchestrator-side LLM calls (assessments, "
+            "summaries, classifications) allowed before the "
+            "conversation pauses for a 'Continue' confirmation."
+        ),
+    },
+    "orchestrator_call_pause_inc": {
+        "group": "Failsafes",
+        "label": "Each subsequent pause: +N orchestrator calls",
+        "help": (
+            "After the first orchestrator-call pause, this many "
+            "additional calls are allowed before the next pause."
+        ),
+    },
+}
+
+
+def clamp_conversation_limits(payload: dict[str, Any] | None) -> ConversationLimits:
+    """Build a ConversationLimits from a partial dict. Each field is
+    clamped to its declared (min, max) range; missing or non-int values
+    fall back to the dataclass default. Never raises - any failure
+    silently degrades to the default for that one field.
+    """
+    limits = ConversationLimits()
+    if not payload:
+        return limits
+    for field_name, (lo, hi) in CONVERSATION_LIMIT_BOUNDS.items():
+        if field_name not in payload:
+            continue
+        raw = payload.get(field_name)
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            continue
+        v = max(lo, min(hi, v))
+        setattr(limits, field_name, v)
+    return limits
 
 
 @dataclass
@@ -122,7 +307,16 @@ class Session:
     # Per-participant contribution summaries for the table view
     contribution_summaries: dict[str, str] = field(default_factory=dict)
 
-    # Failsafes
+    # User-tunable limits for this conversation. Defaults match the
+    # legacy hard-coded values; the API layer overrides via
+    # `clamp_conversation_limits` from the request payload. The
+    # orchestrator reads only from `session.limits.*`, never the
+    # module-level constants, so behavior is fully driven by config.
+    limits: ConversationLimits = field(default_factory=ConversationLimits)
+
+    # Failsafes (runtime state). The *_cap fields start at the limits'
+    # configured first-pause point and grow by the configured increment
+    # each time the user clicks Continue.
     total_participant_messages: int = 0
     participant_message_cap: int = PARTICIPANT_MESSAGE_PAUSE_AT
     orchestrator_call_count: int = 0

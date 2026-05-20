@@ -21,12 +21,16 @@ from app.middleware.rate_limit import (
 )
 from app.services.extra_personas import get_extra_persona
 from app.services.models import (
+    CONVERSATION_LIMIT_BOUNDS,
+    CONVERSATION_LIMIT_DESCRIPTIONS,
+    ConversationLimits,
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
     MIN_MAX_PARTICIPANTS,
     Participant,
     Phase,
     Session,
+    clamp_conversation_limits,
 )
 from app.services.orchestrator import (
     create_session,
@@ -103,6 +107,11 @@ class StartChatRequest(BaseModel):
     orchestrator_model_id: str | None = None
     summarizer_model_id: str | None = None
     max_participants: int = DEFAULT_MAX_PARTICIPANTS
+    # User-supplied overrides for the conversation's repetition /
+    # failsafe limits. Any field that is missing or out of range is
+    # silently clamped to the server-side default; see
+    # `clamp_conversation_limits` in services.models.
+    limits: dict[str, int] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +170,36 @@ async def api_generate_role_freeform(req: GenerateRoleFreeformRequest):
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Conversation limits (steppers in the settings menu)
+# ---------------------------------------------------------------------------
+
+@router.get("/chat/limits/defaults")
+async def api_chat_limits_defaults():
+    """Return defaults, bounds, and human-readable descriptions for the
+    `ConversationLimits` knobs the user can tune in the settings menu.
+
+    The frontend uses the `defaults` to initialize the steppers, the
+    `bounds` to set min/max and clamp on input, and the `descriptions`
+    to render the section headers and per-field help text. Keeping
+    this server-driven means we add a knob in one place
+    (services.models) and the UI picks it up without a frontend
+    change beyond rendering.
+    """
+    defaults = ConversationLimits()
+    return {
+        "defaults": {
+            field_name: getattr(defaults, field_name)
+            for field_name in CONVERSATION_LIMIT_BOUNDS.keys()
+        },
+        "bounds": {
+            field_name: {"min": lo, "max": hi}
+            for field_name, (lo, hi) in CONVERSATION_LIMIT_BOUNDS.items()
+        },
+        "descriptions": CONVERSATION_LIMIT_DESCRIPTIONS,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +349,12 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     session.orchestrator_model_id = req.orchestrator_model_id
     session.summarizer_model_id = req.summarizer_model_id
     session.max_participants = max_p
+    # Attach the user-tunable limits and seed the runtime failsafe
+    # caps from them. clamp_conversation_limits silently coerces any
+    # missing or out-of-range values back to the defaults / bounds.
+    session.limits = clamp_conversation_limits(req.limits)
+    session.participant_message_cap = session.limits.participant_message_pause_at
+    session.orchestrator_call_cap = session.limits.orchestrator_call_pause_at
 
     async def event_stream():
         yield (

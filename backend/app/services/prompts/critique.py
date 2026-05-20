@@ -1,7 +1,7 @@
 """Phase 2: each participant gets two turns of critique."""
 
 CRITIQUE_PROMPT = (
-    "Phase 2 of the discussion: Critique (round {round_number} of 2).\n\n"
+    "Phase 2 of the discussion: Critique (round {round_number} of {round_total}).\n\n"
     "The group has been asked the following question:\n\n"
     "<<<\n{question}\n>>>\n\n"
     "Here is a Credential Summary the orchestrator built about each "

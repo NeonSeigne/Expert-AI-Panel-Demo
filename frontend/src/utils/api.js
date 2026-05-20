@@ -179,6 +179,21 @@ export async function fetchTableView(sessionId) {
   return resp.json();
 }
 
+/**
+ * Fetch the user-tunable conversation-limit defaults, bounds, and
+ * descriptions. The frontend uses this to render the "Conversation
+ * limits" settings modal entirely from the server schema, so adding
+ * a new knob in the backend doesn't require a frontend change.
+ *
+ * Shape: { defaults: {field: int}, bounds: {field: {min, max}},
+ *          descriptions: {field: {group, label, help}} }
+ */
+export async function fetchConversationLimitsDefaults() {
+  const resp = await fetch(`${API_BASE}/api/chat/limits/defaults`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('Failed to fetch conversation-limit defaults');
+  return resp.json();
+}
+
 export async function fetchCredentials(sessionId) {
   const resp = await fetch(
     `${API_BASE}/api/chat/${sessionId}/credentials`,

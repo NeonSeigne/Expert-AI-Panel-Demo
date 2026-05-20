@@ -19,6 +19,11 @@ const DEFAULTS = {
   summarizer_model_id: null,
   max_participants: 5,
   theme: null,
+  // Sparse map of user overrides to ConversationLimits fields. Empty
+  // map = "use server defaults". The server clamps anything we send,
+  // so storing whatever the user typed (including stale values from
+  // an earlier session) is safe.
+  conversation_limits: {},
 };
 
 function readAll() {
@@ -86,4 +91,8 @@ export function setMaxParticipants(n) {
 
 export function setTheme(theme) {
   return patchState({ theme });
+}
+
+export function setConversationLimits(limitsMap) {
+  return patchState({ conversation_limits: limitsMap || {} });
 }
