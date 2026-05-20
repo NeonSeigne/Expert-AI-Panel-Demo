@@ -566,6 +566,191 @@
 }
 
 
+/* ── Credential Summary modal ──────────────────────────────────────
+   Surfaces the orchestrator's per-participant assessment built after
+   Phase 1 and refreshed after Phase 2 critique. Reuses the table
+   modal's overlay/card chrome for visual consistency.
+   ──────────────────────────────────────────────────────────────── */
+
+.ccai-credentials-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ccai-credentials-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  width: min(880px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.ccai-credentials-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.ccai-credentials-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-credentials-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  max-width: 560px;
+}
+
+.ccai-credentials-question {
+  margin: 0 20px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ccai-credentials-question strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.ccai-credentials-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.ccai-credentials-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-primary);
+  border-radius: 8px;
+}
+
+.ccai-credential-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.ccai-credential-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ccai-credential-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-credibility-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ccai-credibility-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.ccai-credibility-bar {
+  width: 120px;
+  height: 6px;
+  background: var(--border-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ccai-credibility-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--accent-primary, #6366F1),
+    var(--accent-primary, #6366F1)
+  );
+  transition: width 0.3s ease;
+}
+
+.ccai-credibility-num {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+}
+
+.ccai-credential-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ccai-credential-row-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  padding-top: 2px;
+}
+
+.ccai-credential-row-value {
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .ccai-credentials-card {
+    max-height: 100vh;
+    border-radius: 0;
+    width: 100vw;
+  }
+  .ccai-credential-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .ccai-credibility-bar {
+    width: 80px;
+  }
+}
+
+
 /* ── Orchestrator messages ─────────────────────────────────────── */
 
 .ccai-orchestrator-msg {

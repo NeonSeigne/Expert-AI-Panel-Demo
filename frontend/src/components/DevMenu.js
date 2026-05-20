@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ChevronRight, Download, Settings2, Search,
-  Square, CheckSquare, UserPlus, Table2,
+  Square, CheckSquare, UserPlus, Table2, ScrollText,
 } from 'lucide-react';
 
 /**
@@ -33,6 +33,8 @@ export default function DevMenu({
   onModelAssignmentChange,
   onOpenExpertModal,
   onShowTableView,
+  onShowCredentials,
+  hasCredentials,
   onDownloadChatTxt,
   onDownloadChatMd,
   onDownloadCsvTable,
@@ -206,6 +208,22 @@ export default function DevMenu({
             >
               {showChatStats ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
               Chat stats after end
+            </button>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Transparency</div>
+            <button
+              disabled={!hasCredentials}
+              onClick={() => { onShowCredentials?.(); setOpen(false); }}
+              title={
+                hasCredentials
+                  ? "View the orchestrator's per-participant Credential Summary"
+                  : "Credential Summary is built after Phase 1 (initial opinions). Start a chat first."
+              }
+            >
+              <ScrollText size={14} className="dev-check-icon" />
+              View Credential Summary…
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
 
             <div className="dev-panel-divider" />

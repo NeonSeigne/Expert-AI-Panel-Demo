@@ -365,6 +365,23 @@ async def api_export_chat(session_id: str, fmt: str = "txt"):
     return _export_txt(session)
 
 
+@router.get("/chat/{session_id}/credentials")
+async def api_credentials(session_id: str):
+    """Return the orchestrator-generated Credential Summary for the
+    current session. Built after Phase 1 and refreshed once after Phase 2
+    critique - so the response can be empty if the user opens the modal
+    before Phase 1 finishes.
+    """
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return {
+        "session_id": session_id,
+        "question": session.question,
+        "credentials": session.credential_summary or [],
+    }
+
+
 @router.get("/chat/{session_id}/api-log")
 async def api_export_log(session_id: str):
     session = get_session(session_id)
@@ -426,6 +443,88 @@ def _format_participants_block(session: Session) -> list[str]:
     ]
 
 
+def _credentials_intro_line() -> str:
+    """One-liner that explains where this block came from. Repeated in TXT
+    and MD exports so the file is self-explanatory without the UI."""
+    return (
+        "Orchestrator-generated assessments of each participant's "
+        "expertise, debating style, credibility on this question, and "
+        "biases to watch. Built after Phase 1 (initial opinions) and "
+        "refreshed once after Phase 2 (critique)."
+    )
+
+
+def _format_credential_block_txt(session: Session) -> list[str]:
+    """Plain-text Credential Summary section. Returns [] if no summary
+    has been built yet (e.g. user exports mid-Phase-1)."""
+    creds = session.credential_summary or []
+    if not creds:
+        return []
+    lines = ["Credential Summary", "-" * 40, _credentials_intro_line(), ""]
+    for c in creds:
+        name = c.get("name") or c.get("participant_id") or "(unknown)"
+        lines.append(f"{name}")
+        if c.get("expertise"):
+            lines.append(f"  Expertise:   {c['expertise']}")
+        if c.get("personality"):
+            lines.append(f"  Style:       {c['personality']}")
+        if c.get("credibility_for_question") is not None:
+            try:
+                score = float(c["credibility_for_question"])
+                lines.append(f"  Credibility: {score:.2f} (0-1)")
+            except (TypeError, ValueError):
+                pass
+        if c.get("bias_to_watch"):
+            lines.append(f"  Bias:        {c['bias_to_watch']}")
+        lines.append("")
+    return lines
+
+
+def _format_credential_block_md(session: Session) -> list[str]:
+    """Markdown Credential Summary section. Returns [] when empty."""
+    creds = session.credential_summary or []
+    if not creds:
+        return []
+    lines = ["## Credential Summary", "", f"_{_credentials_intro_line()}_", ""]
+    for c in creds:
+        name = c.get("name") or c.get("participant_id") or "(unknown)"
+        lines.append(f"### {name}")
+        lines.append("")
+        if c.get("expertise"):
+            lines.append(f"- **Expertise:** {c['expertise']}")
+        if c.get("personality"):
+            lines.append(f"- **Style:** {c['personality']}")
+        if c.get("credibility_for_question") is not None:
+            try:
+                score = float(c["credibility_for_question"])
+                lines.append(f"- **Credibility on this question:** {score:.2f} (0-1)")
+            except (TypeError, ValueError):
+                pass
+        if c.get("bias_to_watch"):
+            lines.append(f"- **Bias to watch:** {c['bias_to_watch']}")
+        lines.append("")
+    return lines
+
+
+def _credential_for(session: Session, participant_id: str) -> dict:
+    """Lookup helper used by the CSV writer. Empty dict if not built yet."""
+    for c in session.credential_summary or []:
+        if c.get("participant_id") == participant_id:
+            return c
+    return {}
+
+
+def _format_credibility_score(value: object) -> str:
+    """CSV-safe formatting for the credibility number (rounded float).
+    Returns "" when the value is missing or not numeric."""
+    if value is None:
+        return ""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _export_txt(session: Session) -> dict:
     lines = ["CCAI Conversation Log", "=" * 40, ""]
     lines.append("Question:")
@@ -434,6 +533,9 @@ def _export_txt(session: Session) -> dict:
     lines.append("Participants:")
     lines.extend(_format_participants_block(session))
     lines.append("")
+    cred_lines = _format_credential_block_txt(session)
+    if cred_lines:
+        lines.extend(cred_lines)
     for m in session.messages:
         speaker = m.get("speaker_name") or "(anon)"
         if m.get("role") == "orchestrator":
@@ -457,7 +559,12 @@ def _export_md(session: Session) -> dict:
     lines.append("")
     for p in session.participants:
         lines.append(f"- **{p.name}** (*{p.display_name}*)")
-    lines.append("\n---\n")
+    lines.append("")
+    cred_lines = _format_credential_block_md(session)
+    if cred_lines:
+        lines.extend(cred_lines)
+    lines.append("---")
+    lines.append("")
     for m in session.messages:
         speaker = m.get("speaker_name") or "(anon)"
         is_orch = m.get("role") == "orchestrator"
@@ -478,7 +585,12 @@ def _export_md(session: Session) -> dict:
 
 
 def _export_csv_table(session: Session) -> dict:
-    """RFC-4180 compliant CSV. csv.writer handles quoting/escaping."""
+    """RFC-4180 compliant CSV. csv.writer handles quoting/escaping.
+
+    Columns include the orchestrator-generated Credential Summary so
+    the table is self-contained: who each participant is (per the
+    orchestrator's read), then what they said and how it evolved.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
 
@@ -488,14 +600,23 @@ def _export_csv_table(session: Session) -> dict:
     writer.writerow([])
     writer.writerow([
         "Participant",
+        "Expertise (orchestrator's read)",
+        "Style",
+        "Credibility on this question (0-1)",
+        "Bias to watch",
         "First opinion",
         "Conversation contribution",
         "Revised opinion",
         "Final opinion",
     ])
     for p in session.participants:
+        cred = _credential_for(session, p.participant_id)
         writer.writerow([
             p.name,
+            cred.get("expertise", ""),
+            cred.get("personality", ""),
+            _format_credibility_score(cred.get("credibility_for_question")),
+            cred.get("bias_to_watch", ""),
             (session.initial_opinions or {}).get(p.participant_id, ""),
             (session.contribution_summaries or {}).get(p.participant_id, ""),
             (session.final_opinions or {}).get(p.participant_id, ""),

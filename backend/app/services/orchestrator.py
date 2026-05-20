@@ -522,6 +522,13 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     )
     _bump_orchestrator_count(session)
     session.credential_summary = creds
+    # Surface the freshly-built summary so the frontend can enable the
+    # "View Credential Summary" menu item and cache its snapshot. The
+    # full list also stays available via GET /api/chat/{id}/credentials.
+    yield _sse("credentials_updated", {
+        "stage": "built",
+        "credentials": session.credential_summary,
+    })
 
 
 async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[str]:
@@ -607,7 +614,12 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
         api_log=session.api_log,
     )
     _bump_orchestrator_count(session)
-    session.credential_summary = refreshed
+    if refreshed != session.credential_summary:
+        session.credential_summary = refreshed
+        yield _sse("credentials_updated", {
+            "stage": "refreshed",
+            "credentials": session.credential_summary,
+        })
     cred_block = credentials_to_block(session.credential_summary)
 
     for iteration in range(3):

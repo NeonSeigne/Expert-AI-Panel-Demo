@@ -115,6 +115,7 @@ function eventHandlerKey(eventType) {
     case 'failsafe_pause': return 'onFailsafePause';
     case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
     case 'participant_error': return 'onParticipantError';
+    case 'credentials_updated': return 'onCredentialsUpdated';
     default: return null;
   }
 }
@@ -175,6 +176,15 @@ export async function exportApiLog(sessionId) {
 export async function fetchTableView(sessionId) {
   const resp = await fetch(`${API_BASE}/api/chat/${sessionId}/table`);
   if (!resp.ok) throw new Error('Table view fetch failed');
+  return resp.json();
+}
+
+export async function fetchCredentials(sessionId) {
+  const resp = await fetch(
+    `${API_BASE}/api/chat/${sessionId}/credentials`,
+    { cache: 'no-store' },
+  );
+  if (!resp.ok) throw new Error('Credentials fetch failed');
   return resp.json();
 }
 

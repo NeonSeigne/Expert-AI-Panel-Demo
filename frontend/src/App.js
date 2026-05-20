@@ -5,11 +5,13 @@ import ChatControls from './components/ChatControls';
 import ChatArea from './components/ChatArea';
 import ExpertPersonaModal from './components/ExpertPersonaModal';
 import ChatTableView from './components/ChatTableView';
+import CredentialSummaryModal from './components/CredentialSummaryModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
   getSpeedPriority, setSpeedPriority, getAuthStatus,
-  exportChat, exportApiLog, fetchTableView, getRateLimitStatus,
+  exportChat, exportApiLog, fetchTableView, fetchCredentials,
+  getRateLimitStatus,
 } from './utils/api';
 import * as storage from './utils/storage';
 import './styles/variables.css';
@@ -66,6 +68,11 @@ export default function App() {
   const [expertEditing, setExpertEditing] = useState(null);
   const [tableData, setTableData] = useState(null);
   const [tableOpen, setTableOpen] = useState(false);
+  // Credential Summary: cached snapshot fed by SSE `credentials_updated`
+  // events, plus an open/closed flag and a question echo for the modal
+  // header. Reset on each new chat start.
+  const [credentialsData, setCredentialsData] = useState(null);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
 
   const abortRef = useRef(null);
 
@@ -285,6 +292,27 @@ export default function App() {
     } catch (err) { console.error('Table fetch failed:', err); }
   }, [sessionId]);
 
+  // ─── Credential Summary view ────────────────────────────────────
+  // Always re-fetch on open so the modal reflects the very latest
+  // server-side state (the Phase-3 refresh may have run after the SSE
+  // event was missed by a stale tab).
+  const handleShowCredentials = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await fetchCredentials(sessionId);
+      setCredentialsData(data);
+      setCredentialsOpen(true);
+    } catch (err) { console.error('Credentials fetch failed:', err); }
+  }, [sessionId]);
+
+  const handleRefreshCredentials = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await fetchCredentials(sessionId);
+      setCredentialsData(data);
+    } catch (err) { console.error('Credentials refresh failed:', err); }
+  }, [sessionId]);
+
   // ─── Build start payload ────────────────────────────────────────
   const buildStartPayload = useCallback((theQuestion) => {
     const enabledParticipants = selectedParticipants.filter(
@@ -348,6 +376,7 @@ export default function App() {
     setSessionParticipants([]);
     setPause(null);
     setActiveQuestion(theQuestion.trim());
+    setCredentialsData(null);
 
     try {
       await startChat(
@@ -392,6 +421,17 @@ export default function App() {
           },
           onOrchestratorCapPause: (data) => {
             setPause({ reason: 'orchestrator', ...data });
+          },
+          onCredentialsUpdated: (data) => {
+            // Backend emits this after the Phase-1.5 build and (when
+            // it changes) after the Phase-3 refresh. We cache the
+            // payload so the modal opens instantly without a round trip.
+            setCredentialsData({
+              session_id: data.session_id,
+              question: theQuestion.trim(),
+              credentials: data.credentials || [],
+              stage: data.stage || 'built',
+            });
           },
           onDone: () => {
             setIsRunning(false);
@@ -460,6 +500,8 @@ export default function App() {
         modelAssignments={modelAssignments}
         onModelAssignmentChange={handleModelAssignmentChange}
         onShowTableView={handleShowTableView}
+        onShowCredentials={handleShowCredentials}
+        hasCredentials={!!sessionId}
         onDownloadChatTxt={handleDownloadTxt}
         onDownloadChatMd={handleDownloadMd}
         onDownloadCsvTable={handleDownloadCsvTable}
@@ -520,6 +562,12 @@ export default function App() {
           onExportCsv={handleDownloadCsvTable}
         />
       )}
+      <CredentialSummaryModal
+        isOpen={credentialsOpen}
+        data={credentialsData}
+        onClose={() => setCredentialsOpen(false)}
+        onRefresh={handleRefreshCredentials}
+      />
     </div>
   );
 }
