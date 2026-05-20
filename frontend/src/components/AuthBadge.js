@@ -1,8 +1,9 @@
 import React from 'react';
 import { LogIn, LogOut, User } from 'lucide-react';
 
-export default function AuthBadge({ auth }) {
+export default function AuthBadge({ auth, dailyLimit }) {
   if (!auth) return null;
+  const cap = dailyLimit || 30;
 
   if (auth.logged_in) {
     return (
@@ -23,7 +24,7 @@ export default function AuthBadge({ auth }) {
   return (
     <div className="auth-badge">
       {auth.remaining_conversations >= 0 && (
-        <span className="auth-remaining">{auth.remaining_conversations}/20 chats</span>
+        <span className="auth-remaining">{auth.remaining_conversations}/{cap} chats</span>
       )}
       <a href="/oauth/huggingface/login" className="auth-link auth-login">
         <LogIn size={13} /> Sign in

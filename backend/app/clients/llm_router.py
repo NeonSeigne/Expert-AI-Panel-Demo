@@ -6,6 +6,7 @@ from typing import Any
 
 from app.clients.openai_compat import openai_chat_completion
 from app.clients.hana_client import hana_client
+from app.utils.sanitize import strip_thinking, response_has_thinking
 
 LOG = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ async def _call_neon_direct_vllm(
         max_tokens=max_tokens,
     )
     return {
-        "response": result.get("response", ""),
+        "response": strip_thinking(result.get("response", "")),
         "elapsed_seconds": result.get("elapsed_seconds", 0),
         "model": resolved["model_id"],
     }
@@ -210,8 +211,12 @@ async def _call_hana(
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        raw = result.get("response", "")
+        cleaned = strip_thinking(raw)
+        if response_has_thinking(raw):
+            LOG.info("Stripped thinking content from HANA %s response", resolved["model_id"])
         return {
-            "response": result.get("response", ""),
+            "response": cleaned,
             "elapsed_seconds": result.get("elapsed_seconds", 0),
             "model": resolved["model_id"],
         }

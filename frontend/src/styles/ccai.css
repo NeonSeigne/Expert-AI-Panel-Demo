@@ -1,0 +1,696 @@
+/* ════════════════════════════════════════════════════════════════
+   CCAI Vibe Demo - additive styles on top of LLMChats3 baseline.
+   Anything new (multi-participant sidebar, dropdown, expert modal,
+   table view, orchestrator banners, failsafe banner) lives here.
+   ════════════════════════════════════════════════════════════════ */
+
+
+/* ── Header dropdown (Participants) ────────────────────────────── */
+
+.ccai-dropdown-wrap { position: relative; }
+
+.ccai-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ccai-dropdown-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+  z-index: 60;
+}
+
+.ccai-dropdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.ccai-dropdown-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 4px 6px;
+}
+
+.ccai-dropdown-divider {
+  height: 1px;
+  background: var(--border-muted);
+  margin: 4px -10px;
+}
+
+.ccai-dropdown-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 8px;
+}
+
+.ccai-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ccai-dropdown-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.ccai-dropdown-item input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ccai-dropdown-item-checked {
+  background: var(--accent-light);
+}
+
+.ccai-dropdown-item-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ccai-dropdown-item-disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+.ccai-dropdown-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ccai-dropdown-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.ccai-dropdown-item-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.ccai-dropdown-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border: 1px dashed var(--accent-primary);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ccai-dropdown-create-btn:hover {
+  background: var(--accent-light);
+}
+
+
+/* ── Sidebar: participants ─────────────────────────────────────── */
+
+.ccai-sidebar {
+  gap: 12px;
+}
+
+.ccai-sidebar-header { gap: 4px; display: flex; flex-direction: column; }
+.ccai-sidebar-help {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ccai-participant-card {
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.ccai-participant-card-off {
+  opacity: 0.55;
+  background: var(--bg-secondary);
+}
+
+.ccai-participant-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ccai-participant-row-secondary {
+  justify-content: flex-end;
+}
+
+.ccai-accordion-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.ccai-accordion-chevron:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.ccai-participant-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ccai-participant-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ccai-participant-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.ccai-participant-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ccai-participant-field-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.ccai-participant-field-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.ccai-participant-prompt {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* On/off slider switch */
+.ccai-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.ccai-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ccai-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--accent-primary);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.ccai-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 19px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+}
+
+.ccai-toggle input:not(:checked) + .ccai-toggle-slider {
+  background: var(--text-muted);
+}
+
+.ccai-toggle input:not(:checked) + .ccai-toggle-slider::before {
+  left: 3px;
+}
+
+.ccai-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid #DC2626;
+  border-radius: 6px;
+  background: transparent;
+  color: #DC2626;
+  font-size: 11px;
+}
+
+.ccai-remove-btn:hover { background: #FEE2E2; }
+:root[data-theme="dark"] .ccai-remove-btn:hover { background: rgba(220, 38, 38, 0.15); }
+
+.ccai-reenable-btn { font-size: 11px; padding: 4px 8px; }
+
+
+/* ── Expert Persona modal ──────────────────────────────────────── */
+
+.ccai-expert-modal {
+  width: min(760px, 92vw);
+  max-height: 88vh;
+}
+
+.ccai-expert-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ccai-expert-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ccai-expert-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ccai-expert-field input,
+.ccai-expert-field select,
+.ccai-expert-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ccai-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 6px;
+}
+
+.ccai-tab-btn {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ccai-tab-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.ccai-tab-btn-active {
+  background: var(--accent-light);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.ccai-tab-spacer { flex: 1; }
+
+.ccai-role-style {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ccai-expert-freeform,
+.ccai-expert-structured {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ccai-expert-freeform .freeform-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ccai-expert-structured textarea {
+  resize: vertical;
+}
+
+.ccai-expert-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ccai-expert-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ccai-expert-prompt label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ccai-expert-prompt textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ccai-expert-error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.ccai-expert-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border-primary);
+  padding-top: 12px;
+}
+
+
+/* ── Table view ────────────────────────────────────────────────── */
+
+.ccai-table-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ccai-table-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  width: min(1100px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.ccai-table-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.ccai-table-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-table-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.ccai-table-question,
+.ccai-table-final {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ccai-table-question strong,
+.ccai-table-final strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.ccai-table-scroll {
+  overflow: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+}
+
+.ccai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.ccai-table th,
+.ccai-table td {
+  border: 1px solid var(--border-primary);
+  padding: 8px 10px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.ccai-table th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  position: sticky;
+  top: 0;
+}
+
+.ccai-table-name {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.ccai-table-name small {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+
+/* ── Orchestrator messages ─────────────────────────────────────── */
+
+.ccai-orchestrator-msg {
+  text-align: center;
+  font-style: italic;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-primary);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin: 6px auto;
+  max-width: 720px;
+  font-size: 13px;
+}
+
+.ccai-orchestrator-msg-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+  font-style: normal;
+}
+
+.ccai-orchestrator-msg-body p:last-child { margin-bottom: 0; }
+
+.ccai-orchestrator-msg-report {
+  background: var(--accent-light);
+  border-style: solid;
+  border-color: var(--accent-primary);
+  font-style: normal;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.ccai-orchestrator-msg-report .ccai-orchestrator-msg-label {
+  color: var(--accent-primary);
+}
+
+
+/* ── Failsafe pause banner ─────────────────────────────────────── */
+
+.ccai-failsafe-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #FEF3C7;
+  border: 1px solid #FCD34D;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #92400E;
+  margin: 8px 0;
+}
+
+:root[data-theme="dark"] .ccai-failsafe-banner {
+  background: rgba(217, 119, 6, 0.15);
+  border-color: rgba(252, 211, 77, 0.5);
+  color: #FBBF24;
+}
+
+.ccai-failsafe-banner > div:first-child {
+  flex: 1;
+}
+
+.ccai-failsafe-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.ccai-failsafe-text {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+
+/* ── Bubble model line + stepper ───────────────────────────────── */
+
+.ccai-bubble-model {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.ccai-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 8px;
+}
+
+.ccai-stepper-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ccai-stepper-val {
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+
+
+/* ── Responsive tweaks ─────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .ccai-expert-row {
+    grid-template-columns: 1fr;
+  }
+  .ccai-dropdown-panel {
+    width: min(320px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 600px) {
+  .ccai-table-card {
+    max-height: 100vh;
+    border-radius: 0;
+    width: 100vw;
+  }
+}

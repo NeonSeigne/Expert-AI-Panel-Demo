@@ -14,10 +14,10 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.clients.hana_client import hana_client
 from app.clients.openai_compat import close_shared_client
-from app.api import models, chat
+from app.api import models, chat, personas
 from app.middleware.rate_limit import (
-    get_oauth_username, is_org_member, get_remaining, check_rate_limit,
-    record_conversation,
+    DAILY_LIMIT, get_oauth_username, is_org_member, get_remaining,
+    check_rate_limit, record_conversation,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     await close_shared_client()
 
 
-app = FastAPI(title="AI Conversations", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="CCAI Vibe Demo", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     SessionMiddleware,
@@ -66,6 +66,7 @@ except Exception as exc:
 
 app.include_router(models.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(personas.router, prefix="/api")
 
 
 @app.get("/api/health")
@@ -97,7 +98,7 @@ async def auth_status(request: Request):
 @app.get("/api/rate-limit/status")
 async def rate_limit_status(request: Request):
     remaining = get_remaining(request)
-    return {"remaining": remaining, "daily_limit": 20}
+    return {"remaining": remaining, "daily_limit": DAILY_LIMIT}
 
 
 if STATIC_DIR.is_dir():

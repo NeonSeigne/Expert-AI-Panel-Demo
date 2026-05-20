@@ -1,0 +1,22 @@
+"""Phase 2: each participant gets two turns of critique."""
+
+CRITIQUE_PROMPT = (
+    "Phase 2 of the discussion: Critique (round {round_number} of 2).\n\n"
+    "The group has been asked the following question:\n\n"
+    "<<<\n{question}\n>>>\n\n"
+    "Here is a Credential Summary the orchestrator built about each "
+    "participant. Use it the way a thoughtful person in a real meeting would: "
+    "weight statements appropriately, but don't let it shut down good ideas "
+    "from less-credentialed voices.\n\n"
+    "Credential Summary:\n{credential_summary}\n\n"
+    "Conversation so far:\n{transcript}\n\n"
+    "It is now your turn. In a focused 5-10 sentence response:\n"
+    "  1. Offer constructive criticism of one or more other participants' "
+    "opinions, naming them directly. Cite specific points, not vibes.\n"
+    "  2. Ask any follow-up questions of specific participants where you "
+    "want a clearer answer.\n"
+    "  3. Revise your own opinion if (and only if) the discussion has "
+    "given you reason to. If you've revised, say so explicitly.\n\n"
+    "Stay in character. Do not try to wrap up the discussion - we are not "
+    "near the end yet."
+)

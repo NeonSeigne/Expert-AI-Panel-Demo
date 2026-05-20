@@ -1,43 +1,60 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronRight, Download, Settings2, Search, Check, Eye, EyeOff, FileText, Square, CheckSquare } from 'lucide-react';
+import {
+  ChevronRight, Download, Settings2, Search,
+  Square, CheckSquare, UserPlus, Table2,
+} from 'lucide-react';
 
+/**
+ * Settings menu, structurally identical to LLMChats3 but populated with
+ * CCAI controls:
+ *   - Orchestrator model (searchable)
+ *   - Summarizer model (searchable, with "Same as Orchestrator" default)
+ *   - Max participants (3-9, default 5)
+ *   - Per-participant model assignments
+ *   - "Create Expert Persona..." shortcut
+ *   - Display options + downloads (txt / md / csv-table / api-log)
+ */
 export default function DevMenu({
   allModels,
   orchestratorModel,
   onOrchestratorChange,
-  personaMode,
-  onPersonaModeChange,
-  roleStyle,
-  onRoleStyleChange,
+  summarizerModel,
+  onSummarizerChange,
   speedPriority,
   onSpeedPriorityChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
   onShowChatStatsChange,
-  rolePrompts,
-  onShowRolePrompts,
-  onDownloadApiLog,
+  maxParticipants,
+  onMaxParticipantsChange,
+  participants,
+  modelAssignments,
+  onModelAssignmentChange,
+  onOpenExpertModal,
+  onShowTableView,
   onDownloadChatTxt,
   onDownloadChatMd,
+  onDownloadCsvTable,
+  onDownloadApiLog,
   hasApiLog,
   hasChat,
 }) {
   const [open, setOpen] = useState(false);
-  const [orchOpen, setOrchOpen] = useState(false);
+  const [activeSub, setActiveSub] = useState(null); // null | "orch" | "sum" | <participant_id>
   const [q, setQ] = useState('');
   const wrapRef = useRef(null);
   const searchRef = useRef(null);
 
   useEffect(() => {
-    if (orchOpen && searchRef.current) searchRef.current.focus();
-  }, [orchOpen]);
+    if (activeSub && searchRef.current) searchRef.current.focus();
+  }, [activeSub]);
 
   useEffect(() => {
     function handleClickOutside(e) {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
         setOpen(false);
-        setOrchOpen(false);
+        setActiveSub(null);
         setQ('');
       }
     }
@@ -54,11 +71,21 @@ export default function DevMenu({
     });
   }, [allModels, q]);
 
-  const currentName = useMemo(() => {
-    if (!orchestratorModel) return 'Default (backend)';
-    const m = allModels.find(m => m.id === orchestratorModel);
-    return m ? m.name : orchestratorModel;
-  }, [orchestratorModel, allModels]);
+  const nameForModel = (id) => {
+    if (!id) return null;
+    const m = allModels.find(x => x.id === id);
+    return m ? m.name : id;
+  };
+  const orchName = nameForModel(orchestratorModel) || 'Default (backend)';
+  const sumName = summarizerModel
+    ? (nameForModel(summarizerModel) || summarizerModel)
+    : 'Same as Orchestrator';
+
+  const onPickForSubject = (id, subject) => {
+    if (subject === 'orch') onOrchestratorChange(id);
+    else if (subject === 'sum') onSummarizerChange(id);
+    else if (subject) onModelAssignmentChange(subject, id);
+  };
 
   return (
     <div className="dev-wrap" ref={wrapRef}>
@@ -69,17 +96,84 @@ export default function DevMenu({
         <button className="btn-sm btn-outline" disabled={!hasChat} onClick={onDownloadChatMd}>
           <Download size={14} /> .md
         </button>
+        <button
+          className="btn-sm btn-outline"
+          disabled={!hasChat}
+          onClick={onShowTableView}
+          title="Open the conversation summary table"
+        >
+          <Table2 size={14} /> Table
+        </button>
+        <button
+          className="btn-sm btn-outline"
+          disabled={!hasChat}
+          onClick={onDownloadCsvTable}
+          title="Download the table view as CSV"
+        >
+          <Download size={14} /> .csv
+        </button>
       </div>
 
       <div className="dev-dropdown-header">
-        <button className="icon-btn" onClick={() => { setOpen(o => !o); setOrchOpen(false); setQ(''); }} title="Settings">
+        <button
+          className="icon-btn"
+          onClick={() => { setOpen(o => !o); setActiveSub(null); setQ(''); }}
+          title="Settings"
+        >
           <Settings2 size={16} />
         </button>
         {open && (
           <div className="dev-panel">
-            <button onClick={() => { setOrchOpen(o => !o); setQ(''); }}>
-              Orchestrator model… <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            <button onClick={() => { setActiveSub(s => s === 'orch' ? null : 'orch'); setQ(''); }}>
+              Orchestrator model… <span className="dev-panel-hint">{orchName}</span>
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
+            <button onClick={() => { setActiveSub(s => s === 'sum' ? null : 'sum'); setQ(''); }}>
+              Summarizer model… <span className="dev-panel-hint">{sumName}</span>
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </button>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Max participants ({maxParticipants})</div>
+            <div className="ccai-stepper-row">
+              <button
+                className="btn-sm btn-outline ccai-stepper-btn"
+                disabled={maxParticipants <= 3}
+                onClick={() => onMaxParticipantsChange(Math.max(3, maxParticipants - 1))}
+              >−</button>
+              <div className="ccai-stepper-val">{maxParticipants}</div>
+              <button
+                className="btn-sm btn-outline ccai-stepper-btn"
+                disabled={maxParticipants >= 9}
+                onClick={() => onMaxParticipantsChange(Math.min(9, maxParticipants + 1))}
+              >+</button>
+              <span className="dev-panel-hint">3-9</span>
+            </div>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Participants</div>
+            <button onClick={() => { onOpenExpertModal(null); setOpen(false); }}>
+              <UserPlus size={14} className="dev-check-icon" />
+              Create Expert Persona…
+            </button>
+            {(participants || []).length > 0 && (
+              <div className="dev-panel-label">Per-participant model</div>
+            )}
+            {(participants || []).map(p => {
+              const assigned = modelAssignments[p.participant_id];
+              const labelName = assigned ? nameForModel(assigned)
+                : (p.default_model_id ? nameForModel(p.default_model_id) : '(default)');
+              return (
+                <button
+                  key={p.participant_id}
+                  onClick={() => { setActiveSub(s => s === p.participant_id ? null : p.participant_id); setQ(''); }}
+                >
+                  {p.name}<span className="dev-panel-hint"> {labelName}</span>
+                  <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                </button>
+              );
+            })}
+
             <div className="dev-panel-divider" />
             <div className="dev-panel-label">Response priority</div>
             <button
@@ -96,38 +190,7 @@ export default function DevMenu({
               {speedPriority ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
               Prioritize conversation speed
             </button>
-            <div className="dev-panel-divider" />
-            <div className="dev-panel-label">Expert persona input</div>
-            <button
-              className={`dev-panel-choice ${personaMode === 'structured' ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onPersonaModeChange('structured')}
-            >
-              {personaMode === 'structured' ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Structured expert persona input
-            </button>
-            <button
-              className={`dev-panel-choice ${personaMode === 'freeform' ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onPersonaModeChange('freeform')}
-            >
-              {personaMode === 'freeform' ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Freeform expert persona input
-            </button>
-            <div className="dev-panel-divider" />
-            <div className="dev-panel-label">Role generation</div>
-            <button
-              className={`dev-panel-choice ${roleStyle === 'ai_completed' ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onRoleStyleChange('ai_completed')}
-            >
-              {roleStyle === 'ai_completed' ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              AI completed roles
-            </button>
-            <button
-              className={`dev-panel-choice ${roleStyle === 'exact' ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onRoleStyleChange('exact')}
-            >
-              {roleStyle === 'exact' ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Exact user roles
-            </button>
+
             <div className="dev-panel-divider" />
             <div className="dev-panel-label">Display options</div>
             <button
@@ -144,10 +207,7 @@ export default function DevMenu({
               {showChatStats ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
               Chat stats after end
             </button>
-            <button className="dev-panel-choice" disabled={!rolePrompts} onClick={() => { onShowRolePrompts(); setOpen(false); }}>
-              <FileText size={14} className="dev-check-icon" />
-              View role prompts
-            </button>
+
             <div className="dev-panel-divider" />
             <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadChatTxt(); setOpen(false); }}>
               Download chat as .txt
@@ -155,17 +215,32 @@ export default function DevMenu({
             <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadChatMd(); setOpen(false); }}>
               Download chat as .md
             </button>
+            <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadCsvTable(); setOpen(false); }}>
+              Download summary table as .csv
+            </button>
             <button disabled={!hasApiLog} onClick={() => { onDownloadApiLog(); setOpen(false); }}>
               Download full API history
             </button>
           </div>
         )}
 
-        {open && orchOpen && (
+        {open && activeSub && (
           <div className="dev-sub-panel">
             <div className="dev-sub-header">
-              <span className="dev-sub-title">Orchestrator</span>
-              <span className="dev-sub-current">{currentName}</span>
+              <span className="dev-sub-title">
+                {activeSub === 'orch' && 'Orchestrator model'}
+                {activeSub === 'sum' && 'Summarizer model'}
+                {activeSub !== 'orch' && activeSub !== 'sum' && (
+                  <>Model for {participants.find(p => p.participant_id === activeSub)?.name || activeSub}</>
+                )}
+              </span>
+              <span className="dev-sub-current">
+                {activeSub === 'orch' && orchName}
+                {activeSub === 'sum' && sumName}
+                {activeSub !== 'orch' && activeSub !== 'sum' && (
+                  nameForModel(modelAssignments[activeSub]) || '(default)'
+                )}
+              </span>
             </div>
             <div className="dev-sub-search">
               <Search size={14} className="dev-sub-search-icon" />
@@ -178,26 +253,56 @@ export default function DevMenu({
               />
             </div>
             <ul className="dev-sub-list">
-              <li>
-                <button
-                  className={`dev-sub-item ${!orchestratorModel ? 'dev-sub-item-active' : ''}`}
-                  onClick={() => { onOrchestratorChange(null); setOrchOpen(false); setOpen(false); setQ(''); }}
-                >
-                  <strong>Default (backend)</strong>
-                  <span className="dev-sub-provider">Use server default</span>
-                </button>
-              </li>
-              {filtered.map(m => (
-                <li key={m.id}>
+              {activeSub === 'sum' && (
+                <li>
                   <button
-                    className={`dev-sub-item ${orchestratorModel === m.id ? 'dev-sub-item-active' : ''}`}
-                    onClick={() => { onOrchestratorChange(m.id); setOrchOpen(false); setOpen(false); setQ(''); }}
+                    className={`dev-sub-item ${!summarizerModel ? 'dev-sub-item-active' : ''}`}
+                    onClick={() => { onPickForSubject(null, 'sum'); setActiveSub(null); setQ(''); }}
                   >
-                    <strong>{m.name}</strong>
-                    <span className="dev-sub-provider">{m.provider}</span>
+                    <strong>Same as Orchestrator (default)</strong>
+                    <span className="dev-sub-provider">Use whichever model is currently the orchestrator</span>
                   </button>
                 </li>
-              ))}
+              )}
+              {activeSub === 'orch' && (
+                <li>
+                  <button
+                    className={`dev-sub-item ${!orchestratorModel ? 'dev-sub-item-active' : ''}`}
+                    onClick={() => { onPickForSubject(null, 'orch'); setActiveSub(null); setQ(''); }}
+                  >
+                    <strong>Default (backend)</strong>
+                    <span className="dev-sub-provider">Use server default</span>
+                  </button>
+                </li>
+              )}
+              {activeSub !== 'orch' && activeSub !== 'sum' && (
+                <li>
+                  <button
+                    className={`dev-sub-item ${!modelAssignments[activeSub] ? 'dev-sub-item-active' : ''}`}
+                    onClick={() => { onPickForSubject(null, activeSub); setActiveSub(null); setQ(''); }}
+                  >
+                    <strong>(persona default)</strong>
+                    <span className="dev-sub-provider">Use the persona's bundled or saved default</span>
+                  </button>
+                </li>
+              )}
+              {filtered.map(m => {
+                const currentId =
+                  activeSub === 'orch' ? orchestratorModel
+                    : activeSub === 'sum' ? summarizerModel
+                    : modelAssignments[activeSub];
+                return (
+                  <li key={m.id}>
+                    <button
+                      className={`dev-sub-item ${currentId === m.id ? 'dev-sub-item-active' : ''}`}
+                      onClick={() => { onPickForSubject(m.id, activeSub); setActiveSub(null); setQ(''); }}
+                    >
+                      <strong>{m.name}</strong>
+                      <span className="dev-sub-provider">{m.provider}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

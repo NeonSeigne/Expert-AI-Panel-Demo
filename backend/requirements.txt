@@ -6,3 +6,4 @@ python-multipart>=0.0.12
 python-dotenv>=1.0.0
 huggingface_hub>=0.25.0
 itsdangerous>=2.2.0
+pytest>=8.0.0

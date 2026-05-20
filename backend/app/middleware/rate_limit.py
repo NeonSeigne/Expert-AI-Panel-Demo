@@ -10,7 +10,11 @@ from fastapi import Request
 LOG = logging.getLogger(__name__)
 
 ORG_NAME = os.getenv("HF_RATE_LIMIT_ORG", "neongeckocom")
-DAILY_LIMIT = int(os.getenv("HF_RATE_LIMIT_DAILY", "20"))
+# CCAI demo bumps the per-IP daily cap from LLMChats3's 20 to 30 to match
+# the heavier multi-participant conversation pattern (the orchestrator-call
+# backstop and the participant-message failsafe handle per-conversation
+# cost).
+DAILY_LIMIT = int(os.getenv("HF_RATE_LIMIT_DAILY", "30"))
 
 _ip_counts: dict[str, dict] = defaultdict(lambda: {"date": "", "count": 0})
 

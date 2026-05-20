@@ -2,21 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from typing import Any
 
 import httpx
 
+from app.utils.sanitize import strip_thinking, response_has_thinking
+
 LOG = logging.getLogger(__name__)
 
 _shared_client: httpx.AsyncClient | None = None
-
-_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-_REASONING_BLOCK_RE = re.compile(
-    r"<(reasoning|reflection|inner_thoughts|scratchpad)>.*?</\1>",
-    re.DOTALL,
-)
 
 _MAX_COMPLETION_TOKEN_MODELS = {
     "o1", "o1-mini", "o1-preview", "o3", "o3-mini", "o4-mini",
@@ -32,21 +27,9 @@ def _get_client() -> httpx.AsyncClient:
     return _shared_client
 
 
-def _strip_thinking(text: str) -> str:
-    """Remove chain-of-thought artifacts from any model's response."""
-    text = _THINK_TAG_RE.sub("", text)
-    text = _REASONING_BLOCK_RE.sub("", text)
-    return text.strip()
-
-
-def _detect_thinking_model(model: str, msg: dict) -> bool:
-    """Detect thinking models from the response itself, not just the model name."""
-    if msg.get("reasoning_content") or msg.get("reasoning"):
-        return True
-    content = msg.get("content") or ""
-    if _THINK_TAG_RE.search(content):
-        return True
-    return False
+# Thinking-trace detection and stripping live in app.utils.sanitize so every
+# code path (HANA, vLLM-direct, OpenAI-compat, summarizer inputs, credential
+# inputs) uses the same logic. See backend/app/utils/sanitize.py.
 
 
 async def openai_chat_completion(
@@ -102,8 +85,8 @@ async def openai_chat_completion(
                 msg = choices[0].get("message") or {}
                 text = msg.get("content") or ""
                 finish_reason = choices[0].get("finish_reason") or ""
-                had_thinking = _detect_thinking_model(model, msg)
-                text = _strip_thinking(text)
+                had_thinking = response_has_thinking(text, msg)
+                text = strip_thinking(text)
 
             if had_thinking:
                 LOG.info("Stripped thinking content from %s response", model)

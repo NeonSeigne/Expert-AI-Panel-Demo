@@ -1,107 +1,93 @@
+"""CCAI orchestrator: six-phase state machine driving a multi-participant
+group discussion to a consensus (or to a documented failure-to-consense).
+
+Phase outline (matches the build plan):
+
+    1. Initial Opinions (independent, no peeking)
+    1.5. Build Credential Summary
+    2. Critique x 2 rounds (full history visible)
+    3. Status Assessment (max 3 iterations of targeted follow-ups)
+    4. Opinion Finalization
+    5. Consensus Gathering (alliance-aware, addressed-to aware)
+    6. Closure (majority report, or unaddressed-factor probe + retry,
+       or failure report)
+
+Two failsafes pause the loop until the user clicks "Continue":
+    - Participant-message cap: 60, then +20.
+    - Orchestrator-call cap: 100, then +50.
+
+Every LLM response runs through `app.utils.sanitize.strip_thinking` on
+its way into history, into the orchestrator's prompts, and into the
+summarizer.
+"""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import random
 import time
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict
 from typing import Any, AsyncIterator
 
-from app.clients.openai_compat import openai_chat_completion
-from app.clients.llm_router import chat_completion as unified_chat_completion
+from app.clients.llm_router import chat_completion
 from app.config import settings
+from app.services import context_budget
+from app.services.consensus import (
+    assess_consensus_status,
+    classify_addressed_to,
+    detect_alliances,
+    find_unaddressed_factor,
+)
+from app.services.context_budget import (
+    ContextSummary,
+    DEFAULT_REPLY_BUDGET,
+    KEEP_RECENT_MESSAGES,
+    build_compressed_messages,
+    context_window_for,
+    estimate_messages_tokens,
+    run_summarize,
+    select_summarizer_model_id,
+    should_summarize,
+)
+from app.services.credential import (
+    build_credential_summary,
+    credentials_to_block,
+    refresh_credential_summary,
+)
+from app.services.json_calls import orchestrator_call
+from app.services.models import (
+    DEFAULT_MAX_PARTICIPANTS,
+    MAX_MAX_PARTICIPANTS,
+    MIN_MAX_PARTICIPANTS,
+    ORCHESTRATOR_CALL_PAUSE_INC,
+    PARTICIPANT_MESSAGE_PAUSE_INC,
+    Participant,
+    Phase,
+    Session,
+)
+from app.services.prompts import (
+    CONSENSUS_ALLIED_PROMPT,
+    CONSENSUS_SOLO_PROMPT,
+    CONSENSUS_TARGETED_RESPONSE_PROMPT,
+    CONTRIBUTION_SUMMARY_PROMPT,
+    CRITIQUE_PROMPT,
+    FINALIZATION_PROMPT,
+    INITIAL_OPINION_PROMPT,
+    MAJORITY_REPORT_PROMPT,
+    NO_CONSENSUS_REPORT_PROMPT,
+    NO_REASONING_DIRECTIVE,
+    PARTICIPANT_BASE_DIRECTIVE,
+    STATUS_ASSESSMENT_PROMPT,
+    TARGETED_FOLLOWUP_PROMPT,
+)
+from app.utils.sanitize import strip_thinking
 
 LOG = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-
-_BREVITY = (
-    " Keep your reply short — 2-4 sentences, like a casual chat message, not an email or essay."
-)
-
-AUTO_START_PROMPT = (
-    "You're starting a conversation with someone new. Here is some information about them: "
-    "{other_role}\n\n"
-    "Consider connections between this information and what you know about yourself, and say "
-    "something that could start a conversation with that new person. Speak in the first person, "
-    "as if directly to the other person." + _BREVITY
-)
-
-FIRST_REPLY_PROMPT = (
-    "Someone just started a conversation with you, this is what they said: {last_message}\n\n"
-    "Consider connections between this conversation starter and what you know about yourself, "
-    "and say something that could continue the conversation with that new person. Speak in the "
-    "first person, as if directly to the other person." + _BREVITY
-)
-
-CONTINUE_PROMPT = (
-    "You are having a conversation with another person, here is the conversation so far:\n\n"
-    "{history}\n\n"
-    "Consider how human conversations generally progress, and provide a response. If the last "
-    "reply in the conversation is one which might indicate a human is losing interest in or "
-    "wrapping up the conversation, then make a response which will help wrap up and close the "
-    "conversation." + _BREVITY
-)
-
-WINDING_NEXT_PROMPT = (
-    "You are having a conversation with another person, here is the conversation so far:\n\n"
-    "{history}\n\n"
-    "Consider how human conversations generally progress, and provide a response which will "
-    "wrap up and close the conversation. This is the last reply you will give in this "
-    "conversation." + _BREVITY
-)
-
-WINDING_FINAL_PROMPT = (
-    "You are having a conversation with another person, here is the conversation so far:\n\n"
-    "{history}\n\n"
-    "Consider how human conversations generally progress, and focus on the last two messages "
-    "in this conversation. Provide a very short response which closes the conversation."
-    + _BREVITY
-)
-
-ORCHESTRATOR_CHECK_PROMPT = (
-    "You are monitoring a conversation between two people. Your job is to determine whether "
-    "the latest message indicates the speaker is losing interest or wrapping up the conversation. "
-    "Reply with ONLY a JSON object: {{\"winding_down\": true}} or {{\"winding_down\": false}}. "
-    "No other text.\n\nLatest message:\n{message}"
-)
-
 
 # ---------------------------------------------------------------------------
-# Session data
+# Session registry
 # ---------------------------------------------------------------------------
-
-@dataclass
-class Persona:
-    name: str
-    model_id: str
-    role_prompt: str
-    base_url: str = ""
-    api_key: str = ""
-    display_name: str = ""
-    is_neon: bool = False
-    hana_model_id: str = ""
-    persona_name: str = ""
-    neon_direct_vllm: bool = False
-    vllm_base_url: str = ""
-    vllm_api_key: str = ""
-
-
-@dataclass
-class Session:
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    persona_a: Persona | None = None
-    persona_b: Persona | None = None
-    messages: list[dict[str, str]] = field(default_factory=list)
-    api_log: list[dict[str, Any]] = field(default_factory=list)
-    a_count: int = 0
-    b_count: int = 0
-    end_mode: bool = False
-    finished: bool = False
-
 
 _sessions: dict[str, Session] = {}
 
@@ -117,275 +103,969 @@ def create_session() -> Session:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _format_history(messages: list[dict[str, str]]) -> str:
-    lines = []
-    for m in messages:
-        lines.append(f"{m['speaker']}: {m['text']}")
-    return "\n".join(lines)
-
-
-async def _call_llm(
-    persona: Persona,
-    system_content: str,
-    user_content: str,
-    session: Session,
-    label: str = "",
-    max_tokens: int = 500,
-    timeout: float = 20,
-) -> str:
-    system_with_directive = (
-        system_content + "\n\nIMPORTANT: Respond ONLY with your in-character dialogue. "
-        "Do NOT include your reasoning, thought process, analysis of the prompt, "
-        "meta-commentary, internal monologue, or draft notes. Output ONLY the words "
-        "your character would actually say aloud."
-    )
-    messages = [
-        {"role": "system", "content": system_with_directive},
-        {"role": "user", "content": user_content},
-    ]
-    log_entry: dict[str, Any] = {
-        "timestamp": time.time(),
-        "label": label,
-        "model": persona.model_id,
-        "request": {"messages": messages, "max_tokens": max_tokens},
-    }
-
-    resolved = {
-        "model_id": persona.model_id,
-        "base_url": persona.base_url,
-        "api_key": persona.api_key,
-        "is_neon": persona.is_neon,
-        "hana_model_id": persona.hana_model_id,
-        "persona_name": persona.persona_name,
-        "neon_direct_vllm": persona.neon_direct_vllm,
-        "vllm_base_url": persona.vllm_base_url,
-        "vllm_api_key": persona.vllm_api_key,
-    }
-    result = await unified_chat_completion(
-        resolved=resolved,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=max_tokens,
-        timeout=timeout,
-    )
-
-    log_entry["response"] = result
-    session.api_log.append(log_entry)
-
-    return result.get("response", ""), result.get("elapsed_seconds", 0)
-
-
-async def _call_orchestrator(
-    prompt: str,
-    session: Session,
-    label: str = "",
-) -> str:
-    resolved = settings.resolve_model(settings.orchestrator_model)
-    if not resolved:
-        LOG.warning("Orchestrator model %s not found, using first available", settings.orchestrator_model)
-        for prov in settings.providers:
-            for m in prov["models"]:
-                resolved = {
-                    "base_url": m.get("base_url", prov["base_url"]),
-                    "api_key": m.get("api_key", prov["api_key"]),
-                    "model_id": m["id"],
-                }
-                break
-            if resolved:
-                break
-
-    if not resolved:
-        return '{"winding_down": false}'
-
-    messages = [
-        {"role": "system", "content": "You are a conversation monitor. Respond only with the requested JSON."},
-        {"role": "user", "content": prompt},
-    ]
-    log_entry: dict[str, Any] = {
-        "timestamp": time.time(),
-        "label": f"orchestrator:{label}",
-        "model": resolved["model_id"],
-        "request": {"messages": messages},
-    }
-
-    result = await openai_chat_completion(
-        base_url=resolved["base_url"],
-        api_key=resolved["api_key"],
-        model=resolved["model_id"],
-        messages=messages,
-        temperature=0.2,
-        max_tokens=256,
-        timeout=20,
-    )
-
-    log_entry["response"] = result
-    session.api_log.append(log_entry)
-
-    return result.get("response", "")
-
-
-def _parse_json_bool(raw: str, key: str) -> bool:
-    try:
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
-        return json.loads(raw).get(key, False)
-    except Exception:
-        lower = raw.lower()
-        return f'"{key}": true' in lower or f'"{key}":true' in lower
-
-
-# ---------------------------------------------------------------------------
-# Main conversation loop (yields SSE events)
-# ---------------------------------------------------------------------------
-
-async def run_conversation(
-    session: Session,
-    starter_text: str | None = None,
-) -> AsyncIterator[str]:
-    pa = session.persona_a
-    pb = session.persona_b
-    if not pa or not pb:
-        yield _sse("error", {"message": "Both personas must be configured"})
-        return
-
-    participants = [pa, pb]
-    starter_idx = random.randint(0, 1)
-    starter = participants[starter_idx]
-    responder = participants[1 - starter_idx]
-
-    yield _sse("status", {"message": "Starting conversation..."})
-
-    # --- First message ---
-    if starter_text:
-        # Show the user-provided starter as the first message from the starter LLM,
-        # then send it to the responder to reply to (no LLM call for the opener).
-        _add_message(session, starter, starter_text.strip(), starter_idx)
-        yield _sse("message", _msg_payload(session.messages[-1], starter_idx))
-
-        reply_prompt = FIRST_REPLY_PROMPT.format(last_message=starter_text.strip())
-        second_msg, second_elapsed = await _call_llm(
-            responder, responder.role_prompt, reply_prompt, session,
-            label=f"first_reply:{responder.name}",
-        )
-        _add_message(session, responder, second_msg, 1 - starter_idx, second_elapsed)
-        yield _sse("message", _msg_payload(session.messages[-1], 1 - starter_idx))
-    else:
-        user_prompt = AUTO_START_PROMPT.format(other_role=responder.role_prompt)
-        first_msg, first_elapsed = await _call_llm(
-            starter, starter.role_prompt, user_prompt, session,
-            label=f"start:{starter.name}",
-        )
-        _add_message(session, starter, first_msg, starter_idx, first_elapsed)
-        yield _sse("message", _msg_payload(session.messages[-1], starter_idx))
-
-        reply_prompt = FIRST_REPLY_PROMPT.format(last_message=first_msg)
-        second_msg, second_elapsed = await _call_llm(
-            responder, responder.role_prompt, reply_prompt, session,
-            label=f"first_reply:{responder.name}",
-        )
-        _add_message(session, responder, second_msg, 1 - starter_idx, second_elapsed)
-        yield _sse("message", _msg_payload(session.messages[-1], 1 - starter_idx))
-
-    # --- Continue loop ---
-    current_idx = starter_idx
-    while not session.finished:
-        current = participants[current_idx]
-        history_text = _format_history(session.messages)
-
-        # Check orchestrator on the last message
-        last_msg_text = session.messages[-1]["text"]
-
-        if not session.end_mode:
-            orch_raw = await _call_orchestrator(
-                ORCHESTRATOR_CHECK_PROMPT.format(message=last_msg_text),
-                session,
-                label="winding_check",
-            )
-            winding = _parse_json_bool(orch_raw, "winding_down")
-
-            if winding:
-                session.end_mode = True
-
-        # Force wrap-up at 8 messages each
-        if not session.end_mode:
-            if session.a_count >= 8 and session.b_count >= 8:
-                session.end_mode = True
-
-        if session.end_mode:
-            # Penultimate message: current speaker wraps up
-            history_text = _format_history(session.messages)
-            wrap_msg, wrap_elapsed = await _call_llm(
-                current, current.role_prompt,
-                WINDING_NEXT_PROMPT.format(history=history_text),
-                session, label=f"winding_next:{current.name}",
-            )
-            _add_message(session, current, wrap_msg, current_idx, wrap_elapsed)
-            yield _sse("message", _msg_payload(session.messages[-1], current_idx))
-
-            # Final message: other speaker closes
-            other_idx = 1 - current_idx
-            other = participants[other_idx]
-            history_text = _format_history(session.messages)
-            final_msg, final_elapsed = await _call_llm(
-                other, other.role_prompt,
-                WINDING_FINAL_PROMPT.format(history=history_text),
-                session, label=f"winding_final:{other.name}",
-            )
-            _add_message(session, other, final_msg, other_idx, final_elapsed)
-            yield _sse("message", _msg_payload(session.messages[-1], other_idx))
-
-            session.finished = True
-            yield _sse("system", {"text": "End of Chat"})
-            break
-
-        # Normal continue
-        prompt = CONTINUE_PROMPT.format(history=history_text)
-        response, resp_elapsed = await _call_llm(
-            current, current.role_prompt, prompt, session,
-            label=f"continue:{current.name}",
-        )
-        _add_message(session, current, response, current_idx, resp_elapsed)
-        yield _sse("message", _msg_payload(session.messages[-1], current_idx))
-
-        current_idx = 1 - current_idx
-
-    yield _sse("done", {})
-
-
-# ---------------------------------------------------------------------------
 # SSE helpers
 # ---------------------------------------------------------------------------
 
-def _add_message(session: Session, persona: Persona, text: str, speaker_idx: int, elapsed: float = 0) -> None:
-    session.messages.append({
-        "speaker": persona.name,
-        "speaker_idx": speaker_idx,
-        "model_id": persona.model_id,
-        "model_display": persona.display_name,
-        "text": text,
-        "timestamp": time.time(),
-        "elapsed_seconds": round(elapsed, 2),
-    })
-    if speaker_idx == 0:
-        session.a_count += 1
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _active_participants(session: Session) -> list[Participant]:
+    return [p for p in session.participants if p.enabled]
+
+
+def _orchestrator_model_id(session: Session) -> str:
+    return session.orchestrator_model_id or settings.orchestrator_model
+
+
+def _summarizer_model_id(session: Session) -> str:
+    return select_summarizer_model_id(
+        session.summarizer_model_id,
+        session.orchestrator_model_id,
+    )
+
+
+def _format_history(
+    messages: list[dict[str, Any]],
+    *,
+    include_orchestrator: bool = True,
+) -> str:
+    lines: list[str] = []
+    for m in messages:
+        if m.get("role") == "orchestrator" and not include_orchestrator:
+            continue
+        speaker = m.get("speaker_name") or m.get("speaker_id") or "(anon)"
+        if m.get("role") == "orchestrator":
+            speaker = "Orchestrator"
+        lines.append(f"{speaker}: {m.get('text', '')}")
+    return "\n".join(lines)
+
+
+def _participant_roster_string(
+    speaker: Participant,
+    participants: list[Participant],
+) -> str:
+    others = [p.name for p in participants if p.participant_id != speaker.participant_id]
+    return ", ".join(others) if others else "(no other participants)"
+
+
+# ---------------------------------------------------------------------------
+# Failsafe checks
+# ---------------------------------------------------------------------------
+
+def _participant_msg_cap_hit(session: Session) -> bool:
+    return session.total_participant_messages >= session.participant_message_cap
+
+
+def _orchestrator_cap_hit(session: Session) -> bool:
+    return session.orchestrator_call_count >= session.orchestrator_call_cap
+
+
+def _bump_orchestrator_count(session: Session) -> None:
+    session.orchestrator_call_count += 1
+
+
+async def _wait_for_continue(
+    session: Session,
+    reason: str,
+) -> AsyncIterator[str]:
+    """Pause the state machine until the user clicks Continue."""
+    session.paused_for_continue = True
+    session.pause_reason = reason
+    if reason == "messages":
+        msg = (
+            f"Conversation paused after {session.total_participant_messages} "
+            "participant messages. Click Continue to allow another "
+            f"{PARTICIPANT_MESSAGE_PAUSE_INC} messages."
+        )
+        evt = "failsafe_pause"
+        bump_inc = PARTICIPANT_MESSAGE_PAUSE_INC
     else:
-        session.b_count += 1
+        msg = (
+            f"Conversation paused after {session.orchestrator_call_count} "
+            "orchestrator calls. Click Continue to allow another "
+            f"{ORCHESTRATOR_CALL_PAUSE_INC} orchestrator calls."
+        )
+        evt = "orchestrator_cap_pause"
+        bump_inc = ORCHESTRATOR_CALL_PAUSE_INC
+
+    yield _sse(evt, {
+        "reason": reason,
+        "message": msg,
+        "participant_messages": session.total_participant_messages,
+        "orchestrator_calls": session.orchestrator_call_count,
+    })
+
+    # Block until pending_continue is flipped by the API layer.
+    while session.paused_for_continue and not session.pending_continue:
+        await asyncio.sleep(0.25)
+    session.pending_continue = False
+    session.paused_for_continue = False
+    if reason == "messages":
+        session.participant_message_cap += bump_inc
+    else:
+        session.orchestrator_call_cap += bump_inc
+    session.pause_reason = None
+    yield _sse("status", {"message": "Resuming conversation..."})
 
 
-def _msg_payload(msg: dict, speaker_idx: int) -> dict:
-    return {
-        "speaker": msg["speaker"],
-        "speaker_idx": speaker_idx,
-        "model_display": msg["model_display"],
-        "text": msg["text"],
-        "timestamp": msg["timestamp"],
-        "elapsed_seconds": msg.get("elapsed_seconds", 0),
+# ---------------------------------------------------------------------------
+# Participant turn (with context budgeting + summarize-on-demand)
+# ---------------------------------------------------------------------------
+
+async def _maybe_summarize_for_participant(
+    session: Session,
+    participant: Participant,
+    api_messages: list[dict[str, Any]],
+) -> None:
+    """If this participant's input estimate exceeds the threshold, run a
+    summarize call against the configured summarizer model and update
+    `participant.summary` in place."""
+    needs_sum, _trim, _budget = should_summarize(
+        participant.model_id, api_messages, participant.summary,
+    )
+    if not needs_sum:
+        return
+
+    # Build a transcript that excludes orchestrator status banners (those
+    # don't add information value to a summary) but keeps everything the
+    # participant has said and heard.
+    summarizable_msgs = [
+        m for m in session.messages
+        if m.get("role") != "orchestrator_status"
+    ]
+    if not summarizable_msgs:
+        return
+
+    transcript = _format_history(summarizable_msgs, include_orchestrator=False)
+    if not transcript.strip():
+        return
+
+    summarizer_id = _summarizer_model_id(session)
+    summary_text = await run_summarize(summarizer_id, transcript)
+    # The summarizer counts as an orchestrator-side call for cap purposes.
+    session.orchestrator_call_count += 1
+    if summary_text:
+        participant.summary.summary_text = summary_text
+        participant.summary.summarized_through_idx = len(session.messages) - 1
+
+
+async def _call_participant(
+    *,
+    session: Session,
+    participant: Participant,
+    user_prompt: str,
+    label: str,
+    max_tokens: int = 600,
+    timeout: float = 45.0,
+) -> tuple[str, float, bool]:
+    """Run one participant turn and return (text, elapsed_seconds, ok).
+
+    The state-machine handles auto-disable on repeated failure.
+    """
+    others = _participant_roster_string(participant, _active_participants(session))
+    base_directive = PARTICIPANT_BASE_DIRECTIVE.format(
+        n_participants=len(_active_participants(session)),
+        other_participants=others,
+    )
+    system_text = (
+        f"{participant.role_prompt}\n\n{base_directive}\n\n{NO_REASONING_DIRECTIVE}"
+    )
+    api_messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_text},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    await _maybe_summarize_for_participant(session, participant, api_messages)
+
+    needs_sum, needs_trim, _ = should_summarize(
+        participant.model_id, api_messages, participant.summary,
+    )
+    if needs_trim:
+        api_messages = build_compressed_messages(
+            api_messages, participant.summary, needs_trim,
+        )
+
+    resolved = {
+        "model_id": participant.model_id,
+        "base_url": participant.base_url,
+        "api_key": participant.api_key,
+        "is_neon": participant.is_neon,
+        "hana_model_id": participant.hana_model_id,
+        "persona_name": participant.persona_name,
+        "neon_direct_vllm": participant.neon_direct_vllm,
+        "vllm_base_url": participant.vllm_base_url,
+        "vllm_api_key": participant.vllm_api_key,
     }
 
+    log_entry: dict[str, Any] = {
+        "timestamp": time.time(),
+        "label": f"participant:{participant.participant_id}:{label}",
+        "model": participant.model_id,
+        "request": {"messages": api_messages, "max_tokens": max_tokens},
+    }
 
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    try:
+        result = await chat_completion(
+            resolved=resolved,
+            messages=api_messages,
+            temperature=0.7,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        LOG.exception("Participant %s call failed: %s", participant.participant_id, exc)
+        log_entry["response"] = {"error": str(exc)}
+        session.api_log.append(log_entry)
+        participant.consecutive_failures += 1
+        return "", 0.0, False
+
+    log_entry["response"] = result
+    session.api_log.append(log_entry)
+
+    if result.get("error"):
+        participant.consecutive_failures += 1
+        return "", result.get("elapsed_seconds", 0), False
+
+    participant.consecutive_failures = 0
+    text = strip_thinking(result.get("response", ""))
+    elapsed = float(result.get("elapsed_seconds", 0) or 0)
+    return text, elapsed, True
+
+
+def _add_participant_message(
+    session: Session,
+    participant: Participant,
+    text: str,
+    *,
+    phase: Phase,
+    elapsed: float,
+    addressed_to: str | None = None,
+) -> dict[str, Any]:
+    msg = {
+        "speaker_id": participant.participant_id,
+        "speaker_name": participant.name,
+        "role": "participant",
+        "text": text,
+        "phase": phase.value,
+        "timestamp": time.time(),
+        "elapsed_seconds": round(elapsed, 2),
+        "addressed_to": addressed_to,
+        "model_id": participant.model_id,
+        "model_display": participant.display_name,
+    }
+    session.messages.append(msg)
+    session.total_participant_messages += 1
+    return msg
+
+
+def _add_orchestrator_message(
+    session: Session,
+    text: str,
+    *,
+    kind: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    msg = {
+        "speaker_id": "orchestrator",
+        "speaker_name": "Orchestrator",
+        "role": "orchestrator",
+        "kind": kind,  # "status" | "factor" | "majority_report" | "no_consensus_report"
+        "text": text,
+        "phase": session.phase.value,
+        "timestamp": time.time(),
+    }
+    if extra:
+        msg.update(extra)
+    session.messages.append(msg)
+    return msg
+
+
+def _msg_payload(msg: dict[str, Any]) -> dict[str, Any]:
+    """Public payload for a message event over SSE."""
+    return msg
+
+
+# ---------------------------------------------------------------------------
+# Phase implementations
+# ---------------------------------------------------------------------------
+
+async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
+    session.phase = Phase.INITIAL_OPINIONS
+    yield _sse("status", {"message": "Phase 1: collecting independent first opinions..."})
+
+    actives = _active_participants(session)
+    for p in actives:
+        # Phase 1 deliberately uses a *bare* prompt (no transcript) so each
+        # participant's first opinion is independent of the others.
+        prompt = INITIAL_OPINION_PROMPT.format(question=session.question)
+        text, elapsed, ok = await _call_participant(
+            session=session, participant=p,
+            user_prompt=prompt,
+            label="initial_opinion",
+            max_tokens=700,
+        )
+        if not ok or not text.strip():
+            yield _sse("participant_error", {
+                "participant_id": p.participant_id,
+                "name": p.name,
+                "phase": session.phase.value,
+            })
+            if p.consecutive_failures >= 3:
+                p.enabled = False
+                yield _sse("status", {
+                    "message": f"{p.name} auto-disabled after 3 failures.",
+                })
+            continue
+        msg = _add_participant_message(session, p, text, phase=session.phase, elapsed=elapsed)
+        session.initial_opinions[p.participant_id] = text
+        yield _sse("message", _msg_payload(msg))
+
+        if _participant_msg_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "messages"):
+                yield chunk
+
+    yield _sse("status", {"message": "Building Credential Summary..."})
+    creds = await build_credential_summary(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participants=_active_participants(session),
+        initial_opinions=session.initial_opinions,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    session.credential_summary = creds
+
+
+async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[str]:
+    session.phase = (
+        Phase.CRITIQUE_ROUND_1 if round_number == 1 else Phase.CRITIQUE_ROUND_2
+    )
+    yield _sse("status", {
+        "message": f"Phase 2: critique round {round_number} of 2...",
+    })
+    cred_block = credentials_to_block(session.credential_summary)
+    actives = _active_participants(session)
+    for p in actives:
+        transcript = _format_history(session.messages)
+        prompt = CRITIQUE_PROMPT.format(
+            round_number=round_number,
+            question=session.question,
+            credential_summary=cred_block,
+            transcript=transcript,
+        )
+        text, elapsed, ok = await _call_participant(
+            session=session, participant=p,
+            user_prompt=prompt,
+            label=f"critique_round_{round_number}",
+            max_tokens=700,
+        )
+        if not ok or not text.strip():
+            yield _sse("participant_error", {
+                "participant_id": p.participant_id, "name": p.name,
+                "phase": session.phase.value,
+            })
+            if p.consecutive_failures >= 3:
+                p.enabled = False
+                yield _sse("status", {"message": f"{p.name} auto-disabled after 3 failures."})
+            continue
+
+        # Detect addressed_to so the consensus phase's targeted-response
+        # logic can also reuse it - cheap classification call.
+        addressed = await classify_addressed_to(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            participants=_active_participants(session),
+            speaker_name=p.name,
+            message=text,
+            api_log=session.api_log,
+        )
+        _bump_orchestrator_count(session)
+
+        msg = _add_participant_message(
+            session, p, text, phase=session.phase, elapsed=elapsed,
+            addressed_to=addressed,
+        )
+        yield _sse("message", _msg_payload(msg))
+
+        if _participant_msg_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "messages"):
+                yield chunk
+        if _orchestrator_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "orchestrator"):
+                yield chunk
+
+
+async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
+    session.phase = Phase.STATUS_ASSESSMENT
+    yield _sse("status", {"message": "Phase 3: assessing whether more questions are needed..."})
+
+    cred_block = credentials_to_block(session.credential_summary)
+
+    # Refresh Credential Summary once after Phase 2 critique - participants
+    # have revealed a lot more about themselves through critique.
+    transcript = _format_history(session.messages)
+    refreshed = await refresh_credential_summary(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participants=_active_participants(session),
+        existing=session.credential_summary,
+        critique_transcript=transcript,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    session.credential_summary = refreshed
+    cred_block = credentials_to_block(session.credential_summary)
+
+    for iteration in range(3):
+        session.status_assessment_iterations = iteration + 1
+        prompt = STATUS_ASSESSMENT_PROMPT.format(
+            question=session.question,
+            credential_summary=cred_block,
+            transcript=_format_history(session.messages),
+        )
+        _raw, parsed = await orchestrator_call(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            user_prompt=prompt,
+            label=f"status_assessment_{iteration + 1}",
+            api_log=session.api_log,
+            max_tokens=512,
+        )
+        _bump_orchestrator_count(session)
+
+        opinions_solidified = bool(
+            isinstance(parsed, dict) and parsed.get("opinions_solidified")
+        )
+        open_qs: list[dict[str, Any]] = []
+        if isinstance(parsed, dict):
+            open_qs = parsed.get("open_questions") or []
+
+        if opinions_solidified or not open_qs:
+            yield _sse("orchestrator", {
+                "kind": "status",
+                "text": "Opinions appear solidified - moving to finalization.",
+            })
+            return
+
+        # Otherwise run targeted follow-ups
+        active_ids = {p.participant_id for p in _active_participants(session)}
+        for oq in open_qs:
+            pid = oq.get("participant_id")
+            question_text = (oq.get("question") or "").strip()
+            if not pid or pid not in active_ids or not question_text:
+                continue
+            target = next(p for p in session.participants if p.participant_id == pid)
+            announce = (
+                f"The orchestrator has a follow-up for {target.name}: "
+                f"\"{question_text}\""
+            )
+            announce_msg = _add_orchestrator_message(session, announce, kind="status")
+            yield _sse("orchestrator", _msg_payload(announce_msg))
+
+            transcript = _format_history(session.messages)
+            prompt2 = TARGETED_FOLLOWUP_PROMPT.format(
+                transcript=transcript,
+                credential_summary=cred_block,
+                targeted_question=question_text,
+            )
+            text, elapsed, ok = await _call_participant(
+                session=session, participant=target,
+                user_prompt=prompt2,
+                label="targeted_followup",
+                max_tokens=600,
+            )
+            if not ok or not text.strip():
+                yield _sse("participant_error", {
+                    "participant_id": target.participant_id, "name": target.name,
+                    "phase": session.phase.value,
+                })
+                continue
+            msg = _add_participant_message(
+                session, target, text, phase=session.phase, elapsed=elapsed,
+            )
+            yield _sse("message", _msg_payload(msg))
+
+            if _participant_msg_cap_hit(session):
+                async for chunk in _wait_for_continue(session, "messages"):
+                    yield chunk
+            if _orchestrator_cap_hit(session):
+                async for chunk in _wait_for_continue(session, "orchestrator"):
+                    yield chunk
+
+    yield _sse("orchestrator", {
+        "kind": "status",
+        "text": "Status assessment limit reached - moving to finalization.",
+    })
+
+
+async def _phase_finalization(session: Session) -> AsyncIterator[str]:
+    session.phase = Phase.FINALIZATION
+    yield _sse("status", {"message": "Phase 4: opinion finalization..."})
+
+    cred_block = credentials_to_block(session.credential_summary)
+    actives = _active_participants(session)
+    for p in actives:
+        transcript = _format_history(session.messages)
+        prompt = FINALIZATION_PROMPT.format(
+            question=session.question,
+            credential_summary=cred_block,
+            transcript=transcript,
+        )
+        text, elapsed, ok = await _call_participant(
+            session=session, participant=p,
+            user_prompt=prompt,
+            label="finalization",
+            max_tokens=600,
+        )
+        if not ok or not text.strip():
+            yield _sse("participant_error", {
+                "participant_id": p.participant_id, "name": p.name,
+                "phase": session.phase.value,
+            })
+            continue
+        session.final_opinions[p.participant_id] = text
+        msg = _add_participant_message(
+            session, p, text, phase=session.phase, elapsed=elapsed,
+        )
+        yield _sse("message", _msg_payload(msg))
+
+        if _participant_msg_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "messages"):
+                yield chunk
+
+
+async def _phase_consensus(session: Session) -> AsyncIterator[str]:
+    session.phase = Phase.CONSENSUS
+    yield _sse("status", {"message": "Phase 5: consensus gathering..."})
+
+    cred_block = credentials_to_block(session.credential_summary)
+    actives = _active_participants(session)
+
+    # Initial alliance detection from the finalization-phase opinions
+    groups = await detect_alliances(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participants=actives,
+        final_opinions=session.final_opinions,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    session.alliance_groups = groups
+
+    announce = "Alliance groups detected: " + "; ".join(
+        f"\"{g.get('stance', '')}\" -> [{', '.join(g.get('members') or [])}]"
+        for g in groups
+    )
+    msg = _add_orchestrator_message(session, announce, kind="status")
+    yield _sse("orchestrator", _msg_payload(msg))
+
+    # Round-robin among active participants, but yield to the addressed-to
+    # target whenever the previous message named one explicitly.
+    queue: list[Participant] = list(actives)
+    last_addressed: str | None = None
+
+    # Hard backstop on this phase: if we make a lot of consensus turns
+    # without resolving, exit and let closure handle it. The orchestrator-
+    # call cap will hit before this, but it's a clean upper bound.
+    max_consensus_turns = 6 * len(actives)
+    consensus_turns = 0
+
+    while consensus_turns < max_consensus_turns:
+        consensus_turns += 1
+
+        # Pick speaker
+        if last_addressed:
+            speaker = next(
+                (p for p in actives if p.participant_id == last_addressed),
+                None,
+            )
+            if speaker is None:
+                speaker = queue[0] if queue else actives[0]
+            else:
+                queue = [p for p in queue if p.participant_id != speaker.participant_id]
+            last_addressed = None
+        else:
+            if not queue:
+                queue = list(actives)
+            speaker = queue.pop(0)
+
+        # Decide allied vs solo prompt
+        speaker_group, other_groups = _find_speaker_group(speaker, session.alliance_groups)
+        prompt = _build_consensus_prompt(
+            session, speaker, speaker_group, other_groups,
+            actives, cred_block,
+        )
+
+        text, elapsed, ok = await _call_participant(
+            session=session, participant=speaker,
+            user_prompt=prompt,
+            label="consensus",
+            max_tokens=700,
+        )
+        if not ok or not text.strip():
+            yield _sse("participant_error", {
+                "participant_id": speaker.participant_id, "name": speaker.name,
+                "phase": session.phase.value,
+            })
+            continue
+
+        addressed = await classify_addressed_to(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            participants=actives,
+            speaker_name=speaker.name,
+            message=text,
+            api_log=session.api_log,
+        )
+        _bump_orchestrator_count(session)
+        last_addressed = addressed
+
+        msg = _add_participant_message(
+            session, speaker, text, phase=session.phase, elapsed=elapsed,
+            addressed_to=addressed,
+        )
+        yield _sse("message", _msg_payload(msg))
+
+        if _participant_msg_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "messages"):
+                yield chunk
+        if _orchestrator_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "orchestrator"):
+                yield chunk
+
+        # Status check every full round (every len(actives) turns)
+        if consensus_turns % max(1, len(actives)) == 0:
+            transcript = _format_history(session.messages)
+            status = await assess_consensus_status(
+                orchestrator_model_id=_orchestrator_model_id(session),
+                question=session.question,
+                transcript=transcript,
+                alliance_groups=session.alliance_groups,
+                api_log=session.api_log,
+            )
+            _bump_orchestrator_count(session)
+            if status.get("status") == "majority":
+                session.alliance_groups = await _refresh_alliance_groups(session, actives)
+                yield _sse("orchestrator", {
+                    "kind": "status",
+                    "text": f"Majority reached. {status.get('rationale', '')}".strip(),
+                })
+                return
+            if status.get("status") == "unproductive":
+                yield _sse("orchestrator", {
+                    "kind": "status",
+                    "text": f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
+                })
+                return
+            # else: productive - keep going
+
+
+async def _refresh_alliance_groups(
+    session: Session,
+    actives: list[Participant],
+) -> list[dict[str, Any]]:
+    """Re-cluster after the consensus phase, treating the latest round of
+    consensus statements as each participant's current stance."""
+    latest_by_id: dict[str, str] = {}
+    for m in session.messages:
+        if m.get("role") != "participant":
+            continue
+        if m.get("phase") != Phase.CONSENSUS.value:
+            continue
+        latest_by_id[m["speaker_id"]] = m["text"]
+    # Fall back to finalization opinions for any participant who didn't
+    # speak in the consensus phase yet.
+    merged: dict[str, str] = dict(session.final_opinions)
+    merged.update(latest_by_id)
+    groups = await detect_alliances(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participants=actives,
+        final_opinions=merged,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    return groups
+
+
+def _find_speaker_group(
+    speaker: Participant,
+    groups: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    speaker_group: dict[str, Any] | None = None
+    others: list[dict[str, Any]] = []
+    for g in groups:
+        if speaker.participant_id in (g.get("members") or []):
+            speaker_group = g
+        else:
+            others.append(g)
+    return speaker_group, others
+
+
+def _build_consensus_prompt(
+    session: Session,
+    speaker: Participant,
+    speaker_group: dict[str, Any] | None,
+    other_groups: list[dict[str, Any]],
+    actives: list[Participant],
+    cred_block: str,
+) -> str:
+    transcript = _format_history(session.messages)
+
+    # If the previous message addressed this speaker by id, route a
+    # targeted-response prompt instead of the standard allied/solo flow.
+    if session.messages:
+        last = session.messages[-1]
+        if (
+            last.get("role") == "participant"
+            and last.get("addressed_to") == speaker.participant_id
+        ):
+            return CONSENSUS_TARGETED_RESPONSE_PROMPT.format(
+                addressed_by_name=last.get("speaker_name", "another participant"),
+                addressed_message=last.get("text", ""),
+                question=session.question,
+                credential_summary=cred_block,
+                transcript=transcript,
+            )
+
+    if speaker_group and len(speaker_group.get("members") or []) > 1:
+        members = ", ".join(
+            p.name for p in actives
+            if p.participant_id in (speaker_group.get("members") or [])
+            and p.participant_id != speaker.participant_id
+        ) or "(no co-allies named)"
+        return CONSENSUS_ALLIED_PROMPT.format(
+            alliance_members=members,
+            alliance_stance=speaker_group.get("stance", "(unspecified)"),
+            question=session.question,
+            credential_summary=cred_block,
+            transcript=transcript,
+        )
+
+    other_groups_block = "\n".join(
+        f"  - \"{g.get('stance', '')}\" supported by " + ", ".join(
+            p.name for p in actives if p.participant_id in (g.get("members") or [])
+        )
+        for g in other_groups
+    ) or "(no other groups)"
+    return CONSENSUS_SOLO_PROMPT.format(
+        your_stance=(speaker_group or {}).get("stance", "(unspecified)"),
+        other_groups_block=other_groups_block,
+        question=session.question,
+        credential_summary=cred_block,
+        transcript=transcript,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Closure
+# ---------------------------------------------------------------------------
+
+async def _phase_closure(session: Session) -> AsyncIterator[str]:
+    session.phase = Phase.CLOSURE
+    yield _sse("status", {"message": "Phase 6: closure..."})
+
+    cred_block = credentials_to_block(session.credential_summary)
+    transcript = _format_history(session.messages)
+
+    status = await assess_consensus_status(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        transcript=transcript,
+        alliance_groups=session.alliance_groups,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+
+    actives = _active_participants(session)
+    if status.get("status") == "majority":
+        idx = status.get("majority_group_index")
+        majority_group = None
+        if isinstance(idx, int) and 0 <= idx < len(session.alliance_groups):
+            majority_group = session.alliance_groups[idx]
+        else:
+            # Fallback: largest group wins
+            if session.alliance_groups:
+                majority_group = max(
+                    session.alliance_groups,
+                    key=lambda g: len(g.get("members") or []),
+                )
+        if majority_group:
+            members_names = [
+                p.name for p in actives
+                if p.participant_id in (majority_group.get("members") or [])
+            ]
+            stance = majority_group.get("stance", "")
+            prompt = MAJORITY_REPORT_PROMPT.format(
+                question=session.question,
+                credential_summary=cred_block,
+                majority_members=", ".join(members_names),
+                majority_stance=stance,
+                transcript=transcript,
+            )
+            raw, _ = await orchestrator_call(
+                orchestrator_model_id=_orchestrator_model_id(session),
+                user_prompt=prompt,
+                label="majority_report",
+                api_log=session.api_log,
+                expect_json=False,
+                max_tokens=900,
+                temperature=0.3,
+            )
+            _bump_orchestrator_count(session)
+            session.final_report = {
+                "kind": "majority",
+                "text": raw,
+                "majority_members": members_names,
+                "majority_stance": stance,
+                "alliance_groups": session.alliance_groups,
+            }
+            msg = _add_orchestrator_message(
+                session, raw, kind="majority_report",
+                extra={"majority_members": members_names, "majority_stance": stance},
+            )
+            yield _sse("orchestrator", _msg_payload(msg))
+            return
+
+    # Not productive / no majority. First time -> surface unaddressed factor.
+    if session.consensus_attempts < 1:
+        session.consensus_attempts += 1
+        factor = await find_unaddressed_factor(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            question=session.question,
+            credential_summary_block=cred_block,
+            transcript=transcript,
+            api_log=session.api_log,
+        )
+        _bump_orchestrator_count(session)
+        if factor and factor.get("factor"):
+            announce = (
+                f"The discussion has stalled. The orchestrator surfaces a new "
+                f"factor for the group to consider: {factor['factor']}"
+            )
+            msg = _add_orchestrator_message(
+                session, announce, kind="factor",
+                extra={"expected_to_shift": factor.get("expected_to_shift") or []},
+            )
+            yield _sse("orchestrator", _msg_payload(msg))
+            # Re-run the consensus phase once more
+            async for chunk in _phase_consensus(session):
+                yield chunk
+            async for chunk in _phase_closure(session):
+                yield chunk
+            return
+
+    # Failed twice (or no factor surfaced) -> emit no-consensus report
+    prompt = NO_CONSENSUS_REPORT_PROMPT.format(
+        question=session.question,
+        credential_summary=cred_block,
+        alliance_block="\n".join(
+            f"  - \"{g.get('stance', '')}\": "
+            + ", ".join(
+                p.name for p in actives
+                if p.participant_id in (g.get("members") or [])
+            )
+            for g in session.alliance_groups
+        ),
+        transcript=transcript,
+    )
+    raw, _ = await orchestrator_call(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        user_prompt=prompt,
+        label="no_consensus_report",
+        api_log=session.api_log,
+        expect_json=False,
+        max_tokens=900,
+        temperature=0.3,
+    )
+    _bump_orchestrator_count(session)
+    session.final_report = {
+        "kind": "no_consensus",
+        "text": raw,
+        "alliance_groups": session.alliance_groups,
+    }
+    msg = _add_orchestrator_message(session, raw, kind="no_consensus_report")
+    yield _sse("orchestrator", _msg_payload(msg))
+
+
+# ---------------------------------------------------------------------------
+# Public driver
+# ---------------------------------------------------------------------------
+
+async def run_conversation(session: Session) -> AsyncIterator[str]:
+    """Drive the full six-phase conversation, yielding SSE chunks."""
+    actives = _active_participants(session)
+    if len(actives) < 2:
+        yield _sse("error", {
+            "message": "Need at least 2 active participants to start.",
+        })
+        yield _sse("done", {})
+        return
+    if len(actives) > session.max_participants:
+        # Defense in depth - the API layer should have already enforced this.
+        for extra in actives[session.max_participants:]:
+            extra.enabled = False
+
+    try:
+        async for chunk in _phase_initial_opinions(session):
+            yield chunk
+
+        async for chunk in _phase_critique(session, 1):
+            yield chunk
+        async for chunk in _phase_critique(session, 2):
+            yield chunk
+
+        async for chunk in _phase_status_assessment(session):
+            yield chunk
+
+        async for chunk in _phase_finalization(session):
+            yield chunk
+
+        async for chunk in _phase_consensus(session):
+            yield chunk
+
+        async for chunk in _phase_closure(session):
+            yield chunk
+    except Exception as exc:
+        LOG.exception("Conversation crashed: %s", exc)
+        yield _sse("error", {"message": f"Internal error: {exc}"})
+    finally:
+        session.finished = True
+        session.phase = Phase.FINISHED
+
+    # Build per-participant contribution summaries for the table view.
+    try:
+        await _build_contribution_summaries(session)
+    except Exception as exc:
+        LOG.warning("Failed to build contribution summaries: %s", exc)
+
+    yield _sse("system", {"text": "End of Chat", "phase": session.phase.value})
+    yield _sse("done", {})
+
+
+async def _build_contribution_summaries(session: Session) -> None:
+    actives = _active_participants(session)
+    roster = "\n".join(
+        f"- id: {p.participant_id} | name: {p.name}" for p in actives
+    )
+    transcript = _format_history(session.messages)
+    prompt = CONTRIBUTION_SUMMARY_PROMPT.format(
+        roster_block=roster,
+        transcript=transcript,
+    )
+    _raw, parsed = await orchestrator_call(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        user_prompt=prompt,
+        label="contribution_summaries",
+        api_log=session.api_log,
+        max_tokens=900,
+    )
+    session.orchestrator_call_count += 1
+    if isinstance(parsed, dict) and isinstance(parsed.get("contributions"), list):
+        for c in parsed["contributions"]:
+            pid = c.get("participant_id")
+            summary = (c.get("summary") or "").strip()
+            if pid and summary:
+                session.contribution_summaries[pid] = summary

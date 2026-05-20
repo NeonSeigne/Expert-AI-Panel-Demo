@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "id": "undergrad_majors",
+      "category": "education",
+      "title": "Best undergraduate majors for career prospects",
+      "text": "What are the three best majors for my undergraduate degree? I live in Washington State, USA, and I am starting college in the fall. My biggest priority is to make sure I have good job prospects when I graduate in 2031. I love using AI and exploring new technology, math is one of my strongest subjects, I don't want to travel for my job, and I don't want to have to publish papers as part of my job. I like to talk to people, and to travel. I know a lot about finance because my parents are both accountants. I also love animals."
+    },
+    {
+      "id": "small_business_ai",
+      "category": "small business",
+      "title": "Should a small bakery introduce AI?",
+      "text": "Should I introduce AI tools into my small bakery, and if so, where should I start? I run a single-storefront bakery in a tourist town in Vermont with three full-time employees and four part-timers. We do counter sales, weekend wholesale to two coffee shops, and a small custom-cake business. I'm 54, comfortable with tech but not a developer. My priorities, in order: keep the staff feeling valued, hold the food quality steady, save myself maybe 5-10 hours a week of paperwork, and slowly grow custom-cake revenue. I have about $3,000 a year I could redirect into software or services without straining the books."
+    },
+    {
+      "id": "rural_water",
+      "category": "public policy",
+      "title": "Best fix for a small town's failing water system",
+      "text": "Our rural town in central Pennsylvania has roughly 1,800 residents and a 1960s-era municipal water system that has had three boil-water advisories in the last two years. We have a small budget and an aging volunteer water board. The state has offered a 50% matching grant but only if we commit to a project plan within nine months. The three options on the table are: (a) replace the existing main lines incrementally over twelve years, (b) consolidate with a neighboring town's larger system, losing local control but gaining redundancy, or (c) install a smaller modern treatment plant of our own with recurring maintenance contracts. Residents are split, and the median household income is around $52,000."
+    },
+    {
+      "id": "elder_parent",
+      "category": "family",
+      "title": "Aging parent who wants to stay in their home",
+      "text": "My 82-year-old father lives alone in the rural Midwest after losing my mother last year. He's mentally sharp, drives short distances, and absolutely insists on staying in the house they built together. In the last six months he's had two minor falls (no fractures), forgot to take his blood pressure medication twice, and started to lose weight. My sister and I both live three to four hours away with full-time jobs and our own kids. He has roughly $90,000 in savings beyond Social Security and the house is paid off. We're trying to figure out the right next step that respects his autonomy without ignoring the warning signs."
+    },
+    {
+      "id": "ai_in_classroom",
+      "category": "education / technology ethics",
+      "title": "AI policy for a public middle school",
+      "text": "I'm a principal at a public middle school in Texas, grades 6-8, 480 students. Many of my teachers are quietly using ChatGPT and similar tools to plan lessons and draft feedback. About a third of students are using AI for homework, sometimes well, sometimes to skip thinking entirely. The school board wants me to publish a formal AI policy by the end of the semester. I have to balance student learning, equity (not all students have the same access at home), staff workload, parental concerns about screen time and privacy, and our district's tight budget. Should I lean toward restricting AI, embracing it, or some structured middle path - and what would the most important rules be?"
+    },
+    {
+      "id": "career_pivot_30s",
+      "category": "career",
+      "title": "Pivot from journalism to tech in your 30s",
+      "text": "I'm 34, a print journalist for the past 11 years at a regional paper that just announced a 30% layoff. I'm probably going to be cut. I have an undergraduate degree in English, no formal coding experience but I've been an enthusiastic Python tinkerer for two years. My wife is a public school teacher; we have one toddler and a small mortgage in a mid-sized U.S. city. We have about six months of savings. I'm considering three paths: (a) try to land another reporter job and write fiction on the side, (b) do a 9-12 month immersive transition into a junior product/data role at a smaller tech company, or (c) start a paid local newsletter business solo. I want a stable enough income, but I'd also like work that uses my voice and isn't soul-crushing."
+    },
+    {
+      "id": "climate_homestead",
+      "category": "environment / personal finance",
+      "title": "Buying property knowing the climate is shifting",
+      "text": "My partner and I are looking to buy a 5-15 acre property within a four-hour drive of Denver. We want a small homestead - some chickens, a vegetable garden, room for two large dogs - and a place we can live in long term. Our budget is around $550,000 including a modest house. We're worried about climate exposure: wildfire smoke, water-rights pressure on small wells, longer droughts, and how much insurance is going to cost ten years from now. We're also worried about being too far from a hospital. Neither of us has farming experience but we're hands-on. How do we think about which properties to look at, what to actually optimize for, and what we should be willing to compromise on?"
+    },
+    {
+      "id": "open_source_strategy",
+      "category": "tech / business strategy",
+      "title": "Open-source vs proprietary for a 12-person AI startup",
+      "text": "I'm CTO of a 12-person AI startup that's about to release our first real product: a domain-specific reasoning agent for legal-contract review. We've raised a Series A. The founding team is split on whether to release our core inference stack as open source under a permissive license. The arguments for: faster developer adoption, recruiting, brand-building, the ecosystem moves fast and we'll be left behind otherwise. The arguments against: a well-funded competitor could fork us, our investors are nervous, and our actual moat is the domain training data, not the inference code. I'd like to land on a defensible decision in the next six weeks. What framework should we use, and what's the right answer for a company in roughly our position?"
+    },
+    {
+      "id": "personal_health_diet",
+      "category": "health",
+      "title": "Diet overhaul with conflicting advice",
+      "text": "I'm 41, somewhat overweight, with borderline-high blood pressure and slightly elevated LDL cholesterol. My doctor wants me to lose roughly 30 pounds and lower my blood pressure without yet starting medication. I have done short stints with several diets over the years - low carb, intermittent fasting, Mediterranean, and a vegan stretch - and lost weight on each before regaining it. I have a desk job, two school-age kids, and I cook most of our meals. I'm not interested in supplements with weak evidence, but I am willing to commit to a structured plan if it's actually likely to work for someone like me long-term. What should the plan look like, and what trade-offs am I implicitly making by picking one?"
+    },
+    {
+      "id": "early_retirement",
+      "category": "personal finance",
+      "title": "FIRE-curious couple weighing semi-retirement at 50",
+      "text": "My spouse and I are both 50, two kids in college, a paid-off house in Minnesota, and about $1.6M in retirement and brokerage accounts (~80% in low-cost index funds). Our combined gross income is ~$240k/year and we save aggressively. We're not unhappy at our jobs but we're also not in love with them. We're debating whether to keep working at full pace through 60, semi-retire next year by both moving to ~25 hours/week each (income halves), or one of us fully retires and the other continues full time. We expect health-care costs to be the wildest variable. None of us has a strong intuition about how a 30-40 year retirement actually plays out financially or psychologically."
+    }
+  ]
+}

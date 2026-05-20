@@ -2,9 +2,12 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      # Match the HuggingFace Space app_port so docker compose and HF
+      # behave identically. The container always listens on 7860.
+      - "7860:7860"
     env_file:
       - .env
     environment:
-      CORS_ORIGINS: "http://localhost:8000,http://localhost:3000"
+      CORS_ORIGINS: "http://localhost:7860,http://localhost:3000"
+      HF_RATE_LIMIT_DAILY: "30"
     restart: unless-stopped

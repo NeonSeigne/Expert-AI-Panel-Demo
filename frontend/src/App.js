@@ -1,81 +1,102 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Sun, Moon } from 'lucide-react';
-import LLMSelector from './components/LLMSelector';
-import PersonaAccordion from './components/PersonaAccordion';
+import Header from './components/Header';
+import ParticipantSidebar from './components/ParticipantSidebar';
 import ChatControls from './components/ChatControls';
 import ChatArea from './components/ChatArea';
-import DevMenu from './components/DevMenu';
-import AuthBadge from './components/AuthBadge';
-import { fetchModels, generateRole, generateRoleFreeform, startChat, getOrchestrator, setOrchestrator, getSpeedPriority, setSpeedPriority, exportChat, exportApiLog, getAuthStatus } from './utils/api';
+import ExpertPersonaModal from './components/ExpertPersonaModal';
+import ChatTableView from './components/ChatTableView';
+import {
+  fetchModels, fetchPersonas, fetchDemoQuestions,
+  startChat, continueChat, getOrchestrator, setOrchestrator,
+  getSpeedPriority, setSpeedPriority, getAuthStatus,
+  exportChat, exportApiLog, fetchTableView, getRateLimitStatus,
+} from './utils/api';
+import * as storage from './utils/storage';
 import './styles/variables.css';
 import './styles/layout.css';
 import './styles/components.css';
+import './styles/ccai.css';
 
-const EMPTY_PERSONA = { name: '', profile: '', identity: '', samples: '' };
-
-function getDisplayName(modelId, providers, neonModels) {
-  if (!modelId) return '';
-  if (modelId.startsWith('neon:')) {
-    return modelId.split(':')[2] || modelId;
-  }
-  for (const p of (providers || [])) {
-    for (const m of p.models) {
-      if (m.id === modelId) return m.name;
-    }
-  }
-  return modelId;
+function pickRandom(list) {
+  if (!list || list.length === 0) return null;
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(() =>
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  // Persistent state
+  const persisted = useMemo(() => storage.loadState(), []);
+  const [theme, setTheme] = useState(() => persisted.theme
+    || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   );
+  const [expertPersonas, setExpertPersonas] = useState(persisted.expert_personas || []);
+  const [selectedIds, setSelectedIds] = useState(persisted.participants_selected || []);
+  const [enabledMap, setEnabledMap] = useState(persisted.participants_enabled || {});
+  const [modelAssignments, setModelAssignments] = useState(persisted.model_assignments || {});
+  const [orchestratorModel, setOrchestratorModelState] = useState(persisted.orchestrator_model_id);
+  const [summarizerModel, setSummarizerModelState] = useState(persisted.summarizer_model_id);
+  const [maxParticipants, setMaxParticipants] = useState(persisted.max_participants || 5);
+
+  // Backend catalog
   const [providers, setProviders] = useState([]);
   const [neonModels, setNeonModels] = useState([]);
-  const [selections, setSelections] = useState([]);
-  const [personaA, setPersonaA] = useState({ ...EMPTY_PERSONA });
-  const [personaB, setPersonaB] = useState({ ...EMPTY_PERSONA });
-  const [accordionOpen, setAccordionOpen] = useState(true);
+  const [catalog, setCatalog] = useState({ neon: [], extra: [] });
+  const [demoQuestions, setDemoQuestions] = useState([]);
+
+  // Display options
+  const [speedPriority, setSpeedPriorityState] = useState(false);
+  const [showResponseTime, setShowResponseTime] = useState(false);
+  const [showChatStats, setShowChatStats] = useState(false);
+
+  // Auth + rate limit
+  const [auth, setAuth] = useState(null);
+  const [dailyLimit, setDailyLimit] = useState(30);
+
+  // Conversation state
   const [messages, setMessages] = useState([]);
   const [systemMessages, setSystemMessages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [sessionId, setSessionId] = useState(null);
-  const [chatFinished, setChatFinished] = useState(false);
-  const [orchestratorModel, setOrchestratorModel] = useState('');
-  const [personaMode, setPersonaMode] = useState('freeform');
-  const [roleStyle, setRoleStyle] = useState('ai_completed');
-  const [speedPriority, setSpeedPriorityState] = useState(false);
-  const [auth, setAuth] = useState(null);
-  const [showResponseTime, setShowResponseTime] = useState(false);
-  const [showChatStats, setShowChatStats] = useState(false);
-  const [rolePrompts, setRolePrompts] = useState(null);
-  const [rolePromptsOpen, setRolePromptsOpen] = useState(false);
-  const abortRef = useRef(null);
-  const lastRoleConfigRef = useRef(null);
+  const [sessionParticipants, setSessionParticipants] = useState([]);
+  const [pause, setPause] = useState(null);
 
+  // Modals
+  const [expertModalOpen, setExpertModalOpen] = useState(false);
+  const [expertEditing, setExpertEditing] = useState(null);
+  const [tableData, setTableData] = useState(null);
+  const [tableOpen, setTableOpen] = useState(false);
+
+  const abortRef = useRef(null);
+
+  // ─── Apply theme ────────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    storage.setTheme(theme);
   }, [theme]);
 
-
-
+  // ─── Load catalogs ──────────────────────────────────────────────
   useEffect(() => {
-    fetchModels()
-      .then(data => {
-        setProviders(data.providers || []);
-        setNeonModels(data.neon_models || []);
-      })
-      .catch(err => console.error('Failed to load models:', err));
-    getOrchestrator()
-      .then(data => setOrchestratorModel(data.model_id || ''))
-      .catch(() => {});
-    getSpeedPriority()
-      .then(data => setSpeedPriorityState(!!data.enabled))
-      .catch(() => {});
+    fetchModels().then(d => {
+      setProviders(d.providers || []);
+      setNeonModels(d.neon_models || []);
+    }).catch(err => console.error('Failed to load models:', err));
+    fetchPersonas().then(setCatalog).catch(err => console.error('Failed to load personas:', err));
+    fetchDemoQuestions().then(d => setDemoQuestions(d.questions || []))
+      .catch(err => console.error('Failed to load demo questions:', err));
+    getOrchestrator().then(d => {
+      // Only sync if user hasn't explicitly chosen one (localStorage wins)
+      if (!persisted.orchestrator_model_id && d?.model_id) {
+        setOrchestratorModelState(d.model_id);
+      }
+    }).catch(() => {});
+    getSpeedPriority().then(d => setSpeedPriorityState(!!d.enabled)).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
-  }, []);
+    getRateLimitStatus().then(d => {
+      if (d?.daily_limit) setDailyLimit(d.daily_limit);
+    }).catch(() => {});
+  }, [persisted.orchestrator_model_id]);
 
+  // ─── Build a flat list of all models for pickers ────────────────
   const allModelsFlat = useMemo(() => {
     const list = [];
     for (const p of providers) {
@@ -96,31 +117,127 @@ export default function App() {
     return list;
   }, [providers, neonModels]);
 
+  // ─── Active participants resolved from selectedIds ──────────────
+  const allCatalogParticipants = useMemo(() => {
+    const map = {};
+    for (const p of (catalog.neon || [])) map[p.participant_id] = p;
+    for (const p of (catalog.extra || [])) map[p.participant_id] = p;
+    for (const p of (expertPersonas || [])) map[p.participant_id] = p;
+    return map;
+  }, [catalog, expertPersonas]);
+
+  const selectedParticipants = useMemo(() => {
+    return selectedIds
+      .map(id => allCatalogParticipants[id])
+      .filter(Boolean);
+  }, [selectedIds, allCatalogParticipants]);
+
+  const enabledSelectedCount = useMemo(() => {
+    return selectedParticipants.filter(p => enabledMap[p.participant_id] !== false).length;
+  }, [selectedParticipants, enabledMap]);
+
+  // ─── Persistence ────────────────────────────────────────────────
+  useEffect(() => { storage.setExpertPersonas(expertPersonas); }, [expertPersonas]);
+  useEffect(() => { storage.setParticipantsSelected(selectedIds); }, [selectedIds]);
+  useEffect(() => { storage.setParticipantsEnabled(enabledMap); }, [enabledMap]);
+  useEffect(() => { storage.setModelAssignments(modelAssignments); }, [modelAssignments]);
+  useEffect(() => { storage.setOrchestratorModelId(orchestratorModel); }, [orchestratorModel]);
+  useEffect(() => { storage.setSummarizerModelId(summarizerModel); }, [summarizerModel]);
+  useEffect(() => { storage.setMaxParticipants(maxParticipants); }, [maxParticipants]);
+
+  // ─── Settings handlers ──────────────────────────────────────────
   const handleOrchestratorChange = useCallback(async (modelId) => {
     try {
       await setOrchestrator(modelId || '');
-      setOrchestratorModel(modelId || '');
+      setOrchestratorModelState(modelId || null);
     } catch (err) {
       console.error('Failed to set orchestrator:', err);
     }
   }, []);
-
-  const handlePersonaModeChange = useCallback((mode) => {
-    setPersonaMode(mode);
-    setRoleStyle(mode === 'freeform' ? 'ai_completed' : 'exact');
+  const handleSummarizerChange = useCallback((modelId) => {
+    setSummarizerModelState(modelId || null);
   }, []);
-
   const handleSpeedPriorityChange = useCallback(async (enabled) => {
     try {
       await setSpeedPriority(enabled);
       setSpeedPriorityState(enabled);
-    } catch (err) {
-      console.error('Failed to set speed priority:', err);
+    } catch (err) { console.error('Failed to set speed priority:', err); }
+  }, []);
+  const handleMaxParticipantsChange = useCallback((n) => {
+    const clamped = Math.max(3, Math.min(9, n));
+    setMaxParticipants(clamped);
+    if (selectedIds.length > clamped) {
+      setSelectedIds(prev => prev.slice(0, clamped));
     }
+  }, [selectedIds]);
+  const handleModelAssignmentChange = useCallback((participantId, modelId) => {
+    setModelAssignments(prev => {
+      const next = { ...prev };
+      if (modelId) next[participantId] = modelId;
+      else delete next[participantId];
+      return next;
+    });
   }, []);
 
-  const downloadFile = useCallback((filename, content) => {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  // ─── Participant ops ────────────────────────────────────────────
+  const handleToggleParticipant = useCallback((participant, kind) => {
+    const id = participant.participant_id;
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        // Deselect entirely
+        setEnabledMap(em => {
+          const next = { ...em };
+          delete next[id];
+          return next;
+        });
+        return prev.filter(x => x !== id);
+      }
+      if (prev.length >= maxParticipants) return prev;
+      setEnabledMap(em => ({ ...em, [id]: true }));
+      return [...prev, id];
+    });
+  }, [maxParticipants]);
+
+  const handleSidebarToggleEnabled = useCallback((participantId, enabled) => {
+    setEnabledMap(em => ({ ...em, [participantId]: enabled }));
+  }, []);
+
+  const handleSidebarRemove = useCallback((participantId) => {
+    setSelectedIds(prev => prev.filter(x => x !== participantId));
+    setEnabledMap(em => {
+      const next = { ...em };
+      delete next[participantId];
+      return next;
+    });
+  }, []);
+
+  // ─── Expert persona ops ─────────────────────────────────────────
+  const handleOpenExpertModal = useCallback((personaOrNull) => {
+    setExpertEditing(personaOrNull);
+    setExpertModalOpen(true);
+  }, []);
+  const handleSaveExpert = useCallback((persona) => {
+    setExpertPersonas(prev => {
+      const idx = prev.findIndex(p => p.participant_id === persona.participant_id);
+      if (idx === -1) return [...prev, persona];
+      const next = [...prev];
+      next[idx] = persona;
+      return next;
+    });
+    setExpertModalOpen(false);
+    setExpertEditing(null);
+  }, []);
+  const handleDeleteExpert = useCallback((id) => {
+    setExpertPersonas(prev => prev.filter(p => p.participant_id !== id));
+    setSelectedIds(prev => prev.filter(x => x !== id));
+    setEnabledMap(em => { const n = { ...em }; delete n[id]; return n; });
+    setExpertModalOpen(false);
+    setExpertEditing(null);
+  }, []);
+
+  // ─── Downloads ──────────────────────────────────────────────────
+  const downloadFile = useCallback((filename, content, mime = 'text/plain;charset=utf-8') => {
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -128,124 +245,151 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(url);
   }, []);
-
   const handleDownloadTxt = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const result = await exportChat(sessionId, 'txt');
-      downloadFile(result.filename, result.content);
+      const r = await exportChat(sessionId, 'txt');
+      downloadFile(r.filename, r.content);
     } catch (err) { console.error('Export failed:', err); }
   }, [sessionId, downloadFile]);
-
   const handleDownloadMd = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const result = await exportChat(sessionId, 'md');
-      downloadFile(result.filename, result.content);
+      const r = await exportChat(sessionId, 'md');
+      downloadFile(r.filename, r.content);
     } catch (err) { console.error('Export failed:', err); }
   }, [sessionId, downloadFile]);
-
+  const handleDownloadCsvTable = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const r = await exportChat(sessionId, 'csv-table');
+      downloadFile(r.filename, r.content, 'text/csv;charset=utf-8');
+    } catch (err) { console.error('CSV export failed:', err); }
+  }, [sessionId, downloadFile]);
   const handleDownloadApiLog = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const result = await exportApiLog(sessionId);
-      downloadFile('api_log.json', JSON.stringify(result, null, 2));
+      const r = await exportApiLog(sessionId);
+      downloadFile('api_log.json', JSON.stringify(r, null, 2), 'application/json');
     } catch (err) { console.error('API log export failed:', err); }
   }, [sessionId, downloadFile]);
 
-  const selectedNameA = selections[0] ? getDisplayName(selections[0], providers, neonModels) : '';
-  const selectedNameB = selections[1] ? getDisplayName(selections[1], providers, neonModels) : '';
+  // ─── Table view ─────────────────────────────────────────────────
+  const handleShowTableView = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await fetchTableView(sessionId);
+      setTableData(data);
+      setTableOpen(true);
+    } catch (err) { console.error('Table fetch failed:', err); }
+  }, [sessionId]);
 
-  const canStart = selections.length === 2 && !isRunning;
+  // ─── Build start payload ────────────────────────────────────────
+  const buildStartPayload = useCallback((theQuestion) => {
+    const enabledParticipants = selectedParticipants.filter(
+      p => enabledMap[p.participant_id] !== false,
+    );
+    const participants = enabledParticipants.map(p => ({
+      participant_id: p.participant_id,
+      kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
+        : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
+      name: p.name,
+      role_prompt: p.role_prompt || null,
+      model_id_override: modelAssignments[p.participant_id] || null,
+    }));
+    const expert_payload = enabledParticipants
+      .filter(p => (p.kind || '').startsWith('expert'))
+      .map(p => ({
+        participant_id: p.participant_id,
+        name: p.name,
+        model_id: modelAssignments[p.participant_id] || p.model_id,
+        role_prompt: p.role_prompt,
+      }));
+    return {
+      question: theQuestion,
+      participants,
+      expert_personas: expert_payload,
+      model_assignments: modelAssignments,
+      orchestrator_model_id: orchestratorModel,
+      summarizer_model_id: summarizerModel,
+      max_participants: maxParticipants,
+    };
+  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants]);
 
+  // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
     setIsRunning(false);
-    setChatFinished(true);
     setStatusText('');
+    setPause(null);
     setSystemMessages(prev => [...prev, { text: 'Chat stopped by user.' }]);
   }, []);
+  const handleContinuePause = useCallback(async (reason) => {
+    if (!sessionId) return;
+    try {
+      await continueChat(sessionId, reason);
+      setPause(null);
+    } catch (err) { console.error('Continue failed:', err); }
+  }, [sessionId]);
 
-  const handleStart = useCallback(async (starterText) => {
-    if (selections.length < 2) return;
+  // ─── Start chat ─────────────────────────────────────────────────
+  const handleStart = useCallback(async (theQuestion) => {
+    if (!theQuestion || !theQuestion.trim()) return;
+    if (enabledSelectedCount < 2) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
-
     setIsRunning(true);
-    setAccordionOpen(false);
     setMessages([]);
     setSystemMessages([]);
-    setChatFinished(false);
+    setStatusText('Starting conversation...');
+    setSessionId(null);
+    setSessionParticipants([]);
+    setPause(null);
 
     try {
-      const currentConfig = JSON.stringify({
-        selections, personaMode, roleStyle,
-        a: personaMode === 'freeform'
-          ? { name: personaA.name, freeform: personaA.freeform || '' }
-          : { name: personaA.name, profile: personaA.profile, identity: personaA.identity, samples: personaA.samples },
-        b: personaMode === 'freeform'
-          ? { name: personaB.name, freeform: personaB.freeform || '' }
-          : { name: personaB.name, profile: personaB.profile, identity: personaB.identity, samples: personaB.samples },
-      });
-
-      let cachedPrompts = rolePrompts;
-      const configChanged = currentConfig !== lastRoleConfigRef.current;
-
-      if (configChanged || !cachedPrompts) {
-        setStatusText('Generating expert persona roles...');
-
-        const genA = personaMode === 'freeform'
-          ? generateRoleFreeform({ model_id: selections[0], name: personaA.name, text: personaA.freeform || '', role_style: roleStyle })
-          : generateRole({ model_id: selections[0], name: personaA.name, profile: personaA.profile, identity: personaA.identity, samples: personaA.samples, role_style: roleStyle });
-        const genB = personaMode === 'freeform'
-          ? generateRoleFreeform({ model_id: selections[1], name: personaB.name, text: personaB.freeform || '', role_style: roleStyle })
-          : generateRole({ model_id: selections[1], name: personaB.name, profile: personaB.profile, identity: personaB.identity, samples: personaB.samples, role_style: roleStyle });
-
-        const [roleA, roleB] = await Promise.all([genA, genB]);
-
-        if (controller.signal.aborted) return;
-
-        cachedPrompts = {
-          a: { name: personaA.name || 'Expert Persona A', model: getDisplayName(selections[0], providers, neonModels), prompt: roleA.role_prompt },
-          b: { name: personaB.name || 'Expert Persona B', model: getDisplayName(selections[1], providers, neonModels), prompt: roleB.role_prompt },
-        };
-        setRolePrompts(cachedPrompts);
-        lastRoleConfigRef.current = currentConfig;
-      }
-
-      setStatusText('Starting conversation...');
-
       await startChat(
+        buildStartPayload(theQuestion),
         {
-          persona_a_model_id: selections[0],
-          persona_a_name: cachedPrompts.a.name,
-          persona_a_role: cachedPrompts.a.prompt,
-          persona_b_model_id: selections[1],
-          persona_b_name: cachedPrompts.b.name,
-          persona_b_role: cachedPrompts.b.prompt,
-          starter_text: starterText,
-        },
-        {
-          onSession: (data) => setSessionId(data.session_id),
+          onSession: (data) => {
+            setSessionId(data.session_id);
+            setSessionParticipants(data.participants || []);
+          },
           onMessage: (data) => {
             setMessages(prev => [...prev, data]);
             setStatusText('Conversation in progress...');
           },
-          onSystem: (data) => {
-            setSystemMessages(prev => [...prev, data]);
-            if (data.text === 'End of Chat') {
-              setChatFinished(true);
-              setStatusText('');
+          onOrchestrator: (data) => {
+            // Orchestrator events with kind == "status" but no text are
+            // status banners; bubble them into a message-style entry so
+            // they render with the orchestrator pill.
+            if (data && data.text) {
+              setMessages(prev => [...prev, { ...data, role: 'orchestrator' }]);
+            } else if (data?.message) {
+              setStatusText(data.message);
             }
           },
           onStatus: (data) => setStatusText(data.message || ''),
+          onSystem: (data) => {
+            setSystemMessages(prev => [...prev, data]);
+            if (data.text === 'End of Chat') {
+              setStatusText('');
+            }
+          },
           onError: (data) => {
             setStatusText('');
             setSystemMessages(prev => [...prev, { text: `Error: ${data.message}` }]);
+          },
+          onParticipantError: (data) => {
+            setSystemMessages(prev => [...prev, {
+              text: `${data.name || 'A participant'} couldn't respond this turn.`,
+            }]);
+          },
+          onFailsafePause: (data) => {
+            setPause({ reason: 'messages', ...data });
+          },
+          onOrchestratorCapPause: (data) => {
+            setPause({ reason: 'orchestrator', ...data });
           },
           onDone: () => {
             setIsRunning(false);
@@ -260,7 +404,7 @@ export default function App() {
       const isRateLimit = err.message && err.message.includes('Daily conversation limit');
       setSystemMessages(prev => [...prev, {
         text: isRateLimit
-          ? 'Daily conversation limit reached (20/day). Sign in with HuggingFace for unlimited access.'
+          ? `Daily conversation limit reached (${dailyLimit}/day). Sign in with HuggingFace for unlimited access.`
           : `Error: ${err.message}`,
       }]);
     } finally {
@@ -268,84 +412,85 @@ export default function App() {
       abortRef.current = null;
       getAuthStatus().then(setAuth).catch(() => {});
     }
-  }, [selections, personaA, personaB, personaMode, roleStyle, rolePrompts]);
+  }, [buildStartPayload, enabledSelectedCount, dailyLimit]);
+
+  const handleStartRandom = useCallback(() => {
+    if (demoQuestions.length === 0) {
+      setSystemMessages(prev => [...prev, { text: 'No demo questions available.' }]);
+      return;
+    }
+    const q = pickRandom(demoQuestions);
+    handleStart(q.text);
+  }, [demoQuestions, handleStart]);
+
+  const startDisabled = isRunning || enabledSelectedCount < 2;
+  const startDisabledReason = enabledSelectedCount < 2
+    ? 'Add at least 2 active participants to start.'
+    : '';
 
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="header-left">
-          <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="header-brand-link">
-            <img src="/neon-logo.png" alt="Neon.ai" className="app-logo" />
-          </a>
-          <h1 className="app-title"><a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="app-title-link">Neon.ai</a> - AI to AI Conversations</h1>
-        </div>
-        <div className="header-right">
-          <AuthBadge auth={auth} />
-          <button
-            className="icon-btn"
-            onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            title="Toggle theme"
-          >
-            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-          </button>
-          <DevMenu
-            allModels={allModelsFlat}
-            orchestratorModel={orchestratorModel}
-            onOrchestratorChange={handleOrchestratorChange}
-            personaMode={personaMode}
-            onPersonaModeChange={handlePersonaModeChange}
-            roleStyle={roleStyle}
-            onRoleStyleChange={setRoleStyle}
-            speedPriority={speedPriority}
-            onSpeedPriorityChange={handleSpeedPriorityChange}
-            showResponseTime={showResponseTime}
-            onShowResponseTimeChange={setShowResponseTime}
-            showChatStats={showChatStats}
-            onShowChatStatsChange={setShowChatStats}
-            rolePrompts={rolePrompts}
-            onShowRolePrompts={() => setRolePromptsOpen(true)}
-            onDownloadChatTxt={handleDownloadTxt}
-            onDownloadChatMd={handleDownloadMd}
-            onDownloadApiLog={handleDownloadApiLog}
-            hasChat={messages.length > 0}
-            hasApiLog={!!sessionId}
-          />
-        </div>
-      </header>
+      <Header
+        theme={theme}
+        onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+        auth={auth}
+        dailyLimit={dailyLimit}
+        catalog={catalog}
+        expertPersonas={expertPersonas}
+        selectedIds={selectedIds}
+        maxParticipants={maxParticipants}
+        onToggleParticipant={handleToggleParticipant}
+        onOpenExpertModal={handleOpenExpertModal}
+
+        allModels={allModelsFlat}
+        orchestratorModel={orchestratorModel}
+        onOrchestratorChange={handleOrchestratorChange}
+        summarizerModel={summarizerModel}
+        onSummarizerChange={handleSummarizerChange}
+        speedPriority={speedPriority}
+        onSpeedPriorityChange={handleSpeedPriorityChange}
+        showResponseTime={showResponseTime}
+        onShowResponseTimeChange={setShowResponseTime}
+        showChatStats={showChatStats}
+        onShowChatStatsChange={setShowChatStats}
+        onMaxParticipantsChange={handleMaxParticipantsChange}
+        participants={selectedParticipants}
+        modelAssignments={modelAssignments}
+        onModelAssignmentChange={handleModelAssignmentChange}
+        onShowTableView={handleShowTableView}
+        onDownloadChatTxt={handleDownloadTxt}
+        onDownloadChatMd={handleDownloadMd}
+        onDownloadCsvTable={handleDownloadCsvTable}
+        onDownloadApiLog={handleDownloadApiLog}
+        hasApiLog={!!sessionId}
+        hasChat={messages.length > 0}
+      />
 
       <main className="app-main">
-        <LLMSelector
-          providers={providers}
-          neonModels={neonModels}
-          selections={selections}
-          onSelectionsChange={setSelections}
+        <ParticipantSidebar
+          participants={selectedParticipants}
+          enabledMap={enabledMap}
+          modelAssignments={modelAssignments}
+          onToggleEnabled={handleSidebarToggleEnabled}
+          onRemove={handleSidebarRemove}
         />
-
         <div className="content">
-          <PersonaAccordion
-            isOpen={accordionOpen}
-            onToggle={() => setAccordionOpen(o => !o)}
-            personaA={personaA}
-            personaB={personaB}
-            onChangeA={setPersonaA}
-            onChangeB={setPersonaB}
-            selectedNameA={selectedNameA}
-            selectedNameB={selectedNameB}
-            mode={personaMode}
-          />
-
           <ChatControls
-            onStart={handleStart}
+            onStartRandom={handleStartRandom}
+            onStartTyped={handleStart}
             onStop={handleStop}
-            disabled={!canStart}
+            disabled={startDisabled}
             isRunning={isRunning}
+            disabledReason={startDisabledReason}
           />
-
           <ChatArea
             messages={messages}
             systemMessages={systemMessages}
             isRunning={isRunning}
             statusText={statusText}
+            pause={pause}
+            onContinuePause={handleContinuePause}
+            participants={sessionParticipants.length > 0 ? sessionParticipants : selectedParticipants}
             showResponseTime={showResponseTime}
             showChatStats={showChatStats}
           />
@@ -356,25 +501,21 @@ export default function App() {
         <a href="https://www.neon.ai/contact" target="_blank" rel="noopener noreferrer">Patents and licensing</a>
       </footer>
 
-      {rolePromptsOpen && rolePrompts && (
-        <div className="modal-overlay" onClick={() => setRolePromptsOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Generated Role Prompts</h2>
-              <button className="modal-close" onClick={() => setRolePromptsOpen(false)}>&times;</button>
-            </div>
-            <div className="modal-body">
-              <div className="role-prompt-section">
-                <h3>{rolePrompts.a.name} <span className="role-prompt-model">({rolePrompts.a.model})</span></h3>
-                <pre className="role-prompt-text">{rolePrompts.a.prompt}</pre>
-              </div>
-              <div className="role-prompt-section">
-                <h3>{rolePrompts.b.name} <span className="role-prompt-model">({rolePrompts.b.model})</span></h3>
-                <pre className="role-prompt-text">{rolePrompts.b.prompt}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
+      <ExpertPersonaModal
+        isOpen={expertModalOpen}
+        initial={expertEditing}
+        onClose={() => { setExpertModalOpen(false); setExpertEditing(null); }}
+        onSave={handleSaveExpert}
+        onDelete={handleDeleteExpert}
+        allModels={allModelsFlat}
+        defaultModelId={orchestratorModel || ''}
+      />
+      {tableOpen && (
+        <ChatTableView
+          data={tableData}
+          onClose={() => setTableOpen(false)}
+          onExportCsv={handleDownloadCsvTable}
+        />
       )}
     </div>
   );

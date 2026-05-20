@@ -8,6 +8,18 @@ export async function fetchModels() {
   return resp.json();
 }
 
+export async function fetchPersonas() {
+  const resp = await fetch(`${API_BASE}/api/personas`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`Failed to fetch personas: ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchDemoQuestions() {
+  const resp = await fetch(`${API_BASE}/api/demo-questions`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`Failed to fetch demo questions: ${resp.status}`);
+  return resp.json();
+}
+
 export async function generateRole({ model_id, name, profile, identity, samples, role_style }) {
   const resp = await fetch(`${API_BASE}/api/chat/generate-role`, {
     method: 'POST',
@@ -34,21 +46,17 @@ export async function generateRoleFreeform({ model_id, name, text, role_style })
   return resp.json();
 }
 
-export async function startChat(
-  { persona_a_model_id, persona_a_name, persona_a_role,
-    persona_b_model_id, persona_b_name, persona_b_role,
-    starter_text },
-  { onSession, onMessage, onSystem, onStatus, onError, onDone },
-  abortSignal
-) {
+/**
+ * Start a CCAI conversation and consume the SSE stream.
+ *
+ * Body: { question, participants[], expert_personas[], model_assignments,
+ *         orchestrator_model_id, summarizer_model_id, max_participants }
+ */
+export async function startChat(body, handlers, abortSignal) {
   const resp = await fetch(`${API_BASE}/api/chat/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      persona_a_model_id, persona_a_name, persona_a_role,
-      persona_b_model_id, persona_b_name, persona_b_role,
-      starter_text: starter_text || null,
-    }),
+    body: JSON.stringify(body),
     signal: abortSignal,
   });
 
@@ -82,15 +90,8 @@ export async function startChat(
         if (!data) continue;
         try {
           const parsed = JSON.parse(data);
-          switch (eventType) {
-            case 'session': onSession?.(parsed); break;
-            case 'message': onMessage?.(parsed); break;
-            case 'system': onSystem?.(parsed); break;
-            case 'status': onStatus?.(parsed); break;
-            case 'error': onError?.(parsed); break;
-            case 'done': onDone?.(); break;
-            default: break;
-          }
+          const handler = handlers[eventHandlerKey(eventType)];
+          if (handler) handler(parsed);
         } catch (e) {
           console.warn('SSE parse error', e, data);
         }
@@ -99,7 +100,32 @@ export async function startChat(
   } finally {
     reader.releaseLock();
   }
-  onDone?.();
+  handlers.onDone?.();
+}
+
+function eventHandlerKey(eventType) {
+  switch (eventType) {
+    case 'session': return 'onSession';
+    case 'message': return 'onMessage';
+    case 'orchestrator': return 'onOrchestrator';
+    case 'system': return 'onSystem';
+    case 'status': return 'onStatus';
+    case 'error': return 'onError';
+    case 'done': return 'onDone';
+    case 'failsafe_pause': return 'onFailsafePause';
+    case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
+    case 'participant_error': return 'onParticipantError';
+    default: return null;
+  }
+}
+
+export async function continueChat(sessionId, reason) {
+  const resp = await fetch(
+    `${API_BASE}/api/chat/${sessionId}/continue?reason=${encodeURIComponent(reason)}`,
+    { method: 'POST' },
+  );
+  if (!resp.ok) throw new Error('Continue failed');
+  return resp.json();
 }
 
 export async function getOrchestrator() {
@@ -146,6 +172,12 @@ export async function exportApiLog(sessionId) {
   return resp.json();
 }
 
+export async function fetchTableView(sessionId) {
+  const resp = await fetch(`${API_BASE}/api/chat/${sessionId}/table`);
+  if (!resp.ok) throw new Error('Table view fetch failed');
+  return resp.json();
+}
+
 export async function getAuthStatus() {
   const resp = await fetch(`${API_BASE}/api/auth/status`, { credentials: 'include' });
   if (!resp.ok) return { logged_in: false, remaining_conversations: -1 };
@@ -154,6 +186,6 @@ export async function getAuthStatus() {
 
 export async function getRateLimitStatus() {
   const resp = await fetch(`${API_BASE}/api/rate-limit/status`, { credentials: 'include' });
-  if (!resp.ok) return { remaining: -1 };
+  if (!resp.ok) return { remaining: -1, daily_limit: 30 };
   return resp.json();
 }
