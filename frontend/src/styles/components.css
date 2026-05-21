@@ -747,6 +747,13 @@
   top: 100%;
   margin-top: 4px;
   min-width: 220px;
+  /* Cap the panel at a bit less than the viewport so it never extends
+     past the bottom of the window; long content scrolls within. The
+     16px subtraction leaves a comfortable gap for shadow + breathing
+     room beneath the header. */
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--card-bg);
   border: 1px solid var(--border-primary);
   border-radius: 10px;

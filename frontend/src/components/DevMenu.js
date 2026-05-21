@@ -21,8 +21,6 @@ export default function DevMenu({
   onOrchestratorChange,
   summarizerModel,
   onSummarizerChange,
-  speedPriority,
-  onSpeedPriorityChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -179,23 +177,6 @@ export default function DevMenu({
                 </button>
               );
             })}
-
-            <div className="dev-panel-divider" />
-            <div className="dev-panel-label">Response priority</div>
-            <button
-              className={`dev-panel-choice ${!speedPriority ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onSpeedPriorityChange(false)}
-            >
-              {!speedPriority ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Prioritize model choice
-            </button>
-            <button
-              className={`dev-panel-choice ${speedPriority ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onSpeedPriorityChange(true)}
-            >
-              {speedPriority ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Prioritize conversation speed
-            </button>
 
             <div className="dev-panel-divider" />
             <div className="dev-panel-label">Display options</div>

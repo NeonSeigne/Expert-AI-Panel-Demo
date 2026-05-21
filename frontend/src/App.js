@@ -11,7 +11,7 @@ import PromptCatalogModal from './components/PromptCatalogModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
-  getSpeedPriority, setSpeedPriority, getAuthStatus,
+  getAuthStatus,
   exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
   autoSelectParticipants,
@@ -50,7 +50,6 @@ export default function App() {
   const [demoQuestions, setDemoQuestions] = useState([]);
 
   // Display options
-  const [speedPriority, setSpeedPriorityState] = useState(false);
   const [showResponseTime, setShowResponseTime] = useState(false);
   const [showChatStats, setShowChatStats] = useState(false);
 
@@ -123,7 +122,6 @@ export default function App() {
         setOrchestratorModelState(d.model_id);
       }
     }).catch(() => {});
-    getSpeedPriority().then(d => setSpeedPriorityState(!!d.enabled)).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
     getRateLimitStatus().then(d => {
       if (d?.daily_limit) setDailyLimit(d.daily_limit);
@@ -190,12 +188,6 @@ export default function App() {
   }, []);
   const handleSummarizerChange = useCallback((modelId) => {
     setSummarizerModelState(modelId || null);
-  }, []);
-  const handleSpeedPriorityChange = useCallback(async (enabled) => {
-    try {
-      await setSpeedPriority(enabled);
-      setSpeedPriorityState(enabled);
-    } catch (err) { console.error('Failed to set speed priority:', err); }
   }, []);
   const handleMaxParticipantsChange = useCallback((n) => {
     const clamped = Math.max(3, Math.min(9, n));
@@ -662,8 +654,6 @@ export default function App() {
         onOrchestratorChange={handleOrchestratorChange}
         summarizerModel={summarizerModel}
         onSummarizerChange={handleSummarizerChange}
-        speedPriority={speedPriority}
-        onSpeedPriorityChange={handleSpeedPriorityChange}
         showResponseTime={showResponseTime}
         onShowResponseTimeChange={setShowResponseTime}
         showChatStats={showChatStats}
