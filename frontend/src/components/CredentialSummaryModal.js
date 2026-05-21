@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { Download } from 'lucide-react';
 
 /**
  * Read-only modal that surfaces the orchestrator-generated Credential
@@ -19,10 +20,37 @@ export default function CredentialSummaryModal({
   onClose,
   onRefresh,
 }) {
+  // Hooks must run on every render, so the filename memo lives ABOVE
+  // the early return. The dependency on `isOpen` regenerates the
+  // timestamp each time the modal opens (matches PromptCatalogModal).
+  const filename = useMemo(() => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return (
+      'ccai-credentials-'
+      + `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+      + `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+      + '.txt'
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const credentials = (data && data.credentials) || [];
   const question = data?.question || '';
+
+  const handleDownload = () => {
+    if (!credentials.length) return;
+    const txt = renderCredentialsAsText(question, credentials);
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="ccai-credentials-overlay">
@@ -45,6 +73,15 @@ export default function CredentialSummaryModal({
               Refresh
             </button>
           )}
+          <button
+            className="btn-sm btn-outline"
+            onClick={handleDownload}
+            disabled={credentials.length === 0}
+            title="Download the credential summary as a .txt file"
+          >
+            <Download size={14} style={{ marginRight: 4 }} />
+            Download as .txt
+          </button>
           <button className="modal-close" onClick={onClose}>&times;</button>
         </div>
 
@@ -115,4 +152,47 @@ function toScore(value) {
   const n = Number(value);
   if (Number.isNaN(n)) return null;
   return Math.max(0, Math.min(1, n));
+}
+
+/**
+ * Flat human-readable .txt dump used by the Download button. Same
+ * banner/separator style as PromptCatalogModal.renderCatalogAsText so
+ * the two transparency exports look like a matched set.
+ */
+function renderCredentialsAsText(question, credentials) {
+  const now = new Date().toISOString();
+  const lines = [];
+  const banner = '═'.repeat(64);
+  lines.push(banner);
+  lines.push('Collaborative Conversational AI (CCAI) Demo — Credential Summary');
+  lines.push(`Generated: ${now}`);
+  lines.push(banner);
+  lines.push('');
+
+  if (question) {
+    lines.push('Question:');
+    for (const ln of String(question).split('\n')) {
+      lines.push('    ' + ln);
+    }
+    lines.push('');
+  }
+
+  const sep = '─'.repeat(12);
+  lines.push(`${sep} Participants ${sep}`);
+  lines.push('');
+
+  for (const cred of credentials) {
+    const score = toScore(cred.credibility_for_question);
+    const name = cred.name || cred.participant_id || '(unknown)';
+    lines.push(`## ${name}`);
+    if (score !== null) {
+      lines.push(`Credibility: ${score.toFixed(2)} of 1.00`);
+    }
+    if (cred.expertise) lines.push(`Expertise: ${cred.expertise}`);
+    if (cred.personality) lines.push(`Style: ${cred.personality}`);
+    if (cred.bias_to_watch) lines.push(`Bias to watch: ${cred.bias_to_watch}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }
