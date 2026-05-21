@@ -10,5 +10,5 @@ dist/
 venv/
 *.log
 docker-compose.override.yml
-.commit-msg.txt
+docker-compose.dev-cursor.yml
 .commit-msg.txt
