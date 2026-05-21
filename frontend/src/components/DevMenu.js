@@ -90,31 +90,6 @@ export default function DevMenu({
     });
   }, [allModels, q]);
 
-  // #region agent log
-  useEffect(() => {
-    if (!open) return;
-    fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
-      body: JSON.stringify({
-        sessionId: '896623',
-        runId: 'maxparticipants-repro',
-        hypothesisId: 'H1',
-        location: 'DevMenu.js:render',
-        message: 'DevMenu render snapshot (panel open)',
-        data: {
-          maxParticipants,
-          maxParticipantsType: typeof maxParticipants,
-          onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
-          ge9: maxParticipants >= 9,
-          le3: maxParticipants <= 3,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }, [open, maxParticipants, onMaxParticipantsChange]);
-  // #endregion
-
   const nameForModel = (id) => {
     if (!id) return null;
     const m = allModels.find(x => x.id === id);
@@ -190,63 +165,13 @@ export default function DevMenu({
               <button
                 className="btn-sm btn-outline ccai-stepper-btn"
                 disabled={maxParticipants <= 3}
-                onClick={() => {
-                  const next = Math.max(3, maxParticipants - 1);
-                  // #region agent log
-                  fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
-                    body: JSON.stringify({
-                      sessionId: '896623',
-                      runId: 'maxparticipants-repro',
-                      hypothesisId: 'H1',
-                      location: 'DevMenu.js:onMinusClick',
-                      message: 'Minus button clicked',
-                      data: {
-                        maxParticipants,
-                        maxParticipantsType: typeof maxParticipants,
-                        next,
-                        nextType: typeof next,
-                        nextIsNaN: Number.isNaN(next),
-                        onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
-                      },
-                      timestamp: Date.now(),
-                    }),
-                  }).catch(() => {});
-                  // #endregion
-                  onMaxParticipantsChange(next);
-                }}
+                onClick={() => onMaxParticipantsChange(Math.max(3, maxParticipants - 1))}
               >−</button>
               <div className="ccai-stepper-val">{maxParticipants}</div>
               <button
                 className="btn-sm btn-outline ccai-stepper-btn"
                 disabled={maxParticipants >= 9}
-                onClick={() => {
-                  const next = Math.min(9, maxParticipants + 1);
-                  // #region agent log
-                  fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
-                    body: JSON.stringify({
-                      sessionId: '896623',
-                      runId: 'maxparticipants-repro',
-                      hypothesisId: 'H1',
-                      location: 'DevMenu.js:onPlusClick',
-                      message: 'Plus button clicked',
-                      data: {
-                        maxParticipants,
-                        maxParticipantsType: typeof maxParticipants,
-                        next,
-                        nextType: typeof next,
-                        nextIsNaN: Number.isNaN(next),
-                        onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
-                      },
-                      timestamp: Date.now(),
-                    }),
-                  }).catch(() => {});
-                  // #endregion
-                  onMaxParticipantsChange(next);
-                }}
+                onClick={() => onMaxParticipantsChange(Math.min(9, maxParticipants + 1))}
               >+</button>
               <span className="dev-panel-hint">3-9</span>
             </div>

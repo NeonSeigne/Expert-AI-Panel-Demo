@@ -191,34 +191,11 @@ export default function App() {
   }, []);
   const handleMaxParticipantsChange = useCallback((n) => {
     const clamped = Math.max(3, Math.min(9, n));
-    // #region agent log
-    fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
-      body: JSON.stringify({
-        sessionId: '896623',
-        runId: 'maxparticipants-repro',
-        hypothesisId: 'H2',
-        location: 'App.js:handleMaxParticipantsChange',
-        message: 'Parent handler invoked',
-        data: {
-          n,
-          nType: typeof n,
-          nIsNaN: Number.isNaN(n),
-          clamped,
-          clampedIsNaN: Number.isNaN(clamped),
-          prevMaxParticipants: maxParticipants,
-          prevMaxParticipantsType: typeof maxParticipants,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     setMaxParticipants(clamped);
     if (selectedIds.length > clamped) {
       setSelectedIds(prev => prev.slice(0, clamped));
     }
-  }, [selectedIds, maxParticipants]);
+  }, [selectedIds]);
   const handleModelAssignmentChange = useCallback((participantId, modelId) => {
     setModelAssignments(prev => {
       const next = { ...prev };
