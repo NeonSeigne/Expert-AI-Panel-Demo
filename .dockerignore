@@ -1,0 +1,61 @@
+# Build context exclusions for `docker build` / `docker compose build`.
+# Trimming the context speeds the daemon transfer and keeps cache hashes
+# stable: changes to ignored paths do NOT invalidate Dockerfile layers.
+
+# ── Git / VCS metadata ───────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Cursor / agent transcripts (local IDE state, never needed in image)
+.cursor
+agent-transcripts
+.commit-msg.txt
+
+# ── Editor / OS junk ─────────────────────────────────────────────────
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# ── Secrets / env (image gets env at runtime via docker-compose)
+.env
+.env.*
+*.env
+!**/.env.example
+
+# ── Python local caches ──────────────────────────────────────────────
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+
+# ── Node local caches & build outputs ────────────────────────────────
+# Lockfiles ARE included on purpose so `npm ci` is reproducible.
+**/node_modules
+frontend/build
+frontend/.next
+frontend/.cache
+**/.cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Local-only docker compose overrides ──────────────────────────────
+# The base docker-compose.yml is needed for `docker compose build` from
+# the build dir, but the local override (which references absolute host
+# paths to a secrets file outside this repo) shouldn't end up in the
+# image build context.
+docker-compose.override.yml
+
+# ── Tests aren't shipped in the runtime image ────────────────────────
+# (Re-enable if you want to run pytest inside the deployed container.)
+backend/tests

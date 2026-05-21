@@ -1,0 +1,87 @@
+---
+description: Docker build cache conventions for CCAI-Vibe-Demo
+globs: Dockerfile,docker-compose*.yml,.dockerignore,backend/requirements.txt,frontend/package*.json
+alwaysApply: false
+---
+
+# Docker build cache conventions
+
+This project uses **BuildKit cache mounts** so `npm ci` and `pip install`
+skip the network when only source files change. Don't replace them
+with plain `RUN` commands - that reintroduces full re-downloads on every
+dependency change.
+
+## Required Dockerfile pattern
+
+The Dockerfile MUST start with the BuildKit syntax directive:
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+```
+
+### Frontend stage (root user, node:22-alpine)
+
+```dockerfile
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+```
+
+### Backend stage (USER user, uid 1000, python:3.12-slim)
+
+```dockerfile
+COPY --chown=user backend/requirements.txt ./
+RUN --mount=type=cache,target=/home/user/.cache/pip,uid=1000,gid=1000 \
+    pip install --user -r requirements.txt
+```
+
+The `uid=1000,gid=1000` flags are mandatory because the cache target
+sits inside the unprivileged user's home dir. Without them the cache
+is created root-owned and pip cannot write to it.
+
+## Don'ts
+
+- **Don't** pass `--no-cache-dir` to `pip install`. It defeats the
+  cache mount. The mount lives outside the image, so wheels never
+  bloat the final layer either way.
+- **Don't** `COPY .` blindly. Layers must be copy-deps-first,
+  copy-source-second so a source edit doesn't bust the deps layer.
+- **Don't** add new files outside `backend/`, `frontend/` or the
+  lockfiles to a `COPY` line without first checking `.dockerignore`.
+
+## Build context (`.dockerignore`)
+
+The ignore list excludes `.git/`, `node_modules/`, `frontend/build/`,
+`agent-transcripts/`, `__pycache__`, secrets (`.env*`),
+`docker-compose.override.yml`, `backend/tests/`, and editor metadata.
+If you need a previously-ignored path inside the image, add a narrow
+`!path/to/keep` exception rather than removing the broad ignore.
+
+## Verifying the cache works
+
+After a Dockerfile or deps-file change, run two builds back to back:
+
+```powershell
+docker compose build
+docker compose build  # second time
+```
+
+The second build's `npm ci` / `pip install` step should print a
+`CACHED` line (when nothing in the deps file changed) or a
+near-instant `=> [internal] load build context` finish (when only
+source files changed). If it re-downloads, the cache mount is
+mis-configured.
+
+If a build ever errors with `the --mount option requires BuildKit`,
+opt in explicitly:
+
+```powershell
+$env:DOCKER_BUILDKIT=1; docker compose build
+```
+
+## HuggingFace Spaces compatibility
+
+HuggingFace's Docker Space builder honors the `# syntax=` directive
+and BuildKit cache mounts. Older builders silently treat the mounts
+as no-ops, so this Dockerfile remains forward-compatible with any
+plain-Docker environment.
