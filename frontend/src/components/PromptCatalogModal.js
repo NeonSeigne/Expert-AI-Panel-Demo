@@ -157,7 +157,7 @@ function renderCatalogAsText(catalog) {
   const lines = [];
   const banner = '═'.repeat(64);
   lines.push(banner);
-  lines.push('CCAI Vibe Demo — Current chat prompts');
+  lines.push('Collaborative Conversational AI (CCAI) Demo — Current chat prompts');
   lines.push(`Generated: ${now}`);
   lines.push(banner);
   lines.push('');

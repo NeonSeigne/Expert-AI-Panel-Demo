@@ -36,7 +36,7 @@ export default function Header({
         <h1 className="app-title">
           <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="app-title-link">
             Neon.ai
-          </a> - CCAI Vibe Demo
+          </a> - Collaborative Conversational AI (CCAI) Demo
         </h1>
       </div>
       <div className="header-right">

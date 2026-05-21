@@ -1,5 +1,5 @@
 ---
-title: CCAI Vibe Demo
+title: Collaborative Conversational AI (CCAI) Demo
 emoji: 🤝
 colorFrom: blue
 colorTo: purple
@@ -11,7 +11,7 @@ hf_oauth_scopes:
 pinned: false
 ---
 
-# CCAI Vibe Demo
+# Collaborative Conversational AI (CCAI) Demo
 
 A demo of **Collaborative Conversational AI (CCAI)** - Neon.ai's patented
 group-discussion technology. Up to 9 participants (any mix of AI personas,
