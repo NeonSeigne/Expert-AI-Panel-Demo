@@ -1,6 +1,16 @@
+// Default to '' (relative URLs) so any production-style build - whether
+// done inside Docker (Dockerfile sets REACT_APP_API_URL=) or on the host
+// without that env var - hits the same origin that served the page. This
+// avoids the cross-origin trap where a `npm run build` on the host
+// without REACT_APP_API_URL would silently bake `http://localhost:8000`
+// into the bundle and break every API call from a Docker deployment.
+//
+// If you want the CRA dev server (`npm start` on :3000) to talk to a
+// FastAPI backend on :8000, set REACT_APP_API_URL=http://localhost:8000
+// in `frontend/.env.development` or your shell.
 const API_BASE = process.env.REACT_APP_API_URL !== undefined
   ? process.env.REACT_APP_API_URL
-  : 'http://localhost:8000';
+  : '';
 
 export async function fetchModels() {
   const resp = await fetch(`${API_BASE}/api/models`, { cache: 'no-store' });
