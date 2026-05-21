@@ -1,5 +1,6 @@
 /* ════════════════════════════════════════════════════════════════
-   CCAI Vibe Demo - additive styles on top of LLMChats3 baseline.
+   Collaborative Conversational AI (CCAI) Demo - additive styles on
+   top of LLMChats3 baseline.
    Anything new (multi-participant sidebar, dropdown, expert modal,
    table view, orchestrator banners, failsafe banner) lives here.
    ════════════════════════════════════════════════════════════════ */
@@ -566,6 +567,191 @@
 }
 
 
+/* ── Credential Summary modal ──────────────────────────────────────
+   Surfaces the orchestrator's per-participant assessment built after
+   Phase 1 and refreshed after Phase 2 critique. Reuses the table
+   modal's overlay/card chrome for visual consistency.
+   ──────────────────────────────────────────────────────────────── */
+
+.ccai-credentials-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ccai-credentials-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  width: min(880px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.ccai-credentials-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.ccai-credentials-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-credentials-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  max-width: 560px;
+}
+
+.ccai-credentials-question {
+  margin: 0 20px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ccai-credentials-question strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.ccai-credentials-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.ccai-credentials-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-primary);
+  border-radius: 8px;
+}
+
+.ccai-credential-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+
+.ccai-credential-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ccai-credential-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-credibility-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ccai-credibility-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.ccai-credibility-bar {
+  width: 120px;
+  height: 6px;
+  background: var(--border-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ccai-credibility-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--accent-primary, #6366F1),
+    var(--accent-primary, #6366F1)
+  );
+  transition: width 0.3s ease;
+}
+
+.ccai-credibility-num {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+}
+
+.ccai-credential-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ccai-credential-row-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  padding-top: 2px;
+}
+
+.ccai-credential-row-value {
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .ccai-credentials-card {
+    max-height: 100vh;
+    border-radius: 0;
+    width: 100vw;
+  }
+  .ccai-credential-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .ccai-credibility-bar {
+    width: 80px;
+  }
+}
+
+
 /* ── Orchestrator messages ─────────────────────────────────────── */
 
 .ccai-orchestrator-msg {
@@ -832,4 +1018,270 @@
     border-radius: 0;
     width: 100vw;
   }
+}
+
+
+/* ── Conversation limits modal ────────────────────────────────────
+   Re-uses .ccai-credentials-overlay/.ccai-credentials-card/.ccai-
+   credentials-header/.ccai-credentials-body for the shell so the
+   look matches the credential summary modal. The classes below
+   style the per-section list and per-field stepper row. */
+
+.ccai-limits-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+}
+
+.ccai-limits-group + .ccai-limits-group {
+  margin-top: 4px;
+}
+
+.ccai-limits-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.ccai-limit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.ccai-limit-row + .ccai-limit-row {
+  border-top: 1px dashed var(--border-primary);
+  padding-top: 10px;
+}
+
+.ccai-limit-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ccai-limit-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-limit-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ccai-limit-input {
+  width: 64px;
+  padding: 4px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: right;
+}
+
+.ccai-limit-range {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ccai-limit-reset {
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ccai-limit-reset:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.ccai-limit-help {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+
+/* ── Auto-select participants (dropdown + sidebar placeholder) ──── */
+
+.ccai-dropdown-autoselect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ccai-dropdown-autoselect:hover {
+  border-color: var(--accent-primary, var(--text-primary));
+}
+
+.ccai-dropdown-autoselect-on {
+  background: var(--accent-primary, var(--bg-primary));
+  color: var(--bg-primary, var(--text-primary));
+  border-color: transparent;
+}
+
+.ccai-dropdown-autoselect-help {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 6px 4px 0;
+  line-height: 1.4;
+}
+
+.ccai-dropdown-section-muted {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ccai-sidebar-autoselect-empty {
+  margin: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ccai-sidebar-autoselect-empty strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+
+/* ── Prompt catalog modal ─────────────────────────────────────────
+   Re-uses .ccai-credentials-overlay/.ccai-credentials-card shell.
+   The classes below style the per-group sections and per-item
+   purpose / variables / template blocks. */
+
+.ccai-prompt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+}
+
+.ccai-prompt-group + .ccai-prompt-group {
+  margin-top: 4px;
+}
+
+.ccai-prompt-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 6px;
+}
+
+.ccai-prompt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.ccai-prompt-item + .ccai-prompt-item {
+  border-top: 1px dashed var(--border-primary);
+  padding-top: 12px;
+}
+
+.ccai-prompt-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ccai-prompt-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-prompt-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ccai-prompt-copy-btn:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.ccai-prompt-purpose {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.ccai-prompt-vars {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ccai-prompt-vars code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11.5px;
+}
+
+.ccai-prompt-template {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
 }

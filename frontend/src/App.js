@@ -5,11 +5,18 @@ import ChatControls from './components/ChatControls';
 import ChatArea from './components/ChatArea';
 import ExpertPersonaModal from './components/ExpertPersonaModal';
 import ChatTableView from './components/ChatTableView';
+import CredentialSummaryModal from './components/CredentialSummaryModal';
+import ConversationLimitsModal from './components/ConversationLimitsModal';
+import PromptCatalogModal from './components/PromptCatalogModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
-  getSpeedPriority, setSpeedPriority, getAuthStatus,
-  exportChat, exportApiLog, fetchTableView, getRateLimitStatus,
+  getAuthStatus,
+  exportChat, exportApiLog, fetchTableView,   fetchCredentials,
+  fetchConversationLimitsDefaults,
+  autoSelectParticipants,
+  fetchPromptCatalog,
+  getRateLimitStatus,
 } from './utils/api';
 import * as storage from './utils/storage';
 import './styles/variables.css';
@@ -43,7 +50,6 @@ export default function App() {
   const [demoQuestions, setDemoQuestions] = useState([]);
 
   // Display options
-  const [speedPriority, setSpeedPriorityState] = useState(false);
   const [showResponseTime, setShowResponseTime] = useState(false);
   const [showChatStats, setShowChatStats] = useState(false);
 
@@ -66,6 +72,32 @@ export default function App() {
   const [expertEditing, setExpertEditing] = useState(null);
   const [tableData, setTableData] = useState(null);
   const [tableOpen, setTableOpen] = useState(false);
+  // Credential Summary: cached snapshot fed by SSE `credentials_updated`
+  // events, plus an open/closed flag and a question echo for the modal
+  // header. Reset on each new chat start.
+  const [credentialsData, setCredentialsData] = useState(null);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  // Conversation limits: schema (defaults + bounds + descriptions)
+  // pulled from /api/chat/limits/defaults, plus a sparse map of the
+  // user's overrides persisted to localStorage. Empty map means
+  // "use server defaults". The schema lazy-loads on first open.
+  const [limitsSchema, setLimitsSchema] = useState(null);
+  const [limitsOverrides, setLimitsOverrides] = useState(
+    persisted.conversation_limits || {},
+  );
+  const [limitsOpen, setLimitsOpen] = useState(false);
+  // Auto-select toggle: when on, the participant dropdown defers
+  // selection to the orchestrator LLM at /chat/start time. We also
+  // snapshot the user's manual selection before turning it on so we
+  // can restore it when it's turned back off.
+  const [autoSelectMode, setAutoSelectMode] = useState(
+    !!persisted.auto_select_mode,
+  );
+  const [priorManualSelection, setPriorManualSelection] = useState(null);
+  // Prompt catalog: lazily fetched on first open, then cached for the
+  // rest of the session. The catalog is static per backend deploy.
+  const [promptCatalog, setPromptCatalog] = useState(null);
+  const [promptCatalogOpen, setPromptCatalogOpen] = useState(false);
 
   const abortRef = useRef(null);
 
@@ -90,7 +122,6 @@ export default function App() {
         setOrchestratorModelState(d.model_id);
       }
     }).catch(() => {});
-    getSpeedPriority().then(d => setSpeedPriorityState(!!d.enabled)).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
     getRateLimitStatus().then(d => {
       if (d?.daily_limit) setDailyLimit(d.daily_limit);
@@ -158,12 +189,6 @@ export default function App() {
   const handleSummarizerChange = useCallback((modelId) => {
     setSummarizerModelState(modelId || null);
   }, []);
-  const handleSpeedPriorityChange = useCallback(async (enabled) => {
-    try {
-      await setSpeedPriority(enabled);
-      setSpeedPriorityState(enabled);
-    } catch (err) { console.error('Failed to set speed priority:', err); }
-  }, []);
   const handleMaxParticipantsChange = useCallback((n) => {
     const clamped = Math.max(3, Math.min(9, n));
     setMaxParticipants(clamped);
@@ -211,6 +236,21 @@ export default function App() {
       return next;
     });
   }, []);
+
+  // ─── Auto-select toggle ─────────────────────────────────────────
+  // When turning ON, snapshot the current manual selection so we can
+  // restore it on OFF. The actual LLM ranking happens in handleStart
+  // (so the user's question is available); this just flips the mode.
+  const handleToggleAutoSelectMode = useCallback((on) => {
+    if (on && !autoSelectMode) {
+      setPriorManualSelection([...selectedIds]);
+    } else if (!on && autoSelectMode && priorManualSelection !== null) {
+      setSelectedIds(priorManualSelection);
+      setPriorManualSelection(null);
+    }
+    setAutoSelectMode(!!on);
+    storage.setAutoSelectMode(!!on);
+  }, [autoSelectMode, selectedIds, priorManualSelection]);
 
   // ─── Expert persona ops ─────────────────────────────────────────
   const handleOpenExpertModal = useCallback((personaOrNull) => {
@@ -285,12 +325,77 @@ export default function App() {
     } catch (err) { console.error('Table fetch failed:', err); }
   }, [sessionId]);
 
+  // ─── Credential Summary view ────────────────────────────────────
+  // Always re-fetch on open so the modal reflects the very latest
+  // server-side state (the Phase-3 refresh may have run after the SSE
+  // event was missed by a stale tab).
+  const handleShowCredentials = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await fetchCredentials(sessionId);
+      setCredentialsData(data);
+      setCredentialsOpen(true);
+    } catch (err) { console.error('Credentials fetch failed:', err); }
+  }, [sessionId]);
+
+  const handleRefreshCredentials = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await fetchCredentials(sessionId);
+      setCredentialsData(data);
+    } catch (err) { console.error('Credentials refresh failed:', err); }
+  }, [sessionId]);
+
+  // ─── Conversation limits (settings) ────────────────────────────
+  // Lazy-load the schema on first open, then cache it for the rest
+  // of the session. The user's override map is already in state
+  // and persisted to localStorage; we hand it to the modal as the
+  // initial draft and re-persist on every change.
+  const handleShowConversationLimits = useCallback(async () => {
+    if (!limitsSchema) {
+      try {
+        const data = await fetchConversationLimitsDefaults();
+        setLimitsSchema(data);
+      } catch (err) {
+        console.error('Conversation-limit schema fetch failed:', err);
+        return;
+      }
+    }
+    setLimitsOpen(true);
+  }, [limitsSchema]);
+
+  const handleConversationLimitsChange = useCallback((next) => {
+    setLimitsOverrides(next);
+    storage.setConversationLimits(next);
+  }, []);
+
+  const handleConversationLimitsResetAll = useCallback(() => {
+    setLimitsOverrides({});
+    storage.setConversationLimits({});
+  }, []);
+
+  // ─── Prompt catalog (Transparency) ─────────────────────────────
+  const handleShowPromptCatalog = useCallback(async () => {
+    if (!promptCatalog) {
+      try {
+        const data = await fetchPromptCatalog();
+        setPromptCatalog(data);
+      } catch (err) {
+        console.error('Prompt catalog fetch failed:', err);
+        return;
+      }
+    }
+    setPromptCatalogOpen(true);
+  }, [promptCatalog]);
+
   // ─── Build start payload ────────────────────────────────────────
-  const buildStartPayload = useCallback((theQuestion) => {
-    const enabledParticipants = selectedParticipants.filter(
-      p => enabledMap[p.participant_id] !== false,
-    );
-    const participants = enabledParticipants.map(p => ({
+  // `participantsOverride`, if provided, replaces the
+  // selectedParticipants-derived list (used by the auto-select flow
+  // because the freshly-chosen list isn't in state yet when we need it).
+  const buildStartPayload = useCallback((theQuestion, participantsOverride) => {
+    const baseList = participantsOverride
+      ?? selectedParticipants.filter(p => enabledMap[p.participant_id] !== false);
+    const participants = baseList.map(p => ({
       participant_id: p.participant_id,
       kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
         : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
@@ -298,7 +403,7 @@ export default function App() {
       role_prompt: p.role_prompt || null,
       model_id_override: modelAssignments[p.participant_id] || null,
     }));
-    const expert_payload = enabledParticipants
+    const expert_payload = baseList
       .filter(p => (p.kind || '').startsWith('expert'))
       .map(p => ({
         participant_id: p.participant_id,
@@ -314,8 +419,10 @@ export default function App() {
       orchestrator_model_id: orchestratorModel,
       summarizer_model_id: summarizerModel,
       max_participants: maxParticipants,
+      // Sparse override map; backend clamps and falls back per-field.
+      limits: limitsOverrides,
     };
-  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants]);
+  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides]);
 
   // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -336,22 +443,94 @@ export default function App() {
   // ─── Start chat ─────────────────────────────────────────────────
   const handleStart = useCallback(async (theQuestion) => {
     if (!theQuestion || !theQuestion.trim()) return;
-    if (enabledSelectedCount < 2) return;
+    // In auto-select mode the dropdown has no manual picks - skip the
+    // pre-flight count check and validate the chosen pool below instead.
+    if (!autoSelectMode && enabledSelectedCount < 2) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
     setIsRunning(true);
     setMessages([]);
     setSystemMessages([]);
-    setStatusText('Starting conversation...');
+    setStatusText(
+      autoSelectMode ? 'Picking participants...' : 'Starting conversation...',
+    );
     setSessionId(null);
     setSessionParticipants([]);
     setPause(null);
     setActiveQuestion(theQuestion.trim());
+    setCredentialsData(null);
+
+    // Resolve the final participant list. When auto-select is on, ask
+    // the orchestrator to rank every available candidate; otherwise
+    // fall through to the user's manual selection.
+    let resolvedParticipants = null;
+    if (autoSelectMode) {
+      const candidatePool = Object.values(allCatalogParticipants);
+      if (candidatePool.length < 2) {
+        setIsRunning(false);
+        setStatusText('');
+        setSystemMessages(prev => [...prev, {
+          text: 'Auto-select needs at least 2 candidate participants available.',
+        }]);
+        return;
+      }
+      const candidatesPayload = candidatePool.map(p => ({
+        participant_id: p.participant_id,
+        name: p.name,
+        role_prompt: p.role_prompt || '',
+        kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
+          : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
+        model_id: modelAssignments[p.participant_id]
+          || p.model_id || p.default_model_id || '',
+      }));
+      try {
+        const result = await autoSelectParticipants({
+          question: theQuestion.trim(),
+          count: maxParticipants,
+          candidates: candidatesPayload,
+          orchestrator_model_id: orchestratorModel,
+        });
+        const chosenIds = result.selected || [];
+        resolvedParticipants = chosenIds
+          .map(id => allCatalogParticipants[id])
+          .filter(Boolean);
+        if (resolvedParticipants.length < 2) {
+          setIsRunning(false);
+          setStatusText('');
+          setSystemMessages(prev => [...prev, {
+            text: 'Auto-select returned too few participants. '
+              + 'Turn auto-select off and pick manually.',
+          }]);
+          return;
+        }
+        // Reflect the pick in the sidebar.
+        setSelectedIds(chosenIds);
+        setEnabledMap(prev => {
+          const next = { ...prev };
+          for (const id of chosenIds) next[id] = true;
+          return next;
+        });
+        if (result.rationale) {
+          setSystemMessages(prev => [...prev, {
+            text: `Auto-select rationale: ${result.rationale}`,
+          }]);
+        }
+        setStatusText('Starting conversation...');
+      } catch (err) {
+        console.error('Auto-select failed:', err);
+        setIsRunning(false);
+        setStatusText('');
+        setSystemMessages(prev => [...prev, {
+          text: `Auto-select failed: ${err.message}`,
+        }]);
+        return;
+      }
+    }
 
     try {
       await startChat(
-        buildStartPayload(theQuestion),
+        buildStartPayload(theQuestion, resolvedParticipants),
         {
           onSession: (data) => {
             setSessionId(data.session_id);
@@ -393,6 +572,17 @@ export default function App() {
           onOrchestratorCapPause: (data) => {
             setPause({ reason: 'orchestrator', ...data });
           },
+          onCredentialsUpdated: (data) => {
+            // Backend emits this after the Phase-1.5 build and (when
+            // it changes) after the Phase-3 refresh. We cache the
+            // payload so the modal opens instantly without a round trip.
+            setCredentialsData({
+              session_id: data.session_id,
+              question: theQuestion.trim(),
+              credentials: data.credentials || [],
+              stage: data.stage || 'built',
+            });
+          },
           onDone: () => {
             setIsRunning(false);
             setStatusText('');
@@ -414,7 +604,11 @@ export default function App() {
       abortRef.current = null;
       getAuthStatus().then(setAuth).catch(() => {});
     }
-  }, [buildStartPayload, enabledSelectedCount, dailyLimit]);
+  }, [
+    buildStartPayload, enabledSelectedCount, dailyLimit,
+    autoSelectMode, allCatalogParticipants, modelAssignments,
+    maxParticipants, orchestratorModel,
+  ]);
 
   const handleStartRandom = useCallback(() => {
     if (demoQuestions.length === 0) {
@@ -425,8 +619,17 @@ export default function App() {
     handleStart(q.text);
   }, [demoQuestions, handleStart]);
 
-  const startDisabled = isRunning || enabledSelectedCount < 2;
-  const startDisabledReason = enabledSelectedCount < 2
+  // In auto-select mode we don't require manual picks - the orchestrator
+  // will choose them at /chat/start time, so just need 2+ candidates
+  // available in the catalog.
+  const autoSelectReady = autoSelectMode
+    && Object.keys(allCatalogParticipants).length >= 2;
+  const startDisabled = isRunning
+    || (!autoSelectMode && enabledSelectedCount < 2)
+    || (autoSelectMode && !autoSelectReady);
+  const startDisabledReason = autoSelectMode
+    ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
+    : enabledSelectedCount < 2
     ? 'Add at least 2 active participants to start.'
     : '';
 
@@ -443,14 +646,14 @@ export default function App() {
         maxParticipants={maxParticipants}
         onToggleParticipant={handleToggleParticipant}
         onOpenExpertModal={handleOpenExpertModal}
+        autoSelectMode={autoSelectMode}
+        onToggleAutoSelectMode={handleToggleAutoSelectMode}
 
         allModels={allModelsFlat}
         orchestratorModel={orchestratorModel}
         onOrchestratorChange={handleOrchestratorChange}
         summarizerModel={summarizerModel}
         onSummarizerChange={handleSummarizerChange}
-        speedPriority={speedPriority}
-        onSpeedPriorityChange={handleSpeedPriorityChange}
         showResponseTime={showResponseTime}
         onShowResponseTimeChange={setShowResponseTime}
         showChatStats={showChatStats}
@@ -460,6 +663,11 @@ export default function App() {
         modelAssignments={modelAssignments}
         onModelAssignmentChange={handleModelAssignmentChange}
         onShowTableView={handleShowTableView}
+        onShowCredentials={handleShowCredentials}
+        hasCredentials={!!sessionId}
+        onShowPromptCatalog={handleShowPromptCatalog}
+        onShowConversationLimits={handleShowConversationLimits}
+        conversationLimitsOverridden={Object.keys(limitsOverrides).length > 0}
         onDownloadChatTxt={handleDownloadTxt}
         onDownloadChatMd={handleDownloadMd}
         onDownloadCsvTable={handleDownloadCsvTable}
@@ -475,6 +683,8 @@ export default function App() {
           modelAssignments={modelAssignments}
           onToggleEnabled={handleSidebarToggleEnabled}
           onRemove={handleSidebarRemove}
+          autoSelectMode={autoSelectMode}
+          maxParticipants={maxParticipants}
         />
         <div className="content">
           <ChatControls
@@ -520,6 +730,25 @@ export default function App() {
           onExportCsv={handleDownloadCsvTable}
         />
       )}
+      <CredentialSummaryModal
+        isOpen={credentialsOpen}
+        data={credentialsData}
+        onClose={() => setCredentialsOpen(false)}
+        onRefresh={handleRefreshCredentials}
+      />
+      <ConversationLimitsModal
+        isOpen={limitsOpen}
+        schema={limitsSchema}
+        overrides={limitsOverrides}
+        onClose={() => setLimitsOpen(false)}
+        onChange={handleConversationLimitsChange}
+        onResetAll={handleConversationLimitsResetAll}
+      />
+      <PromptCatalogModal
+        isOpen={promptCatalogOpen}
+        catalog={promptCatalog}
+        onClose={() => setPromptCatalogOpen(false)}
+      />
     </div>
   );
 }

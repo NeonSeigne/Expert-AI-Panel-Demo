@@ -41,7 +41,11 @@ async def lifespan(app: FastAPI):
     await close_shared_client()
 
 
-app = FastAPI(title="CCAI Vibe Demo", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Collaborative Conversational AI (CCAI) Demo",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     SessionMiddleware,

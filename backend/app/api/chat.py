@@ -21,13 +21,19 @@ from app.middleware.rate_limit import (
 )
 from app.services.extra_personas import get_extra_persona
 from app.services.models import (
+    CONVERSATION_LIMIT_BOUNDS,
+    CONVERSATION_LIMIT_DESCRIPTIONS,
+    ConversationLimits,
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
     MIN_MAX_PARTICIPANTS,
     Participant,
     Phase,
     Session,
+    clamp_conversation_limits,
 )
+from app.services.auto_select import auto_select_participants
+from app.services.prompts.catalog import build_prompt_catalog
 from app.services.orchestrator import (
     create_session,
     get_session,
@@ -93,6 +99,27 @@ class ParticipantSelectionPayload(BaseModel):
     model_id_override: str | None = None
 
 
+class AutoSelectCandidate(BaseModel):
+    """One row of the candidate pool sent to the auto-select endpoint."""
+
+    participant_id: str
+    name: str
+    role_prompt: str = ""
+    kind: str = ""
+    model_id: str = ""
+
+
+class AutoSelectRequest(BaseModel):
+    """Body of POST /api/chat/auto-select-participants."""
+
+    question: str
+    count: int = 5
+    candidates: list[AutoSelectCandidate]
+    # Optional: pin the orchestrator model used for ranking. Defaults
+    # to the configured global orchestrator model.
+    orchestrator_model_id: str | None = None
+
+
 class StartChatRequest(BaseModel):
     question: str | None = None
 
@@ -103,6 +130,11 @@ class StartChatRequest(BaseModel):
     orchestrator_model_id: str | None = None
     summarizer_model_id: str | None = None
     max_participants: int = DEFAULT_MAX_PARTICIPANTS
+    # User-supplied overrides for the conversation's repetition /
+    # failsafe limits. Any field that is missing or out of range is
+    # silently clamped to the server-side default; see
+    # `clamp_conversation_limits` in services.models.
+    limits: dict[str, int] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +193,87 @@ async def api_generate_role_freeform(req: GenerateRoleFreeformRequest):
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Prompt catalog (Transparency: "View current chat prompts")
+# ---------------------------------------------------------------------------
+
+@router.get("/chat/prompts/catalog")
+async def api_chat_prompts_catalog():
+    """Return every prompt template the orchestrator and participants
+    use during a chat, grouped by phase, each with a short purpose and
+    a list of runtime template variables. Used by the
+    PromptCatalogModal in the settings menu's Transparency section.
+
+    Shape:
+      {"groups": [{"title": "...", "items": [{"name", "purpose",
+       "variables", "template"}]}, ...]}
+    """
+    return build_prompt_catalog()
+
+
+# ---------------------------------------------------------------------------
+# Auto-select participants (LLM-based ranking for "Select N Automatically")
+# ---------------------------------------------------------------------------
+
+@router.post("/chat/auto-select-participants")
+async def api_auto_select_participants(req: AutoSelectRequest):
+    """Rank the candidate pool by relevance to the question and return
+    the top `count` participant_ids. The frontend calls this just
+    before /chat/start when the user has the auto-select toggle on.
+
+    Returns: {"selected": [id, ...], "rationale": "short string"}.
+    `selected` is exactly `count` long unless the candidate pool is
+    smaller. Invalid / hallucinated ids are silently dropped and
+    padded with the next unused candidates.
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(400, "Question is required")
+    if not req.candidates:
+        raise HTTPException(400, "At least one candidate is required")
+    if req.count < 1:
+        raise HTTPException(400, "count must be >= 1")
+
+    candidates_payload = [c.dict() for c in req.candidates]
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
+    result = await auto_select_participants(
+        orchestrator_model_id=orchestrator_id,
+        question=req.question,
+        candidates=candidates_payload,
+        count=req.count,
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Conversation limits (steppers in the settings menu)
+# ---------------------------------------------------------------------------
+
+@router.get("/chat/limits/defaults")
+async def api_chat_limits_defaults():
+    """Return defaults, bounds, and human-readable descriptions for the
+    `ConversationLimits` knobs the user can tune in the settings menu.
+
+    The frontend uses the `defaults` to initialize the steppers, the
+    `bounds` to set min/max and clamp on input, and the `descriptions`
+    to render the section headers and per-field help text. Keeping
+    this server-driven means we add a knob in one place
+    (services.models) and the UI picks it up without a frontend
+    change beyond rendering.
+    """
+    defaults = ConversationLimits()
+    return {
+        "defaults": {
+            field_name: getattr(defaults, field_name)
+            for field_name in CONVERSATION_LIMIT_BOUNDS.keys()
+        },
+        "bounds": {
+            field_name: {"min": lo, "max": hi}
+            for field_name, (lo, hi) in CONVERSATION_LIMIT_BOUNDS.items()
+        },
+        "descriptions": CONVERSATION_LIMIT_DESCRIPTIONS,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +423,12 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     session.orchestrator_model_id = req.orchestrator_model_id
     session.summarizer_model_id = req.summarizer_model_id
     session.max_participants = max_p
+    # Attach the user-tunable limits and seed the runtime failsafe
+    # caps from them. clamp_conversation_limits silently coerces any
+    # missing or out-of-range values back to the defaults / bounds.
+    session.limits = clamp_conversation_limits(req.limits)
+    session.participant_message_cap = session.limits.participant_message_pause_at
+    session.orchestrator_call_cap = session.limits.orchestrator_call_pause_at
 
     async def event_stream():
         yield (
@@ -363,6 +482,23 @@ async def api_export_chat(session_id: str, fmt: str = "txt"):
     if fmt == "csv-table":
         return _export_csv_table(session)
     return _export_txt(session)
+
+
+@router.get("/chat/{session_id}/credentials")
+async def api_credentials(session_id: str):
+    """Return the orchestrator-generated Credential Summary for the
+    current session. Built after Phase 1 and refreshed once after Phase 2
+    critique - so the response can be empty if the user opens the modal
+    before Phase 1 finishes.
+    """
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return {
+        "session_id": session_id,
+        "question": session.question,
+        "credentials": session.credential_summary or [],
+    }
 
 
 @router.get("/chat/{session_id}/api-log")
@@ -426,6 +562,88 @@ def _format_participants_block(session: Session) -> list[str]:
     ]
 
 
+def _credentials_intro_line() -> str:
+    """One-liner that explains where this block came from. Repeated in TXT
+    and MD exports so the file is self-explanatory without the UI."""
+    return (
+        "Orchestrator-generated assessments of each participant's "
+        "expertise, debating style, credibility on this question, and "
+        "biases to watch. Built after Phase 1 (initial opinions) and "
+        "refreshed once after Phase 2 (critique)."
+    )
+
+
+def _format_credential_block_txt(session: Session) -> list[str]:
+    """Plain-text Credential Summary section. Returns [] if no summary
+    has been built yet (e.g. user exports mid-Phase-1)."""
+    creds = session.credential_summary or []
+    if not creds:
+        return []
+    lines = ["Credential Summary", "-" * 40, _credentials_intro_line(), ""]
+    for c in creds:
+        name = c.get("name") or c.get("participant_id") or "(unknown)"
+        lines.append(f"{name}")
+        if c.get("expertise"):
+            lines.append(f"  Expertise:   {c['expertise']}")
+        if c.get("personality"):
+            lines.append(f"  Style:       {c['personality']}")
+        if c.get("credibility_for_question") is not None:
+            try:
+                score = float(c["credibility_for_question"])
+                lines.append(f"  Credibility: {score:.2f} (0-1)")
+            except (TypeError, ValueError):
+                pass
+        if c.get("bias_to_watch"):
+            lines.append(f"  Bias:        {c['bias_to_watch']}")
+        lines.append("")
+    return lines
+
+
+def _format_credential_block_md(session: Session) -> list[str]:
+    """Markdown Credential Summary section. Returns [] when empty."""
+    creds = session.credential_summary or []
+    if not creds:
+        return []
+    lines = ["## Credential Summary", "", f"_{_credentials_intro_line()}_", ""]
+    for c in creds:
+        name = c.get("name") or c.get("participant_id") or "(unknown)"
+        lines.append(f"### {name}")
+        lines.append("")
+        if c.get("expertise"):
+            lines.append(f"- **Expertise:** {c['expertise']}")
+        if c.get("personality"):
+            lines.append(f"- **Style:** {c['personality']}")
+        if c.get("credibility_for_question") is not None:
+            try:
+                score = float(c["credibility_for_question"])
+                lines.append(f"- **Credibility on this question:** {score:.2f} (0-1)")
+            except (TypeError, ValueError):
+                pass
+        if c.get("bias_to_watch"):
+            lines.append(f"- **Bias to watch:** {c['bias_to_watch']}")
+        lines.append("")
+    return lines
+
+
+def _credential_for(session: Session, participant_id: str) -> dict:
+    """Lookup helper used by the CSV writer. Empty dict if not built yet."""
+    for c in session.credential_summary or []:
+        if c.get("participant_id") == participant_id:
+            return c
+    return {}
+
+
+def _format_credibility_score(value: object) -> str:
+    """CSV-safe formatting for the credibility number (rounded float).
+    Returns "" when the value is missing or not numeric."""
+    if value is None:
+        return ""
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _export_txt(session: Session) -> dict:
     lines = ["CCAI Conversation Log", "=" * 40, ""]
     lines.append("Question:")
@@ -434,6 +652,9 @@ def _export_txt(session: Session) -> dict:
     lines.append("Participants:")
     lines.extend(_format_participants_block(session))
     lines.append("")
+    cred_lines = _format_credential_block_txt(session)
+    if cred_lines:
+        lines.extend(cred_lines)
     for m in session.messages:
         speaker = m.get("speaker_name") or "(anon)"
         if m.get("role") == "orchestrator":
@@ -457,7 +678,12 @@ def _export_md(session: Session) -> dict:
     lines.append("")
     for p in session.participants:
         lines.append(f"- **{p.name}** (*{p.display_name}*)")
-    lines.append("\n---\n")
+    lines.append("")
+    cred_lines = _format_credential_block_md(session)
+    if cred_lines:
+        lines.extend(cred_lines)
+    lines.append("---")
+    lines.append("")
     for m in session.messages:
         speaker = m.get("speaker_name") or "(anon)"
         is_orch = m.get("role") == "orchestrator"
@@ -478,7 +704,12 @@ def _export_md(session: Session) -> dict:
 
 
 def _export_csv_table(session: Session) -> dict:
-    """RFC-4180 compliant CSV. csv.writer handles quoting/escaping."""
+    """RFC-4180 compliant CSV. csv.writer handles quoting/escaping.
+
+    Columns include the orchestrator-generated Credential Summary so
+    the table is self-contained: who each participant is (per the
+    orchestrator's read), then what they said and how it evolved.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
 
@@ -488,14 +719,23 @@ def _export_csv_table(session: Session) -> dict:
     writer.writerow([])
     writer.writerow([
         "Participant",
+        "Expertise (orchestrator's read)",
+        "Style",
+        "Credibility on this question (0-1)",
+        "Bias to watch",
         "First opinion",
         "Conversation contribution",
         "Revised opinion",
         "Final opinion",
     ])
     for p in session.participants:
+        cred = _credential_for(session, p.participant_id)
         writer.writerow([
             p.name,
+            cred.get("expertise", ""),
+            cred.get("personality", ""),
+            _format_credibility_score(cred.get("credibility_for_question")),
+            cred.get("bias_to_watch", ""),
             (session.initial_opinions or {}).get(p.participant_id, ""),
             (session.contribution_summaries or {}).get(p.participant_id, ""),
             (session.final_opinions or {}).get(p.participant_id, ""),

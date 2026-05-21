@@ -59,8 +59,6 @@ from app.services.models import (
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
     MIN_MAX_PARTICIPANTS,
-    ORCHESTRATOR_CALL_PAUSE_INC,
-    PARTICIPANT_MESSAGE_PAUSE_INC,
     Participant,
     Phase,
     Session,
@@ -249,25 +247,30 @@ async def _wait_for_continue(
     session: Session,
     reason: str,
 ) -> AsyncIterator[str]:
-    """Pause the state machine until the user clicks Continue."""
+    """Pause the state machine until the user clicks Continue.
+
+    Increment values come from `session.limits`, which the user can
+    tune via the settings menu. Defaults match the historical
+    PARTICIPANT_MESSAGE_PAUSE_INC / ORCHESTRATOR_CALL_PAUSE_INC.
+    """
     session.paused_for_continue = True
     session.pause_reason = reason
     if reason == "messages":
+        bump_inc = session.limits.participant_message_pause_inc
         msg = (
             f"Conversation paused after {session.total_participant_messages} "
             "participant messages. Click Continue to allow another "
-            f"{PARTICIPANT_MESSAGE_PAUSE_INC} messages."
+            f"{bump_inc} messages."
         )
         evt = "failsafe_pause"
-        bump_inc = PARTICIPANT_MESSAGE_PAUSE_INC
     else:
+        bump_inc = session.limits.orchestrator_call_pause_inc
         msg = (
             f"Conversation paused after {session.orchestrator_call_count} "
             "orchestrator calls. Click Continue to allow another "
-            f"{ORCHESTRATOR_CALL_PAUSE_INC} orchestrator calls."
+            f"{bump_inc} orchestrator calls."
         )
         evt = "orchestrator_cap_pause"
-        bump_inc = ORCHESTRATOR_CALL_PAUSE_INC
 
     yield _sse(evt, {
         "reason": reason,
@@ -498,10 +501,13 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
                 "name": p.name,
                 "phase": session.phase.value,
             })
-            if p.consecutive_failures >= 3:
+            if p.consecutive_failures >= session.limits.auto_disable_failures:
                 p.enabled = False
                 yield _sse("status", {
-                    "message": f"{p.name} auto-disabled after 3 failures.",
+                    "message": (
+                        f"{p.name} auto-disabled after "
+                        f"{session.limits.auto_disable_failures} failures."
+                    ),
                 })
             continue
         msg = _add_participant_message(session, p, text, phase=session.phase, elapsed=elapsed)
@@ -522,14 +528,36 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     )
     _bump_orchestrator_count(session)
     session.credential_summary = creds
+    # Surface the freshly-built summary so the frontend can enable the
+    # "View Credential Summary" menu item and cache its snapshot. The
+    # full list also stays available via GET /api/chat/{id}/credentials.
+    yield _sse("credentials_updated", {
+        "stage": "built",
+        "credentials": session.credential_summary,
+    })
+
+
+_CRITIQUE_PHASES = {
+    1: Phase.CRITIQUE_ROUND_1,
+    2: Phase.CRITIQUE_ROUND_2,
+    3: Phase.CRITIQUE_ROUND_3,
+    4: Phase.CRITIQUE_ROUND_4,
+}
+
+
+def _critique_phase_for(round_number: int) -> Phase:
+    """Map a critique round number to the matching Phase enum value.
+    Falls back to CRITIQUE_ROUND_2 for unknown numbers - the API layer
+    clamps `critique_rounds` to the bounds, so this fallback is purely
+    defensive."""
+    return _CRITIQUE_PHASES.get(round_number, Phase.CRITIQUE_ROUND_2)
 
 
 async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[str]:
-    session.phase = (
-        Phase.CRITIQUE_ROUND_1 if round_number == 1 else Phase.CRITIQUE_ROUND_2
-    )
+    session.phase = _critique_phase_for(round_number)
+    round_total = session.limits.critique_rounds
     yield _sse("status", {
-        "message": f"Phase 2: critique round {round_number} of 2...",
+        "message": f"Phase 2: critique round {round_number} of {round_total}...",
     })
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
@@ -542,6 +570,7 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
         pending_block = _format_pending_block(pending)
         prompt = CRITIQUE_PROMPT.format(
             round_number=round_number,
+            round_total=round_total,
             question=session.question,
             credential_summary=cred_block,
             transcript=transcript,
@@ -558,9 +587,14 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
                 "participant_id": p.participant_id, "name": p.name,
                 "phase": session.phase.value,
             })
-            if p.consecutive_failures >= 3:
+            if p.consecutive_failures >= session.limits.auto_disable_failures:
                 p.enabled = False
-                yield _sse("status", {"message": f"{p.name} auto-disabled after 3 failures."})
+                yield _sse("status", {
+                    "message": (
+                        f"{p.name} auto-disabled after "
+                        f"{session.limits.auto_disable_failures} failures."
+                    ),
+                })
             continue
 
         # Detect addressed_to so the consensus phase's targeted-response
@@ -607,10 +641,15 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
         api_log=session.api_log,
     )
     _bump_orchestrator_count(session)
-    session.credential_summary = refreshed
+    if refreshed != session.credential_summary:
+        session.credential_summary = refreshed
+        yield _sse("credentials_updated", {
+            "stage": "refreshed",
+            "credentials": session.credential_summary,
+        })
     cred_block = credentials_to_block(session.credential_summary)
 
-    for iteration in range(3):
+    for iteration in range(session.limits.status_assessment_max):
         session.status_assessment_iterations = iteration + 1
         prompt = STATUS_ASSESSMENT_PROMPT.format(
             question=session.question,
@@ -802,17 +841,19 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
     # Round-robin among active participants, but yield to the addressed-to
     # target whenever the previous message named one explicitly. To keep
     # two participants from monopolizing the floor with an A->B->A->B
-    # loop, we cap consecutive addressed-to routings at DYAD_CAP. After
-    # that many in a row, we force a round-robin pick on the next turn.
+    # loop, we cap consecutive addressed-to routings at the configured
+    # `dyad_cap`. After that many in a row, we force a round-robin pick.
     queue: list[Participant] = list(actives)
     last_addressed: str | None = None
     dyad_run: int = 0
-    DYAD_CAP = 2  # one full A->B->A exchange, then rotate
+    dyad_cap = session.limits.dyad_cap
 
     # Hard backstop on this phase: if we make a lot of consensus turns
     # without resolving, exit and let closure handle it. The orchestrator-
-    # call cap will hit before this, but it's a clean upper bound.
-    max_consensus_turns = 6 * len(actives)
+    # call cap will usually hit before this, but it's a clean upper bound.
+    max_consensus_turns = (
+        session.limits.consensus_turns_per_participant * len(actives)
+    )
     consensus_turns = 0
 
     while consensus_turns < max_consensus_turns:
@@ -821,7 +862,7 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         # Pick speaker. Prefer the addressed-to target (dyadic exchange)
         # only while we're under the consecutive-routing cap. Once the
         # cap is hit, force a round-robin pick so a third voice can join.
-        if last_addressed and dyad_run < DYAD_CAP:
+        if last_addressed and dyad_run < dyad_cap:
             speaker = next(
                 (p for p in actives if p.participant_id == last_addressed),
                 None,
@@ -1081,8 +1122,10 @@ async def _phase_closure(session: Session) -> AsyncIterator[str]:
             yield _sse("orchestrator", _msg_payload(msg))
             return
 
-    # Not productive / no majority. First time -> surface unaddressed factor.
-    if session.consensus_attempts < 1:
+    # Not productive / no majority. We may surface an unaddressed
+    # factor and re-run consensus up to `stall_recovery_attempts` times
+    # before giving up and emitting the no-consensus report.
+    if session.consensus_attempts < session.limits.stall_recovery_attempts:
         session.consensus_attempts += 1
         factor = await find_unaddressed_factor(
             orchestrator_model_id=_orchestrator_model_id(session),
@@ -1164,10 +1207,9 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
         async for chunk in _phase_initial_opinions(session):
             yield chunk
 
-        async for chunk in _phase_critique(session, 1):
-            yield chunk
-        async for chunk in _phase_critique(session, 2):
-            yield chunk
+        for round_n in range(1, session.limits.critique_rounds + 1):
+            async for chunk in _phase_critique(session, round_n):
+                yield chunk
 
         async for chunk in _phase_status_assessment(session):
             yield chunk

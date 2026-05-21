@@ -1,6 +1,16 @@
+// Default to '' (relative URLs) so any production-style build - whether
+// done inside Docker (Dockerfile sets REACT_APP_API_URL=) or on the host
+// without that env var - hits the same origin that served the page. This
+// avoids the cross-origin trap where a `npm run build` on the host
+// without REACT_APP_API_URL would silently bake `http://localhost:8000`
+// into the bundle and break every API call from a Docker deployment.
+//
+// If you want the CRA dev server (`npm start` on :3000) to talk to a
+// FastAPI backend on :8000, set REACT_APP_API_URL=http://localhost:8000
+// in `frontend/.env.development` or your shell.
 const API_BASE = process.env.REACT_APP_API_URL !== undefined
   ? process.env.REACT_APP_API_URL
-  : 'http://localhost:8000';
+  : '';
 
 export async function fetchModels() {
   const resp = await fetch(`${API_BASE}/api/models`, { cache: 'no-store' });
@@ -115,6 +125,7 @@ function eventHandlerKey(eventType) {
     case 'failsafe_pause': return 'onFailsafePause';
     case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
     case 'participant_error': return 'onParticipantError';
+    case 'credentials_updated': return 'onCredentialsUpdated';
     default: return null;
   }
 }
@@ -175,6 +186,61 @@ export async function exportApiLog(sessionId) {
 export async function fetchTableView(sessionId) {
   const resp = await fetch(`${API_BASE}/api/chat/${sessionId}/table`);
   if (!resp.ok) throw new Error('Table view fetch failed');
+  return resp.json();
+}
+
+/**
+ * Fetch the catalog of every prompt template the orchestrator and
+ * participants use, grouped by phase and annotated with purpose and
+ * runtime variables. Backs the "View current chat prompts" modal.
+ */
+export async function fetchPromptCatalog() {
+  const resp = await fetch(`${API_BASE}/api/chat/prompts/catalog`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('Failed to fetch prompt catalog');
+  return resp.json();
+}
+
+/**
+ * Ask the backend to pick the top `count` participants from the
+ * candidate pool by relevance to the question. Used by the
+ * "Select N Automatically" toggle in the participants dropdown.
+ *
+ * Returns: { selected: [participant_id, ...], rationale: "..." }
+ */
+export async function autoSelectParticipants({ question, count, candidates, orchestrator_model_id }) {
+  const resp = await fetch(`${API_BASE}/api/chat/auto-select-participants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, count, candidates, orchestrator_model_id }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Auto-select failed');
+  }
+  return resp.json();
+}
+
+/**
+ * Fetch the user-tunable conversation-limit defaults, bounds, and
+ * descriptions. The frontend uses this to render the "Conversation
+ * limits" settings modal entirely from the server schema, so adding
+ * a new knob in the backend doesn't require a frontend change.
+ *
+ * Shape: { defaults: {field: int}, bounds: {field: {min, max}},
+ *          descriptions: {field: {group, label, help}} }
+ */
+export async function fetchConversationLimitsDefaults() {
+  const resp = await fetch(`${API_BASE}/api/chat/limits/defaults`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('Failed to fetch conversation-limit defaults');
+  return resp.json();
+}
+
+export async function fetchCredentials(sessionId) {
+  const resp = await fetch(
+    `${API_BASE}/api/chat/${sessionId}/credentials`,
+    { cache: 'no-store' },
+  );
+  if (!resp.ok) throw new Error('Credentials fetch failed');
   return resp.json();
 }
 

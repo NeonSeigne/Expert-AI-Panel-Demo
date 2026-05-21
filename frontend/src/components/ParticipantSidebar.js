@@ -14,19 +14,39 @@ export default function ParticipantSidebar({
   modelAssignments,
   onToggleEnabled,
   onRemove,
+  autoSelectMode,
+  maxParticipants,
 }) {
+  // In auto-select mode with no chat in progress, the sidebar shows a
+  // placeholder explaining the deferred selection. Once the chat
+  // starts, App.js populates `participants` with the LLM-chosen set
+  // and the regular cards render normally.
+  const showAutoPlaceholder = autoSelectMode && participants.length === 0;
+
   return (
     <aside className="sidebar ccai-sidebar">
       <div className="ccai-sidebar-header">
         <h2 className="sidebar-title">Participants</h2>
         <div className="ccai-sidebar-help">
-          {participants.length === 0 ? (
+          {showAutoPlaceholder ? (
+            <em>Auto-select is on.</em>
+          ) : participants.length === 0 ? (
             <em>Use the Participants dropdown in the header to add some.</em>
           ) : (
             <em>Drag to reorder is not supported yet — order is by selection.</em>
           )}
         </div>
       </div>
+      {showAutoPlaceholder && (
+        <div className="ccai-sidebar-autoselect-empty">
+          <strong>Auto-select: {maxParticipants} participants</strong>
+          <div style={{ marginTop: 4 }}>
+            When you start the chat, the orchestrator will pick the
+            {' '}<strong>{maxParticipants}</strong> participants whose
+            expertise best fits your question.
+          </div>
+        </div>
+      )}
       {participants.map((p) => {
         const enabled = enabledMap[p.participant_id] !== false;
         const modelOverride = modelAssignments[p.participant_id];

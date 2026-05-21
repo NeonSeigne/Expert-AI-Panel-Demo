@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ChevronRight, Download, Settings2, Search,
-  Square, CheckSquare, UserPlus, Table2,
+  Square, CheckSquare, UserPlus, Table2, ScrollText, SlidersHorizontal,
+  BookOpen,
 } from 'lucide-react';
 
 /**
@@ -20,8 +21,6 @@ export default function DevMenu({
   onOrchestratorChange,
   summarizerModel,
   onSummarizerChange,
-  speedPriority,
-  onSpeedPriorityChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -33,6 +32,11 @@ export default function DevMenu({
   onModelAssignmentChange,
   onOpenExpertModal,
   onShowTableView,
+  onShowCredentials,
+  hasCredentials,
+  onShowPromptCatalog,
+  onShowConversationLimits,
+  conversationLimitsOverridden,
   onDownloadChatTxt,
   onDownloadChatMd,
   onDownloadCsvTable,
@@ -175,23 +179,6 @@ export default function DevMenu({
             })}
 
             <div className="dev-panel-divider" />
-            <div className="dev-panel-label">Response priority</div>
-            <button
-              className={`dev-panel-choice ${!speedPriority ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onSpeedPriorityChange(false)}
-            >
-              {!speedPriority ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Prioritize model choice
-            </button>
-            <button
-              className={`dev-panel-choice ${speedPriority ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onSpeedPriorityChange(true)}
-            >
-              {speedPriority ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Prioritize conversation speed
-            </button>
-
-            <div className="dev-panel-divider" />
             <div className="dev-panel-label">Display options</div>
             <button
               className={`dev-panel-choice ${showResponseTime ? 'dev-panel-choice-active' : ''}`}
@@ -206,6 +193,53 @@ export default function DevMenu({
             >
               {showChatStats ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
               Chat stats after end
+            </button>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Transparency</div>
+            <button
+              disabled={!hasCredentials}
+              onClick={() => { onShowCredentials?.(); setOpen(false); }}
+              title={
+                hasCredentials
+                  ? "View the orchestrator's per-participant Credential Summary"
+                  : "Credential Summary is built after Phase 1 (initial opinions). Start a chat first."
+              }
+            >
+              <ScrollText size={14} className="dev-check-icon" />
+              View Credential Summary…
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </button>
+            <button
+              onClick={() => { onShowPromptCatalog?.(); setOpen(false); }}
+              title="View every prompt template the orchestrator and participants use, grouped by phase."
+            >
+              <BookOpen size={14} className="dev-check-icon" />
+              View current chat prompts…
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </button>
+
+            <div className="dev-panel-divider" />
+            <div className="dev-panel-label">Advanced</div>
+            <button
+              onClick={() => { onShowConversationLimits?.(); setOpen(false); }}
+              title="View and adjust the per-phase repetition limits and failsafe pause points."
+            >
+              <SlidersHorizontal size={14} className="dev-check-icon" />
+              Conversation limits…
+              {conversationLimitsOverridden && (
+                <span
+                  title="One or more limits are overridden from the defaults"
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 11,
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  (custom)
+                </span>
+              )}
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
 
             <div className="dev-panel-divider" />
