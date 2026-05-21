@@ -1,21 +1,39 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  ChevronRight, Download, Settings2, Search,
-  Square, CheckSquare, UserPlus, Table2, ScrollText, SlidersHorizontal,
+  ChevronRight, Download, Settings2, Search, Sun, Moon,
+  Square, CheckSquare, UserPlus, ScrollText, SlidersHorizontal,
   BookOpen,
 } from 'lucide-react';
 
 /**
- * Settings menu, structurally identical to LLMChats3 but populated with
- * CCAI controls:
- *   - Orchestrator model (searchable)
- *   - Summarizer model (searchable, with "Same as Orchestrator" default)
- *   - Max participants (3-9, default 5)
- *   - Per-participant model assignments
- *   - "Create Expert Persona..." shortcut
- *   - Display options + downloads (txt / md / csv-table / api-log)
+ * Settings menu (gear-icon dropdown in the header).
+ *
+ * Layout, top-to-bottom, all category items indented under the small
+ * uppercase label that introduces them:
+ *   - Theme               (Sun / Moon toggle)
+ *   - Models              (Orchestrator / Summarizer — stacked rows
+ *                          with the currently-chosen model name on a
+ *                          second line, ellipsis-truncated)
+ *   - Max participants    (- / value / + stepper, 3-9)
+ *   - Participants        (Create Expert Persona…, then per-participant
+ *                          rows in the same stacked-row style)
+ *   - Display options     (toggles)
+ *   - Transparency        (Credential Summary, Prompt Catalog — no
+ *                          right-side chevrons; just the labelled
+ *                          buttons)
+ *   - Advanced            (Conversation limits…)
+ *   - Downloads           (chat .txt / .md / summary .csv — same items
+ *                          are also reachable from the header
+ *                          DownloadMenu; the "Full API history" item
+ *                          is *only* in DownloadMenu)
+ *
+ * The header download strip that used to live in this component has
+ * moved into a sibling DownloadMenu component, so this file no longer
+ * renders any header-bar buttons; just the gear and its panel.
  */
 export default function DevMenu({
+  theme,
+  onToggleTheme,
   allModels,
   orchestratorModel,
   onOrchestratorChange,
@@ -31,7 +49,6 @@ export default function DevMenu({
   modelAssignments,
   onModelAssignmentChange,
   onOpenExpertModal,
-  onShowTableView,
   onShowCredentials,
   hasCredentials,
   onShowPromptCatalog,
@@ -40,8 +57,6 @@ export default function DevMenu({
   onDownloadChatTxt,
   onDownloadChatMd,
   onDownloadCsvTable,
-  onDownloadApiLog,
-  hasApiLog,
   hasChat,
 }) {
   const [open, setOpen] = useState(false);
@@ -75,6 +90,31 @@ export default function DevMenu({
     });
   }, [allModels, q]);
 
+  // #region agent log
+  useEffect(() => {
+    if (!open) return;
+    fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
+      body: JSON.stringify({
+        sessionId: '896623',
+        runId: 'maxparticipants-repro',
+        hypothesisId: 'H1',
+        location: 'DevMenu.js:render',
+        message: 'DevMenu render snapshot (panel open)',
+        data: {
+          maxParticipants,
+          maxParticipantsType: typeof maxParticipants,
+          onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
+          ge9: maxParticipants >= 9,
+          le3: maxParticipants <= 3,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [open, maxParticipants, onMaxParticipantsChange]);
+  // #endregion
+
   const nameForModel = (id) => {
     if (!id) return null;
     const m = allModels.find(x => x.id === id);
@@ -93,31 +133,6 @@ export default function DevMenu({
 
   return (
     <div className="dev-wrap" ref={wrapRef}>
-      <div className="dev-download-btns">
-        <button className="btn-sm btn-outline" disabled={!hasChat} onClick={onDownloadChatTxt}>
-          <Download size={14} /> .txt
-        </button>
-        <button className="btn-sm btn-outline" disabled={!hasChat} onClick={onDownloadChatMd}>
-          <Download size={14} /> .md
-        </button>
-        <button
-          className="btn-sm btn-outline"
-          disabled={!hasChat}
-          onClick={onShowTableView}
-          title="Open the conversation summary table"
-        >
-          <Table2 size={14} /> Table
-        </button>
-        <button
-          className="btn-sm btn-outline"
-          disabled={!hasChat}
-          onClick={onDownloadCsvTable}
-          title="Download the table view as CSV"
-        >
-          <Download size={14} /> .csv
-        </button>
-      </div>
-
       <div className="dev-dropdown-header">
         <button
           className="icon-btn"
@@ -128,41 +143,125 @@ export default function DevMenu({
         </button>
         {open && (
           <div className="dev-panel">
-            <button onClick={() => { setActiveSub(s => s === 'orch' ? null : 'orch'); setQ(''); }}>
-              Orchestrator model… <span className="dev-panel-hint">{orchName}</span>
-              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
-            </button>
-            <button onClick={() => { setActiveSub(s => s === 'sum' ? null : 'sum'); setQ(''); }}>
-              Summarizer model… <span className="dev-panel-hint">{sumName}</span>
-              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+
+            {/* ── Theme ─────────────────────────────────────────── */}
+            <div className="dev-panel-label">Theme</div>
+            <button
+              className="dev-panel-row"
+              onClick={onToggleTheme}
+              title="Toggle light/dark mode"
+            >
+              {theme === 'light'
+                ? <Moon size={14} className="dev-check-icon" />
+                : <Sun size={14} className="dev-check-icon" />}
+              {theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
             </button>
 
             <div className="dev-panel-divider" />
+
+            {/* ── Models ────────────────────────────────────────── */}
+            <div className="dev-panel-label">Models</div>
+            <button
+              className="dev-panel-row dev-panel-row-stack"
+              onClick={() => { setActiveSub(s => s === 'orch' ? null : 'orch'); setQ(''); }}
+            >
+              <div className="dev-panel-row-text">
+                <div className="dev-panel-row-name">Orchestrator model…</div>
+                <div className="dev-panel-row-sub">{orchName}</div>
+              </div>
+              <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+            </button>
+            <button
+              className="dev-panel-row dev-panel-row-stack"
+              onClick={() => { setActiveSub(s => s === 'sum' ? null : 'sum'); setQ(''); }}
+            >
+              <div className="dev-panel-row-text">
+                <div className="dev-panel-row-name">Summarizer model…</div>
+                <div className="dev-panel-row-sub">{sumName}</div>
+              </div>
+              <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+            </button>
+
+            <div className="dev-panel-divider" />
+
+            {/* ── Max participants ──────────────────────────────── */}
             <div className="dev-panel-label">Max participants ({maxParticipants})</div>
             <div className="ccai-stepper-row">
               <button
                 className="btn-sm btn-outline ccai-stepper-btn"
                 disabled={maxParticipants <= 3}
-                onClick={() => onMaxParticipantsChange(Math.max(3, maxParticipants - 1))}
+                onClick={() => {
+                  const next = Math.max(3, maxParticipants - 1);
+                  // #region agent log
+                  fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
+                    body: JSON.stringify({
+                      sessionId: '896623',
+                      runId: 'maxparticipants-repro',
+                      hypothesisId: 'H1',
+                      location: 'DevMenu.js:onMinusClick',
+                      message: 'Minus button clicked',
+                      data: {
+                        maxParticipants,
+                        maxParticipantsType: typeof maxParticipants,
+                        next,
+                        nextType: typeof next,
+                        nextIsNaN: Number.isNaN(next),
+                        onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
+                      },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {});
+                  // #endregion
+                  onMaxParticipantsChange(next);
+                }}
               >−</button>
               <div className="ccai-stepper-val">{maxParticipants}</div>
               <button
                 className="btn-sm btn-outline ccai-stepper-btn"
                 disabled={maxParticipants >= 9}
-                onClick={() => onMaxParticipantsChange(Math.min(9, maxParticipants + 1))}
+                onClick={() => {
+                  const next = Math.min(9, maxParticipants + 1);
+                  // #region agent log
+                  fetch('http://127.0.0.1:7660/ingest/b27d4bb5-c1ab-4767-aa98-1cdf1e8fb0ae', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '896623' },
+                    body: JSON.stringify({
+                      sessionId: '896623',
+                      runId: 'maxparticipants-repro',
+                      hypothesisId: 'H1',
+                      location: 'DevMenu.js:onPlusClick',
+                      message: 'Plus button clicked',
+                      data: {
+                        maxParticipants,
+                        maxParticipantsType: typeof maxParticipants,
+                        next,
+                        nextType: typeof next,
+                        nextIsNaN: Number.isNaN(next),
+                        onMaxParticipantsChangeType: typeof onMaxParticipantsChange,
+                      },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {});
+                  // #endregion
+                  onMaxParticipantsChange(next);
+                }}
               >+</button>
               <span className="dev-panel-hint">3-9</span>
             </div>
 
             <div className="dev-panel-divider" />
+
+            {/* ── Participants ──────────────────────────────────── */}
             <div className="dev-panel-label">Participants</div>
-            <button onClick={() => { onOpenExpertModal(null); setOpen(false); }}>
+            <button
+              className="dev-panel-row"
+              onClick={() => { onOpenExpertModal(null); setOpen(false); }}
+            >
               <UserPlus size={14} className="dev-check-icon" />
               Create Expert Persona…
             </button>
-            {(participants || []).length > 0 && (
-              <div className="dev-panel-label">Per-participant model</div>
-            )}
             {(participants || []).map(p => {
               const assigned = modelAssignments[p.participant_id];
               const labelName = assigned ? nameForModel(assigned)
@@ -170,15 +269,21 @@ export default function DevMenu({
               return (
                 <button
                   key={p.participant_id}
+                  className="dev-panel-row dev-panel-row-stack"
                   onClick={() => { setActiveSub(s => s === p.participant_id ? null : p.participant_id); setQ(''); }}
                 >
-                  {p.name}<span className="dev-panel-hint"> {labelName}</span>
-                  <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                  <div className="dev-panel-row-text">
+                    <div className="dev-panel-row-name">{p.name}</div>
+                    <div className="dev-panel-row-sub">{labelName}</div>
+                  </div>
+                  <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
                 </button>
               );
             })}
 
             <div className="dev-panel-divider" />
+
+            {/* ── Display options ───────────────────────────────── */}
             <div className="dev-panel-label">Display options</div>
             <button
               className={`dev-panel-choice ${showResponseTime ? 'dev-panel-choice-active' : ''}`}
@@ -196,8 +301,15 @@ export default function DevMenu({
             </button>
 
             <div className="dev-panel-divider" />
+
+            {/* ── Transparency ──────────────────────────────────── */}
+            {/* No right-side chevrons here: these buttons trigger a
+                modal and don't expand a sub-panel, so the chevron the
+                old layout had was misleading and (per user feedback)
+                wrapped onto a noisy second line. */}
             <div className="dev-panel-label">Transparency</div>
             <button
+              className="dev-panel-row"
               disabled={!hasCredentials}
               onClick={() => { onShowCredentials?.(); setOpen(false); }}
               title={
@@ -208,20 +320,22 @@ export default function DevMenu({
             >
               <ScrollText size={14} className="dev-check-icon" />
               View Credential Summary…
-              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
             <button
+              className="dev-panel-row"
               onClick={() => { onShowPromptCatalog?.(); setOpen(false); }}
               title="View every prompt template the orchestrator and participants use, grouped by phase."
             >
               <BookOpen size={14} className="dev-check-icon" />
               View current chat prompts…
-              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
             </button>
 
             <div className="dev-panel-divider" />
+
+            {/* ── Advanced ──────────────────────────────────────── */}
             <div className="dev-panel-label">Advanced</div>
             <button
+              className="dev-panel-row"
               onClick={() => { onShowConversationLimits?.(); setOpen(false); }}
               title="View and adjust the per-phase repetition limits and failsafe pause points."
             >
@@ -239,21 +353,40 @@ export default function DevMenu({
                   (custom)
                 </span>
               )}
-              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+              <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0 }} />
             </button>
 
             <div className="dev-panel-divider" />
-            <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadChatTxt(); setOpen(false); }}>
-              Download chat as .txt
+
+            {/* ── Downloads ─────────────────────────────────────── */}
+            {/* These three are intentional duplicates of items in the
+                header DownloadMenu. The "Full API history" item lives
+                only in DownloadMenu (per UX request) and is therefore
+                not listed here. */}
+            <div className="dev-panel-label">Downloads</div>
+            <button
+              className="dev-panel-row"
+              disabled={!hasChat}
+              onClick={() => { onDownloadChatTxt(); setOpen(false); }}
+            >
+              <Download size={14} className="dev-check-icon" />
+              Chat as .txt
             </button>
-            <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadChatMd(); setOpen(false); }}>
-              Download chat as .md
+            <button
+              className="dev-panel-row"
+              disabled={!hasChat}
+              onClick={() => { onDownloadChatMd(); setOpen(false); }}
+            >
+              <Download size={14} className="dev-check-icon" />
+              Chat as .md
             </button>
-            <button disabled={!hasChat} className="dev-panel-download-item" onClick={() => { onDownloadCsvTable(); setOpen(false); }}>
-              Download summary table as .csv
-            </button>
-            <button disabled={!hasApiLog} onClick={() => { onDownloadApiLog(); setOpen(false); }}>
-              Download full API history
+            <button
+              className="dev-panel-row"
+              disabled={!hasChat}
+              onClick={() => { onDownloadCsvTable(); setOpen(false); }}
+            >
+              <Download size={14} className="dev-check-icon" />
+              Summary table as .csv
             </button>
           </div>
         )}

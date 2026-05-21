@@ -982,7 +982,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px 8px;
+  /* 22px left padding matches .dev-panel-row indentation so the
+     stepper hangs under the "Max participants" category label
+     consistently with every other category's items. */
+  padding: 4px 10px 8px 22px;
 }
 
 .ccai-stepper-btn {

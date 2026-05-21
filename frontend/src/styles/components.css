@@ -769,7 +769,10 @@
   padding: 8px 10px;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  /* Higher-contrast text: was --text-secondary (#4B5563) which read as
+     low-contrast against the white panel. --text-primary (#111827) is
+     near-black and matches the contrast of the rest of the chat UI. */
+  color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
@@ -782,13 +785,17 @@
 }
 
 .dev-panel button:disabled {
-  opacity: 0.4;
+  /* Slightly less aggressive than 0.4 because the base text is now darker;
+     0.55 keeps disabled items legible-but-distinguishable. */
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .dev-panel-hint {
   font-size: 10px;
-  color: var(--text-muted);
+  /* Bumped from --text-muted (#9CA3AF) to --text-secondary (#4B5563)
+     so inline metadata is actually readable. */
+  color: var(--text-secondary);
   margin-left: 6px;
   font-style: italic;
 }
@@ -804,8 +811,53 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted);
+  /* Bumped from --text-muted to --text-secondary for the same reason. */
+  color: var(--text-secondary);
   padding: 4px 10px 2px;
+}
+
+/* Indented row used for every actionable item inside a category, so
+   labels (left-aligned at 10px) read as clear group headers and the
+   items below them sit at a 22px hang. Matches the look of the
+   original .dev-panel-choice rows. */
+.dev-panel-row {
+  padding-left: 22px !important;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Two-line variant: name on top, subtitle (model name) on bottom,
+   chevron right-aligned. The middle text column is flex:1, min-width:0
+   so the subtitle can ellipsis-truncate when it overflows. */
+.dev-panel-row-stack {
+  align-items: stretch;
+}
+
+.dev-panel-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.dev-panel-row-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.dev-panel-row-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.2;
 }
 
 .dev-panel-choice {
@@ -1132,12 +1184,11 @@
 
 /* ── Small tablet / large phone (<600px) ──────────────────────── */
 @media (max-width: 600px) {
-  .dev-download-btns {
-    display: none;
-  }
-  .dev-panel-download-item {
-    display: block !important;
-  }
+  /* The standalone .dev-download-btns header strip and the
+     .dev-panel-download-item mobile fallback inside the settings menu
+     have been replaced by a dedicated <DownloadMenu> dropdown that
+     works on all viewports, so the responsive fallback logic that used
+     to live here is no longer needed. */
   .dev-sub-panel {
     right: 0;
     top: 100%;
