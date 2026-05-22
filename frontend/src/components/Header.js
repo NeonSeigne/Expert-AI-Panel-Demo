@@ -1,4 +1,5 @@
 import React from 'react';
+import { UserPlus, UserCheck } from 'lucide-react';
 import AuthBadge from './AuthBadge';
 import ParticipantDropdown from './ParticipantDropdown';
 import DownloadMenu from './DownloadMenu';
@@ -32,6 +33,8 @@ export default function Header({
   onOpenExpertModal,
   autoSelectMode,
   onToggleAutoSelectMode,
+  humanParticipant,
+  onOpenHumanModal,
 
   // Models / display
   allModels,
@@ -89,6 +92,29 @@ export default function Header({
           autoSelectMode={autoSelectMode}
           onToggleAutoSelectMode={onToggleAutoSelectMode}
         />
+        <button
+          type="button"
+          className={
+            'btn-sm btn-outline ccai-human-add-btn'
+            + (humanParticipant ? ' ccai-human-add-btn-active' : '')
+          }
+          onClick={onOpenHumanModal}
+          title={humanParticipant
+            ? `Edit ${humanParticipant.name}'s credential summary`
+            : 'Add a human participant to the conversation'}
+        >
+          {humanParticipant ? (
+            <>
+              <UserCheck size={14} style={{ marginRight: 4 }} />
+              Human: {humanParticipant.name}
+            </>
+          ) : (
+            <>
+              <UserPlus size={14} style={{ marginRight: 4 }} />
+              Add a Human Participant
+            </>
+          )}
+        </button>
         <DownloadMenu
           hasChat={hasChat}
           hasApiLog={hasApiLog}

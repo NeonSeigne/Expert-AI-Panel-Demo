@@ -64,26 +64,40 @@ async def build_credential_summary(
     participants: list[Any],
     initial_opinions: dict[str, str],
     api_log: list[dict[str, Any]] | None = None,
+    human_credential: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build the Credential Summary list. Returns an empty list on parse failure."""
-    block = _format_participants_block(participants, initial_opinions)
-    prompt = CREDENTIAL_BUILD_PROMPT.format(
-        question=question,
-        participants_block=block,
-    )
-    _raw, parsed = await orchestrator_call(
-        orchestrator_model_id=orchestrator_model_id,
-        user_prompt=prompt,
-        label="build_credentials",
-        api_log=api_log,
-        max_tokens=2048,
-    )
+    """Build the Credential Summary list. Returns an empty list on parse failure.
+
+    Human participants (kind == "human") are NOT sent to the LLM - the
+    user already authored their own credential summary in the
+    HumanParticipantModal. We prepend that entry to the front of the
+    returned list so the human always appears first in the modal /
+    export, and we exclude them from the LLM input so the orchestrator
+    isn't asked to fabricate facts about a person.
+    """
+    llm_participants = [p for p in participants if getattr(p, "kind", "") != "human"]
 
     creds: list[dict[str, Any]] = []
-    if isinstance(parsed, dict) and isinstance(parsed.get("credentials"), list):
-        creds = parsed["credentials"]
+    if llm_participants:
+        block = _format_participants_block(llm_participants, initial_opinions)
+        prompt = CREDENTIAL_BUILD_PROMPT.format(
+            question=question,
+            participants_block=block,
+        )
+        _raw, parsed = await orchestrator_call(
+            orchestrator_model_id=orchestrator_model_id,
+            user_prompt=prompt,
+            label="build_credentials",
+            api_log=api_log,
+            max_tokens=2048,
+        )
 
-    creds = _normalize_creds(creds, participants)
+        if isinstance(parsed, dict) and isinstance(parsed.get("credentials"), list):
+            creds = parsed["credentials"]
+
+    creds = _normalize_creds(creds, llm_participants)
+    if human_credential:
+        creds = [normalize_one_credential(human_credential)] + creds
     return creds
 
 
@@ -96,12 +110,26 @@ async def refresh_credential_summary(
     critique_transcript: str,
     api_log: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Refresh the Credential Summary after Phase 2 critique."""
+    """Refresh the Credential Summary after Phase 2 critique.
+
+    Human entries (kind == "human") are passed through verbatim - we
+    don't ask the LLM to second-guess the user's self-description. The
+    LLM only refreshes credentials for LLM participants.
+    """
     if not existing:
         return existing
+
+    human_pids = {p.participant_id for p in participants if getattr(p, "kind", "") == "human"}
+    human_entries = [c for c in existing if c.get("participant_id") in human_pids]
+    llm_entries = [c for c in existing if c.get("participant_id") not in human_pids]
+    llm_participants = [p for p in participants if getattr(p, "kind", "") != "human"]
+
+    if not llm_entries:
+        return existing
+
     prompt = CREDENTIAL_REFRESH_PROMPT.format(
         question=question,
-        credential_summary_json=json.dumps({"credentials": existing}, indent=2),
+        credential_summary_json=json.dumps({"credentials": llm_entries}, indent=2),
         critique_transcript=critique_transcript,
     )
     _raw, parsed = await orchestrator_call(
@@ -112,8 +140,28 @@ async def refresh_credential_summary(
         max_tokens=2048,
     )
     if isinstance(parsed, dict) and isinstance(parsed.get("credentials"), list):
-        return _normalize_creds(parsed["credentials"], participants)
+        refreshed_llm = _normalize_creds(parsed["credentials"], llm_participants)
+        return human_entries + refreshed_llm
     return existing
+
+
+def normalize_one_credential(c: dict[str, Any]) -> dict[str, Any]:
+    """Clamp credibility to [0, 1] and ensure required keys exist on a
+    single credential dict. Used for human-authored entries that bypass
+    the LLM-side _normalize_creds roster pass."""
+    try:
+        score = float(c.get("credibility_for_question", 0.5))
+    except Exception:
+        score = 0.5
+    return {
+        "participant_id": c.get("participant_id") or c.get("id") or "",
+        "name": c.get("name", ""),
+        "expertise": c.get("expertise", ""),
+        "personality": c.get("personality", ""),
+        "credibility_for_question": max(0.0, min(1.0, score)),
+        "bias_to_watch": c.get("bias_to_watch", ""),
+        "is_human": bool(c.get("is_human", True)),
+    }
 
 
 def _normalize_creds(

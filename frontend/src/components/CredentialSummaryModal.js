@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Download } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Download, Edit2, Check, X, User } from 'lucide-react';
 
 /**
  * Read-only modal that surfaces the orchestrator-generated Credential
@@ -19,6 +19,8 @@ export default function CredentialSummaryModal({
   data,
   onClose,
   onRefresh,
+  humanParticipantId,
+  onEditHumanCredential,
 }) {
   // Hooks must run on every render, so the filename memo lives ABOVE
   // the early return. The dependency on `isOpen` regenerates the
@@ -99,9 +101,18 @@ export default function CredentialSummaryModal({
               orchestrator builds it after Phase 1 (initial opinions).
             </div>
           ) : (
-            credentials.map((c) => (
-              <CredentialCard key={c.participant_id} cred={c} />
-            ))
+            credentials.map((c) => {
+              const isHuman = !!humanParticipantId
+                && c.participant_id === humanParticipantId;
+              return (
+                <CredentialCard
+                  key={c.participant_id}
+                  cred={c}
+                  isHuman={isHuman}
+                  onEdit={isHuman ? onEditHumanCredential : null}
+                />
+              );
+            })
           )}
         </div>
       </div>
@@ -109,13 +120,112 @@ export default function CredentialSummaryModal({
   );
 }
 
-function CredentialCard({ cred }) {
+function CredentialCard({ cred, isHuman, onEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => ({
+    name: cred.name || '',
+    expertise: cred.expertise || '',
+    personality: cred.personality || '',
+    credibility_for_question:
+      cred.credibility_for_question !== undefined
+        ? cred.credibility_for_question
+        : 0.5,
+    bias_to_watch: cred.bias_to_watch || '',
+  }));
+
+  // Reset the draft whenever the underlying credential payload
+  // changes (e.g. a Phase-3 refresh from the SSE stream).
+  useEffect(() => {
+    setDraft({
+      name: cred.name || '',
+      expertise: cred.expertise || '',
+      personality: cred.personality || '',
+      credibility_for_question:
+        cred.credibility_for_question !== undefined
+          ? cred.credibility_for_question
+          : 0.5,
+      bias_to_watch: cred.bias_to_watch || '',
+    });
+  }, [cred]);
+
   const score = toScore(cred.credibility_for_question);
+
+  if (isHuman && editing) {
+    return (
+      <div className="ccai-credential-card ccai-credential-card-human ccai-credential-card-editing">
+        <div className="ccai-credential-card-head">
+          <div className="ccai-credential-name">
+            <User size={14} style={{ marginRight: 4, verticalAlign: '-2px' }} />
+            <input
+              className="ccai-credential-edit-name"
+              type="text"
+              value={draft.name}
+              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
+            />
+            <span className="ccai-credential-human-tag">Human</span>
+          </div>
+        </div>
+        <EditableRow
+          label="Expertise"
+          value={draft.expertise}
+          onChange={v => setDraft(d => ({ ...d, expertise: v }))}
+        />
+        <EditableRow
+          label="Style"
+          value={draft.personality}
+          onChange={v => setDraft(d => ({ ...d, personality: v }))}
+        />
+        <EditableScoreRow
+          label="Credibility (0-1)"
+          value={draft.credibility_for_question}
+          onChange={v => setDraft(d => ({ ...d, credibility_for_question: v }))}
+        />
+        <EditableRow
+          label="Bias to watch"
+          value={draft.bias_to_watch}
+          onChange={v => setDraft(d => ({ ...d, bias_to_watch: v }))}
+        />
+        <div className="ccai-credential-edit-actions">
+          <button
+            type="button"
+            className="btn-sm btn-outline"
+            onClick={() => setEditing(false)}
+          >
+            <X size={12} style={{ marginRight: 4 }} />
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={async () => {
+              await onEdit?.(draft);
+              setEditing(false);
+            }}
+          >
+            <Check size={12} style={{ marginRight: 4 }} />
+            Save
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="ccai-credential-card">
+    <div
+      className={
+        'ccai-credential-card'
+        + (isHuman ? ' ccai-credential-card-human' : '')
+      }
+    >
       <div className="ccai-credential-card-head">
         <div className="ccai-credential-name">
+          {isHuman && (
+            <User size={14} style={{ marginRight: 4, verticalAlign: '-2px' }} />
+          )}
           {cred.name || cred.participant_id}
+          {isHuman && (
+            <span className="ccai-credential-human-tag">Human</span>
+          )}
         </div>
         {score !== null && (
           <div className="ccai-credibility-wrap" title={`Credibility ${score.toFixed(2)} of 1.0`}>
@@ -129,10 +239,55 @@ function CredentialCard({ cred }) {
             <span className="ccai-credibility-num">{score.toFixed(2)}</span>
           </div>
         )}
+        {isHuman && onEdit && (
+          <button
+            type="button"
+            className="btn-sm btn-outline ccai-credential-edit-btn"
+            onClick={() => setEditing(true)}
+            title="Edit your credential summary"
+          >
+            <Edit2 size={12} style={{ marginRight: 4 }} />
+            Edit
+          </button>
+        )}
       </div>
       <FieldRow label="Expertise" value={cred.expertise} />
       <FieldRow label="Style" value={cred.personality} />
       <FieldRow label="Bias to watch" value={cred.bias_to_watch} />
+    </div>
+  );
+}
+
+function EditableRow({ label, value, onChange }) {
+  return (
+    <div className="ccai-credential-row ccai-credential-row-edit">
+      <div className="ccai-credential-row-label">{label}</div>
+      <textarea
+        className="ccai-credential-row-input"
+        rows={2}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function EditableScoreRow({ label, value, onChange }) {
+  return (
+    <div className="ccai-credential-row ccai-credential-row-edit">
+      <div className="ccai-credential-row-label">{label}</div>
+      <input
+        type="number"
+        min={0}
+        max={1}
+        step={0.05}
+        value={value}
+        className="ccai-credential-row-input ccai-credential-row-input-num"
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          if (!Number.isNaN(v)) onChange(Math.max(0, Math.min(1, v)));
+        }}
+      />
     </div>
   );
 }

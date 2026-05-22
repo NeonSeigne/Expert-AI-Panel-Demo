@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import MessageBubble from './MessageBubble';
 import OrchestratorMessage from './OrchestratorMessage';
 import FailsafePauseBanner from './FailsafePauseBanner';
+import HumanInputSlot from './HumanInputSlot';
+import HumanTurnIndicator from './HumanTurnIndicator';
 
 /**
  * Renders the conversation: a mix of participant bubbles, orchestrator
@@ -19,6 +21,10 @@ export default function ChatArea({
   participants,
   showResponseTime,
   showChatStats,
+  awaitingHuman,
+  humanSubmitting,
+  onHumanSubmit,
+  onHumanSkip,
 }) {
   const speakerIdxFor = useMemo(() => {
     const map = {};
@@ -73,6 +79,17 @@ export default function ChatArea({
           />
         );
       })}
+      {awaitingHuman && (
+        <div data-human-slot>
+          <HumanInputSlot
+            awaiting={awaitingHuman}
+            sending={humanSubmitting}
+            onSubmit={onHumanSubmit}
+            onSkip={onHumanSkip}
+            allowSkip
+          />
+        </div>
+      )}
       {(systemMessages || []).map((sys, i) => (
         <div
           key={`sys-${i}`}
@@ -87,12 +104,13 @@ export default function ChatArea({
         </div>
       )}
       <FailsafePauseBanner pause={pause} onContinue={onContinuePause} />
-      {isRunning && statusText && (
+      {isRunning && statusText && !awaitingHuman && (
         <div className="status-bar">
           <div className="spinner" />
           <span>{statusText}</span>
         </div>
       )}
+      <HumanTurnIndicator awaiting={awaitingHuman} />
     </div>
   );
 }

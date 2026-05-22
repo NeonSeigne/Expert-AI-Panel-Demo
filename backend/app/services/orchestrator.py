@@ -31,7 +31,7 @@ from typing import Any, AsyncIterator
 
 from app.clients.llm_router import chat_completion
 from app.config import settings
-from app.services import context_budget
+from app.services import context_budget, human_io
 from app.services.consensus import (
     assess_consensus_status,
     classify_addressed_to,
@@ -293,6 +293,165 @@ async def _wait_for_continue(
 
 
 # ---------------------------------------------------------------------------
+# Human-participant turn
+# ---------------------------------------------------------------------------
+
+async def _wait_for_human_text(
+    session: Session,
+    participant: Participant,
+    *,
+    phase: Phase,
+    addressed_to: str | None = None,
+    asker_id: str | None = None,
+    asker_name: str | None = None,
+    prompt_context: str | None = None,
+) -> AsyncIterator[str]:
+    """Pause the orchestrator until the human types a response (or skips).
+
+    Yields a `human_turn_needed` SSE event with the metadata the
+    frontend needs to render the input slot and the lower-screen
+    "waiting for your input" cue, then polls the human_io slot until
+    the API layer's POST /human-response sets it, then yields a
+    `human_turn_cleared` event so the frontend can dismiss the cue.
+
+    The actual response text + skipped flag are NOT returned from this
+    generator (async gens can't return values cleanly). The caller
+    reads them via `human_io.slot_for(session.session_id)` AFTER the
+    iteration completes:
+
+        slot.response_text   (str)
+        slot.skipped         (bool)
+        slot.started_at      (float)  - subtract from now() for elapsed
+        slot.pending_snapshot (list)  - pending threads at turn-start
+
+    Caller is expected to reset_slot after consuming the result.
+    """
+    started = time.time()
+    pending = _pending_addressed_for(session, participant)
+    slot = human_io.slot_for(session.session_id)
+    slot.event.clear()
+    slot.response_text = ""
+    slot.skipped = False
+    slot.started_at = started
+    slot.pending_snapshot = pending
+
+    awaiting = {
+        "speaker_id": participant.participant_id,
+        "speaker_name": participant.name,
+        "phase": phase.value,
+        "addressed_to": addressed_to,
+        "asker_id": asker_id,
+        "asker_name": asker_name,
+        "prompt_context": prompt_context,
+    }
+    session.awaiting_human = awaiting
+    session.paused_for_continue = True
+    session.pause_reason = "human_turn"
+
+    yield _sse("human_turn_needed", awaiting)
+
+    try:
+        # Poll with the same 0.25s cadence as _wait_for_continue so
+        # SSE-stream cancellation propagates promptly to the user
+        # clicking Stop.
+        while not slot.event.is_set():
+            await asyncio.sleep(0.25)
+    finally:
+        session.paused_for_continue = False
+        session.pause_reason = None
+        session.awaiting_human = None
+
+    yield _sse("human_turn_cleared", {
+        "speaker_id": participant.participant_id,
+    })
+
+
+async def _do_human_turn(
+    session: Session,
+    participant: Participant,
+    *,
+    phase: Phase,
+    actives: list[Participant],
+    addressed_to_target: str | None = None,
+    asker_id: str | None = None,
+    asker_name: str | None = None,
+    prompt_context: str | None = None,
+    classify_addressed: bool = False,
+    track_initial_opinion: bool = False,
+    track_final_opinion: bool = False,
+    addressed_state: dict[str, Any] | None = None,
+) -> AsyncIterator[str]:
+    """End-to-end human turn: emit human_turn_needed, await response,
+    emit human_turn_cleared, then either record a skip note or append a
+    participant message (with addressed-to classification when asked).
+    Yields SSE chunks throughout, then runs the failsafe-pause check.
+
+    `addressed_state`, when provided, is a caller-owned dict that gets
+    mutated with {"last_addressed": <participant_id|None>} after the
+    turn so the consensus phase can update its routing variable
+    without a return value sneaking out of the generator.
+    """
+    async for chunk in _wait_for_human_text(
+        session, participant, phase=phase,
+        addressed_to=addressed_to_target,
+        asker_id=asker_id, asker_name=asker_name,
+        prompt_context=prompt_context,
+    ):
+        yield chunk
+
+    slot = human_io.slot_for(session.session_id)
+    text = (slot.response_text or "").strip()
+    skipped = slot.skipped
+    elapsed = max(0.0, time.time() - slot.started_at)
+    pending = list(slot.pending_snapshot or [])
+    human_io.reset_slot(session.session_id)
+
+    if skipped or not text:
+        note = _add_orchestrator_message(
+            session,
+            f"{participant.name} declined to comment this turn.",
+            kind="status",
+        )
+        yield _sse("orchestrator", _msg_payload(note))
+        if addressed_state is not None:
+            addressed_state["last_addressed"] = None
+        return
+
+    addressed: str | None = None
+    if classify_addressed:
+        addressed = await classify_addressed_to(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            participants=actives,
+            speaker_name=participant.name,
+            message=text,
+            api_log=session.api_log,
+        )
+        _bump_orchestrator_count(session)
+
+    msg = _add_participant_message(
+        session, participant, text,
+        phase=phase, elapsed=elapsed,
+        addressed_to=addressed,
+        replying_to=_replying_to_ids(pending),
+    )
+    if track_initial_opinion:
+        session.initial_opinions[participant.participant_id] = text
+    if track_final_opinion:
+        session.final_opinions[participant.participant_id] = text
+    if addressed_state is not None:
+        addressed_state["last_addressed"] = addressed
+
+    yield _sse("message", _msg_payload(msg))
+
+    if _participant_msg_cap_hit(session):
+        async for chunk in _wait_for_continue(session, "messages"):
+            yield chunk
+    if _orchestrator_cap_hit(session):
+        async for chunk in _wait_for_continue(session, "orchestrator"):
+            yield chunk
+
+
+# ---------------------------------------------------------------------------
 # Participant turn (with context budgeting + summarize-on-demand)
 # ---------------------------------------------------------------------------
 
@@ -430,6 +589,11 @@ def _add_participant_message(
         "speaker_id": participant.participant_id,
         "speaker_name": participant.name,
         "role": "participant",
+        # `kind` lets the frontend distinguish a human participant's
+        # message ("human") from LLM messages ("neon" | "extra" |
+        # "expert") so the green left-edge accent can be applied
+        # independently of the rotating color palette.
+        "kind": participant.kind,
         "text": text,
         "phase": phase.value,
         "timestamp": time.time(),
@@ -486,6 +650,17 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
 
     actives = _active_participants(session)
     for p in actives:
+        if p.kind == "human":
+            async for chunk in _do_human_turn(
+                session, p, phase=session.phase, actives=actives,
+                track_initial_opinion=True,
+                prompt_context=(
+                    "Share your initial opinion on the question. "
+                    "You're speaking BEFORE seeing the other participants."
+                ),
+            ):
+                yield chunk
+            continue
         # Phase 1 deliberately uses a *bare* prompt (no transcript) so each
         # participant's first opinion is independent of the others.
         prompt = INITIAL_OPINION_PROMPT.format(question=session.question)
@@ -525,6 +700,7 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
         participants=_active_participants(session),
         initial_opinions=session.initial_opinions,
         api_log=session.api_log,
+        human_credential=session.human_credential,
     )
     _bump_orchestrator_count(session)
     session.credential_summary = creds
@@ -562,6 +738,18 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
     for p in actives:
+        if p.kind == "human":
+            async for chunk in _do_human_turn(
+                session, p, phase=session.phase, actives=actives,
+                classify_addressed=True,
+                prompt_context=(
+                    f"Critique round {round_number} of {round_total}. "
+                    "Push back on, agree with, or build on what others "
+                    "have said. Address other participants by name."
+                ),
+            ):
+                yield chunk
+            continue
         transcript = _format_history(session.messages)
         # Snapshot pending threads BEFORE the call so we can both render
         # them in the prompt and stamp them onto the outgoing message as
@@ -715,6 +903,17 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             announce_msg = _add_orchestrator_message(session, announce, kind="status")
             yield _sse("orchestrator", _msg_payload(announce_msg))
 
+            if target.kind == "human":
+                async for chunk in _do_human_turn(
+                    session, target, phase=session.phase,
+                    actives=_active_participants(session),
+                    asker_id=(asker.participant_id if asker else None),
+                    asker_name=(asker.name if asker else None),
+                    prompt_context=question_text,
+                ):
+                    yield chunk
+                continue
+
             transcript = _format_history(session.messages)
             if asker is not None:
                 prompt2 = TARGETED_FOLLOWUP_FROM_PARTICIPANT_PROMPT.format(
@@ -773,6 +972,17 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
     for p in actives:
+        if p.kind == "human":
+            async for chunk in _do_human_turn(
+                session, p, phase=session.phase, actives=actives,
+                track_final_opinion=True,
+                prompt_context=(
+                    "Phase 4: state your final opinion on the question, "
+                    "incorporating whatever you've learned in the discussion."
+                ),
+            ):
+                yield chunk
+            continue
         transcript = _format_history(session.messages)
         pending = _pending_addressed_for(session, p)
         pending_block = _format_pending_block(pending)
@@ -880,6 +1090,55 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
             speaker = queue.pop(0)
             dyad_run = 0
             last_addressed = None
+
+        if speaker.kind == "human":
+            addressed_state: dict[str, Any] = {}
+            async for chunk in _do_human_turn(
+                session, speaker, phase=session.phase, actives=actives,
+                classify_addressed=True,
+                addressed_state=addressed_state,
+                prompt_context=(
+                    "Phase 5: weigh in on whether you agree, disagree, "
+                    "or want to refine. Address other participants by "
+                    "name when you're responding to something specific "
+                    "they said."
+                ),
+            ):
+                yield chunk
+            # Propagate addressed_to so dyad routing also works when the
+            # last speaker was the human.
+            last_addressed = addressed_state.get("last_addressed")
+            # Status check every full round (every len(actives) turns).
+            # Replicated here because the LLM-path code below also does
+            # it, and we need it on the human path too.
+            if consensus_turns % max(1, len(actives)) == 0:
+                transcript = _format_history(session.messages)
+                status = await assess_consensus_status(
+                    orchestrator_model_id=_orchestrator_model_id(session),
+                    question=session.question,
+                    transcript=transcript,
+                    alliance_groups=session.alliance_groups,
+                    api_log=session.api_log,
+                )
+                _bump_orchestrator_count(session)
+                if status.get("status") == "majority":
+                    session.alliance_groups = await _refresh_alliance_groups(session, actives)
+                    msg = _add_orchestrator_message(
+                        session,
+                        f"Majority reached. {status.get('rationale', '')}".strip(),
+                        kind="status",
+                    )
+                    yield _sse("orchestrator", _msg_payload(msg))
+                    return
+                if status.get("status") == "unproductive":
+                    msg = _add_orchestrator_message(
+                        session,
+                        f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
+                        kind="status",
+                    )
+                    yield _sse("orchestrator", _msg_payload(msg))
+                    return
+            continue
 
         # Decide allied vs solo prompt
         speaker_group, other_groups = _find_speaker_group(speaker, session.alliance_groups)
@@ -1228,6 +1487,9 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
     finally:
         session.finished = True
         session.phase = Phase.FINISHED
+        # Drop the human-input slot (if any) so its asyncio.Event
+        # doesn't outlive the session in the module-level registry.
+        human_io.drop_session(session.session_id)
 
     # Build per-participant contribution summaries for the table view.
     try:

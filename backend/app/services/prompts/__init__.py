@@ -36,6 +36,10 @@ from app.services.prompts.closure import (
     CONTRIBUTION_SUMMARY_PROMPT,
 )
 from app.services.prompts.auto_select import AUTO_SELECT_PARTICIPANTS_PROMPT
+from app.services.prompts.credential_intake import (
+    CREDENTIAL_INTAKE_EMPTY_TRANSCRIPT,
+    CREDENTIAL_INTAKE_TURN_PROMPT,
+)
 
 __all__ = [
     "PARTICIPANT_BASE_DIRECTIVE",
@@ -59,4 +63,6 @@ __all__ = [
     "NO_CONSENSUS_REPORT_PROMPT",
     "CONTRIBUTION_SUMMARY_PROMPT",
     "AUTO_SELECT_PARTICIPANTS_PROMPT",
+    "CREDENTIAL_INTAKE_TURN_PROMPT",
+    "CREDENTIAL_INTAKE_EMPTY_TRANSCRIPT",
 ]
