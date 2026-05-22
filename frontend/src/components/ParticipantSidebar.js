@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, User, X } from 'lucide-react';
 
 /**
  * Replaces LLMChats3's LLMSelector. Lists the user's currently selected
@@ -67,11 +67,14 @@ export default function ParticipantSidebar({
 
 function ParticipantCard({ participant, enabled, modelOverride, onToggleEnabled, onRemove }) {
   const [open, setOpen] = useState(false);
+  const isHuman = participant.kind === 'human';
 
   return (
     <div
       className={
-        'ccai-participant-card' + (enabled ? '' : ' ccai-participant-card-off')
+        'ccai-participant-card'
+        + (enabled ? '' : ' ccai-participant-card-off')
+        + (isHuman ? ' ccai-participant-card-human' : '')
       }
     >
       <div className="ccai-participant-row">
@@ -82,7 +85,19 @@ function ParticipantCard({ participant, enabled, modelOverride, onToggleEnabled,
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <div className="ccai-participant-name">{participant.name}</div>
+        <div className="ccai-participant-name">
+          {isHuman && (
+            <User
+              size={12}
+              strokeWidth={2.5}
+              style={{ marginRight: 4, verticalAlign: '-2px' }}
+            />
+          )}
+          {participant.name}
+          {isHuman && (
+            <span className="ccai-participant-human-tag">Human</span>
+          )}
+        </div>
         <div className="ccai-participant-controls">
           {enabled ? (
             <label className="ccai-toggle" title="Toggle participation">
@@ -116,18 +131,32 @@ function ParticipantCard({ participant, enabled, modelOverride, onToggleEnabled,
       )}
       {open && (
         <div className="ccai-participant-body">
-          <div className="ccai-participant-field">
-            <div className="ccai-participant-field-label">LLM</div>
-            <div className="ccai-participant-field-value">
-              {modelOverride || participant.default_model_id || participant.model_display || ''}
+          {isHuman ? (
+            <div className="ccai-participant-field">
+              <div className="ccai-participant-field-label">Role</div>
+              <div className="ccai-participant-field-value">
+                In-the-loop human participant. The orchestrator pauses
+                for your input when it's your turn. Edit your name and
+                credential summary from the "Human:&nbsp;…" button in
+                the header.
+              </div>
             </div>
-          </div>
-          <div className="ccai-participant-field">
-            <div className="ccai-participant-field-label">Persona prompt</div>
-            <pre className="ccai-participant-prompt">
-              {participant.role_prompt || '(no prompt set)'}
-            </pre>
-          </div>
+          ) : (
+            <>
+              <div className="ccai-participant-field">
+                <div className="ccai-participant-field-label">LLM</div>
+                <div className="ccai-participant-field-value">
+                  {modelOverride || participant.default_model_id || participant.model_display || ''}
+                </div>
+              </div>
+              <div className="ccai-participant-field">
+                <div className="ccai-participant-field-label">Persona prompt</div>
+                <pre className="ccai-participant-prompt">
+                  {participant.role_prompt || '(no prompt set)'}
+                </pre>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

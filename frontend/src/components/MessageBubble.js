@@ -35,6 +35,11 @@ function colorForIdx(idx) {
  *     the immediately previous bubble - cheap visual threading without
  *     full nesting.
  */
+// Green tone used for in-the-loop human participants. Overrides the
+// rotating palette so a human's bubble always reads as "the human
+// one" no matter where they fall in the active roster ordering.
+const HUMAN_TONE = { color: '#16A34A', bg: '#F0FDF4' };
+
 export default function MessageBubble({
   message,
   idx,
@@ -43,7 +48,9 @@ export default function MessageBubble({
   participantNameById,
   showResponseTime,
 }) {
-  const tone = colorForIdx(idx);
+  const isHuman = message.kind === 'human'
+    || (message.model_display === 'Human participant');
+  const tone = isHuman ? HUMAN_TONE : colorForIdx(idx);
   const initial = (message.speaker_name || '?').charAt(0).toUpperCase();
   const elapsed = message.elapsed_seconds;
 
@@ -90,7 +97,8 @@ export default function MessageBubble({
 
   const rowClassName =
     'message-row ccai-message-row' +
-    (isDirectReply ? ' ccai-message-row-reply' : '');
+    (isDirectReply ? ' ccai-message-row-reply' : '') +
+    (isHuman ? ' ccai-message-row-human' : '');
 
   return (
     <div

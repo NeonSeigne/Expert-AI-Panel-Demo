@@ -19,7 +19,16 @@ from app.middleware.rate_limit import (
     check_rate_limit,
     record_conversation,
 )
+from typing import Any
+
+from app.services import human_io
+from app.services.credential import normalize_one_credential
 from app.services.extra_personas import get_extra_persona
+from app.services.json_calls import orchestrator_call
+from app.services.prompts import (
+    CREDENTIAL_INTAKE_EMPTY_TRANSCRIPT,
+    CREDENTIAL_INTAKE_TURN_PROMPT,
+)
 from app.services.models import (
     CONVERSATION_LIMIT_BOUNDS,
     CONVERSATION_LIMIT_DESCRIPTIONS,
@@ -120,6 +129,21 @@ class AutoSelectRequest(BaseModel):
     orchestrator_model_id: str | None = None
 
 
+class HumanCredentialPayload(BaseModel):
+    """User-authored credential summary for the in-the-loop human.
+
+    The orchestrator prepends this entry to the LLM-built credential
+    summary so the human always appears first in the modal / exports.
+    """
+
+    participant_id: str
+    name: str
+    expertise: str = ""
+    personality: str = ""
+    credibility_for_question: float = 0.5
+    bias_to_watch: str = ""
+
+
 class StartChatRequest(BaseModel):
     question: str | None = None
 
@@ -135,6 +159,10 @@ class StartChatRequest(BaseModel):
     # silently clamped to the server-side default; see
     # `clamp_conversation_limits` in services.models.
     limits: dict[str, int] | None = None
+    # Optional in-the-loop human participant's pre-authored credential
+    # summary. Must reference a participant in the `participants` list
+    # that has kind == "human". Capped at one human per session.
+    human_credential: HumanCredentialPayload | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +383,23 @@ def _build_participant(
                 f"You are {name}, a Neon.ai persona. Speak naturally in your "
                 "own voice and bring the perspective your background suggests."
             )
+    elif kind == "human":
+        # Human participants don't use an LLM at all; the orchestrator
+        # pauses for their typed input. They still need a participant
+        # row so the rest of the state machine (credential summary,
+        # alliance detection, addressed-to routing, etc.) can refer to
+        # them by id and name.
+        if not name:
+            raise HTTPException(400, "Human participant requires a name")
+        return Participant(
+            participant_id=pid,
+            name=name,
+            role_prompt="",
+            model_id="",
+            kind="human",
+            enabled=True,
+            display_name="Human participant",
+        )
     else:
         raise HTTPException(400, f"Unknown participant kind: {kind}")
 
@@ -415,6 +460,20 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     for sel in req.participants:
         participants.append(_build_participant(sel, expert_lookup, req.model_assignments))
 
+    humans = [p for p in participants if p.kind == "human"]
+    if len(humans) > 1:
+        raise HTTPException(400, "Only one human participant is supported per session.")
+    if humans and req.human_credential is None:
+        raise HTTPException(
+            400,
+            "Human participant requires a human_credential payload.",
+        )
+    if humans and req.human_credential.participant_id != humans[0].participant_id:
+        raise HTTPException(
+            400,
+            "human_credential.participant_id must match the human participant.",
+        )
+
     record_conversation(request)
 
     session = create_session()
@@ -429,6 +488,16 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     session.limits = clamp_conversation_limits(req.limits)
     session.participant_message_cap = session.limits.participant_message_pause_at
     session.orchestrator_call_cap = session.limits.orchestrator_call_pause_at
+    if humans and req.human_credential is not None:
+        session.human_credential = normalize_one_credential({
+            "participant_id": req.human_credential.participant_id,
+            "name": req.human_credential.name,
+            "expertise": req.human_credential.expertise,
+            "personality": req.human_credential.personality,
+            "credibility_for_question": req.human_credential.credibility_for_question,
+            "bias_to_watch": req.human_credential.bias_to_watch,
+            "is_human": True,
+        })
 
     async def event_stream():
         yield (
@@ -465,6 +534,286 @@ async def api_continue(session_id: str, reason: str = "messages"):
         raise HTTPException(409, "Session is not paused")
     session.pending_continue = True
     return {"ok": True, "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# Human participant: turn response + credential intake Q&A
+# ---------------------------------------------------------------------------
+
+class HumanResponseRequest(BaseModel):
+    """POST body for the human's response to a pending turn.
+
+    `skip` flips this turn into a "declined to comment" note from the
+    orchestrator rather than a participant message; `text` is ignored
+    when skip is true.
+    """
+
+    text: str = ""
+    skip: bool = False
+
+
+@router.post("/chat/{session_id}/human-response")
+async def api_human_response(session_id: str, req: HumanResponseRequest):
+    """Deliver the human participant's text for the current pending
+    turn. Wakes the orchestrator coroutine waiting on the
+    `human_io` slot for this session."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.awaiting_human is None:
+        raise HTTPException(409, "Session is not awaiting a human turn")
+    if not req.skip and not (req.text or "").strip():
+        raise HTTPException(400, "text is required unless skip is true")
+    delivered = human_io.deliver_human_response(
+        session_id, req.text, skip=req.skip,
+    )
+    if not delivered:
+        raise HTTPException(409, "No pending human turn for this session")
+    return {"ok": True, "skipped": req.skip}
+
+
+class HumanCredentialEditRequest(BaseModel):
+    """PATCH body for editing the human's credential summary mid-chat."""
+
+    name: str | None = None
+    expertise: str | None = None
+    personality: str | None = None
+    credibility_for_question: float | None = None
+    bias_to_watch: str | None = None
+
+
+@router.patch("/chat/{session_id}/credentials/human")
+async def api_edit_human_credential(
+    session_id: str,
+    req: HumanCredentialEditRequest,
+):
+    """Update the human participant's credential summary in place.
+
+    The View Credential Summary modal lets the user tweak the human's
+    entry (name, expertise, style, credibility, bias). Only fields
+    provided in the body are changed; others are left as-is. The
+    updated entry is reflected in subsequent participant prompts (the
+    credentials_to_block call rebuilds the prompt block each turn).
+    """
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.human_credential is None:
+        raise HTTPException(404, "Session has no human participant")
+
+    updated = dict(session.human_credential)
+    for field_name in (
+        "name", "expertise", "personality",
+        "credibility_for_question", "bias_to_watch",
+    ):
+        value = getattr(req, field_name)
+        if value is not None:
+            updated[field_name] = value
+    updated["is_human"] = True
+    updated = normalize_one_credential(updated)
+    session.human_credential = updated
+
+    # Also patch the entry inside session.credential_summary so the
+    # View Credential Summary modal reflects the edit without waiting
+    # for the next phase-refresh.
+    for i, c in enumerate(session.credential_summary or []):
+        if c.get("participant_id") == updated["participant_id"]:
+            session.credential_summary[i] = updated
+            break
+
+    return {"ok": True, "credential": updated}
+
+
+# Module-level registry of in-flight credential drafts. Each draft is a
+# tiny piece of state: the question being discussed, the human's name,
+# the question/answer history, and the configured cap. Drafts are
+# transient (lifetime = a few seconds of Q&A in the modal) so we don't
+# bother persisting them; the registry is cleared by the API when the
+# draft is finalized or abandoned.
+_credential_drafts: dict[str, dict[str, Any]] = {}
+
+
+class CredentialDraftStartRequest(BaseModel):
+    """Body for POST /api/chat/credentials/draft - kicks off a Q&A."""
+
+    name: str
+    question: str
+    max_questions: int = 6
+    orchestrator_model_id: str | None = None
+
+
+class CredentialDraftAnswerRequest(BaseModel):
+    """Body for POST /api/chat/credentials/draft/{draft_id}/answer."""
+
+    answer: str = ""
+
+
+def _intake_transcript(history: list[dict[str, str]]) -> str:
+    """Render the Q&A history into a transcript snippet for the prompt.
+
+    Each entry of history is {"q": "...", "a": "..."}. The last entry
+    may have only "q" (the question the user is currently answering)
+    when called BEFORE the first answer, but in practice we render
+    history only after the LLM has emitted a question and the user has
+    answered, so both keys are present.
+    """
+    if not history:
+        return CREDENTIAL_INTAKE_EMPTY_TRANSCRIPT
+    lines: list[str] = []
+    for i, qa in enumerate(history, start=1):
+        q = (qa.get("q") or "").strip()
+        a = (qa.get("a") or "").strip()
+        lines.append(f"Q{i}: {q}")
+        lines.append(f"A{i}: {a}" if a else f"A{i}: (no answer yet)")
+    return "\n".join(lines)
+
+
+async def _intake_turn(draft: dict[str, Any]) -> dict[str, Any]:
+    """Run one orchestrator turn for the credential intake Q&A.
+
+    Returns either {"kind": "question", "text": ...} or
+    {"kind": "summary", "summary": {...}} as parsed from the
+    orchestrator's JSON output. Falls back to a safe default question
+    if parsing fails.
+    """
+    transcript = _intake_transcript(draft["history"])
+    prompt = CREDENTIAL_INTAKE_TURN_PROMPT.format(
+        name=draft["name"],
+        question=draft["question"],
+        max_questions=draft["max_questions"],
+        questions_asked=draft["questions_asked"],
+        transcript=transcript,
+    )
+    _raw, parsed = await orchestrator_call(
+        orchestrator_model_id=draft["orchestrator_model_id"],
+        user_prompt=prompt,
+        label="credential_intake",
+        api_log=draft.get("api_log"),
+        max_tokens=512,
+    )
+
+    if isinstance(parsed, dict):
+        kind = parsed.get("kind")
+        if kind == "summary" and isinstance(parsed.get("summary"), dict):
+            return {"kind": "summary", "summary": parsed["summary"]}
+        if kind == "question" and isinstance(parsed.get("text"), str):
+            return {"kind": "question", "text": parsed["text"].strip()}
+
+    # Defensive fallback: if the model returned garbage, ask a sensible
+    # next-question rather than crashing the modal.
+    if draft["questions_asked"] >= draft["max_questions"]:
+        return {
+            "kind": "summary",
+            "summary": {
+                "name": draft["name"],
+                "expertise": "(intake LLM did not return a summary)",
+                "personality": "",
+                "credibility_for_question": 0.5,
+                "bias_to_watch": "",
+            },
+        }
+    return {
+        "kind": "question",
+        "text": (
+            "Could you tell me a bit about your background relevant to "
+            f'this question: "{draft["question"]}"?'
+        ),
+    }
+
+
+@router.post("/chat/credentials/draft")
+async def api_credential_draft_start(req: CredentialDraftStartRequest):
+    """Kick off a new credential-intake Q&A. Returns the draft id plus
+    the LLM's first question (or, if it bailed immediately, a final
+    summary)."""
+    if not req.name.strip():
+        raise HTTPException(400, "name is required")
+    if not req.question.strip():
+        raise HTTPException(400, "question is required")
+    max_q = max(1, min(10, int(req.max_questions or 6)))
+
+    import uuid as _uuid
+    draft_id = str(_uuid.uuid4())
+    draft: dict[str, Any] = {
+        "draft_id": draft_id,
+        "name": req.name.strip(),
+        "question": req.question.strip(),
+        "max_questions": max_q,
+        "questions_asked": 0,
+        "history": [],
+        "orchestrator_model_id": (
+            req.orchestrator_model_id or settings.orchestrator_model
+        ),
+        "api_log": [],
+    }
+
+    result = await _intake_turn(draft)
+    if result["kind"] == "question":
+        draft["questions_asked"] += 1
+        draft["history"].append({"q": result["text"], "a": ""})
+        _credential_drafts[draft_id] = draft
+        return {
+            "draft_id": draft_id,
+            "kind": "question",
+            "question": result["text"],
+            "questions_asked": draft["questions_asked"],
+            "max_questions": max_q,
+        }
+
+    # The intake LLM jumped straight to a summary (no answers needed).
+    return {
+        "draft_id": draft_id,
+        "kind": "summary",
+        "summary": result["summary"],
+        "questions_asked": 0,
+        "max_questions": max_q,
+    }
+
+
+@router.post("/chat/credentials/draft/{draft_id}/answer")
+async def api_credential_draft_answer(
+    draft_id: str,
+    req: CredentialDraftAnswerRequest,
+):
+    """Submit the human's answer to the last question; receive either
+    the LLM's next question or the final credential summary."""
+    draft = _credential_drafts.get(draft_id)
+    if draft is None:
+        raise HTTPException(404, "Draft not found or already finalized")
+    if not draft["history"]:
+        raise HTTPException(409, "Draft has no pending question to answer")
+    # Stamp the answer onto the last question.
+    draft["history"][-1]["a"] = (req.answer or "").strip()
+
+    result = await _intake_turn(draft)
+    if result["kind"] == "question":
+        draft["questions_asked"] += 1
+        draft["history"].append({"q": result["text"], "a": ""})
+        return {
+            "draft_id": draft_id,
+            "kind": "question",
+            "question": result["text"],
+            "questions_asked": draft["questions_asked"],
+            "max_questions": draft["max_questions"],
+        }
+
+    # Final summary; clear the draft from the registry.
+    _credential_drafts.pop(draft_id, None)
+    return {
+        "draft_id": draft_id,
+        "kind": "summary",
+        "summary": result["summary"],
+        "questions_asked": draft["questions_asked"],
+        "max_questions": draft["max_questions"],
+    }
+
+
+@router.delete("/chat/credentials/draft/{draft_id}")
+async def api_credential_draft_cancel(draft_id: str):
+    """User abandoned the AI Q&A (e.g. closed the modal). No-op if
+    already gone."""
+    _credential_drafts.pop(draft_id, None)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

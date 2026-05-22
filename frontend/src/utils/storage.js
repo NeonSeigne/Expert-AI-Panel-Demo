@@ -28,6 +28,16 @@ const DEFAULTS = {
   // as the active mode and the per-persona checkboxes are hidden.
   // The auto-select happens just before /chat/start.
   auto_select_mode: false,
+  // In-the-loop human participant. null when no human is configured.
+  // Shape when set:
+  //   { participant_id, name, credential_summary: {
+  //       name, expertise, personality,
+  //       credibility_for_question, bias_to_watch
+  //     } }
+  // Persisted across page reloads so the user doesn't have to re-author
+  // their summary every session. Cleared from storage when the user
+  // removes the human via the sidebar.
+  human_participant: null,
 };
 
 function readAll() {
@@ -103,4 +113,8 @@ export function setConversationLimits(limitsMap) {
 
 export function setAutoSelectMode(on) {
   return patchState({ auto_select_mode: !!on });
+}
+
+export function setHumanParticipant(humanOrNull) {
+  return patchState({ human_participant: humanOrNull || null });
 }

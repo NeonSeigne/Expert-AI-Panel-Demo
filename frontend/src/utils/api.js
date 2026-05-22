@@ -126,6 +126,8 @@ function eventHandlerKey(eventType) {
     case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
     case 'participant_error': return 'onParticipantError';
     case 'credentials_updated': return 'onCredentialsUpdated';
+    case 'human_turn_needed': return 'onHumanTurnNeeded';
+    case 'human_turn_cleared': return 'onHumanTurnCleared';
     default: return null;
   }
 }
@@ -242,6 +244,84 @@ export async function fetchCredentials(sessionId) {
   );
   if (!resp.ok) throw new Error('Credentials fetch failed');
   return resp.json();
+}
+
+/**
+ * Submit the human participant's response to the orchestrator for the
+ * currently pending turn. `skip=true` flips the turn into a "declined
+ * to comment" note rather than a message.
+ */
+export async function submitHumanResponse(sessionId, { text, skip = false } = {}) {
+  const resp = await fetch(`${API_BASE}/api/chat/${sessionId}/human-response`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text || '', skip: !!skip }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Submit failed');
+  }
+  return resp.json();
+}
+
+/**
+ * Patch the in-the-loop human's credential summary. Used by the
+ * CredentialSummaryModal's edit affordance on the human's row. The
+ * backend rejects fields it doesn't know about; we send only the
+ * fields the user actually changed (sparse patch).
+ */
+export async function patchHumanCredential(sessionId, patch) {
+  const resp = await fetch(`${API_BASE}/api/chat/${sessionId}/credentials/human`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Edit failed');
+  }
+  return resp.json();
+}
+
+/**
+ * Start the AI-assisted credential intake Q&A flow. Returns either a
+ * first question or (rarely) a final summary if the LLM bails. The
+ * draft_id is needed for subsequent /answer calls.
+ */
+export async function startCredentialDraft({
+  name, question, max_questions = 6, orchestrator_model_id = null,
+}) {
+  const resp = await fetch(`${API_BASE}/api/chat/credentials/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, question, max_questions, orchestrator_model_id }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Credential draft start failed');
+  }
+  return resp.json();
+}
+
+export async function answerCredentialDraft(draftId, answer) {
+  const resp = await fetch(`${API_BASE}/api/chat/credentials/draft/${draftId}/answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer: answer || '' }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Credential draft answer failed');
+  }
+  return resp.json();
+}
+
+export async function cancelCredentialDraft(draftId) {
+  try {
+    await fetch(`${API_BASE}/api/chat/credentials/draft/${draftId}`, {
+      method: 'DELETE',
+    });
+  } catch (_) { /* fire-and-forget cleanup; ignore */ }
 }
 
 export async function getAuthStatus() {

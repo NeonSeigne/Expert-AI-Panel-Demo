@@ -231,9 +231,15 @@ class Participant:
     """One member of the CCAI forum.
 
     `kind` distinguishes Neon HANA personas, the four bundled "extra"
-    personas, and user-created Expert Personas. `enabled` reflects the
-    sidebar slider. Disabled participants are kept on the session so
-    the user can re-enable mid-conversation, but they don't take turns.
+    personas, user-created Expert Personas, and an optional in-the-loop
+    human participant. `enabled` reflects the sidebar slider. Disabled
+    participants are kept on the session so the user can re-enable
+    mid-conversation, but they don't take turns.
+
+    Human participants have `kind == "human"`, no `model_id`, and an
+    empty `role_prompt`. The orchestrator pauses for their input via
+    SSE instead of calling an LLM; the user supplies their text through
+    POST /api/chat/{id}/human-response.
     """
 
     participant_id: str
@@ -241,7 +247,7 @@ class Participant:
     role_prompt: str
     model_id: str
 
-    kind: str = "expert"  # "neon" | "extra" | "expert"
+    kind: str = "expert"  # "neon" | "extra" | "expert" | "human"
     enabled: bool = True
 
     # Resolved provider routing (populated from settings.resolve_model)
@@ -323,8 +329,23 @@ class Session:
     orchestrator_call_cap: int = ORCHESTRATOR_CALL_PAUSE_AT
 
     paused_for_continue: bool = False
-    pause_reason: str | None = None  # "messages" | "orchestrator"
+    pause_reason: str | None = None  # "messages" | "orchestrator" | "human_turn"
     finished: bool = False
+
+    # While the orchestrator is awaiting the human participant's text,
+    # this carries the metadata the frontend needs to render the input
+    # slot (speaker_id, name, phase, etc.). None when no human turn is
+    # pending. The session is paused_for_continue while this is set.
+    awaiting_human: dict[str, Any] | None = None
+
+    # User-authored credential summary for the in-the-loop human
+    # participant (kind == "human"). None when there is no human in
+    # this session. The orchestrator prepends this entry to the
+    # LLM-built credential summary so the human always appears first
+    # in the View Credential Summary modal and exports. Schema:
+    #   {participant_id, name, expertise, personality,
+    #    credibility_for_question (float 0..1), bias_to_watch}
+    human_credential: dict[str, Any] | None = None
 
     # Streaming control: the orchestrator state-machine writes to this and
     # the API layer reads it.

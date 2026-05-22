@@ -8,6 +8,7 @@ import ChatTableView from './components/ChatTableView';
 import CredentialSummaryModal from './components/CredentialSummaryModal';
 import ConversationLimitsModal from './components/ConversationLimitsModal';
 import PromptCatalogModal from './components/PromptCatalogModal';
+import HumanParticipantModal from './components/HumanParticipantModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
@@ -17,6 +18,7 @@ import {
   autoSelectParticipants,
   fetchPromptCatalog,
   getRateLimitStatus,
+  submitHumanResponse, patchHumanCredential,
 } from './utils/api';
 import * as storage from './utils/storage';
 import './styles/variables.css';
@@ -99,6 +101,21 @@ export default function App() {
   const [promptCatalog, setPromptCatalog] = useState(null);
   const [promptCatalogOpen, setPromptCatalogOpen] = useState(false);
 
+  // In-the-loop human participant.
+  //   humanParticipant is the persisted spec:
+  //     { participant_id, name, credential_summary: {...} } | null
+  //   humanModalOpen / humanEditing power the Add/Edit modal.
+  //   awaitingHuman holds the payload from the last human_turn_needed
+  //     SSE event (null when no human turn is pending).
+  //   humanSubmitting blocks the slot's buttons while POST is in flight.
+  const [humanParticipant, setHumanParticipant] = useState(
+    persisted.human_participant || null,
+  );
+  const [humanModalOpen, setHumanModalOpen] = useState(false);
+  const [humanEditing, setHumanEditing] = useState(null);
+  const [awaitingHuman, setAwaitingHuman] = useState(null);
+  const [humanSubmitting, setHumanSubmitting] = useState(false);
+
   const abortRef = useRef(null);
 
   // ─── Apply theme ────────────────────────────────────────────────
@@ -158,11 +175,30 @@ export default function App() {
     return map;
   }, [catalog, expertPersonas]);
 
+  // Synthetic catalog entry for the in-the-loop human, so they slot
+  // into the same data structures the rest of the app already uses
+  // (sidebar, start payload, credentials display).
+  const humanCatalogEntry = useMemo(() => {
+    if (!humanParticipant) return null;
+    return {
+      participant_id: humanParticipant.participant_id,
+      kind: 'human',
+      name: humanParticipant.name,
+      role_prompt: '',
+      model_id: '',
+      default_model_id: '',
+      model_display: 'Human participant',
+      display_name: 'Human participant',
+    };
+  }, [humanParticipant]);
+
   const selectedParticipants = useMemo(() => {
-    return selectedIds
+    const fromCatalog = selectedIds
       .map(id => allCatalogParticipants[id])
       .filter(Boolean);
-  }, [selectedIds, allCatalogParticipants]);
+    // The human always appears first in the sidebar / participants list.
+    return humanCatalogEntry ? [humanCatalogEntry, ...fromCatalog] : fromCatalog;
+  }, [selectedIds, allCatalogParticipants, humanCatalogEntry]);
 
   const enabledSelectedCount = useMemo(() => {
     return selectedParticipants.filter(p => enabledMap[p.participant_id] !== false).length;
@@ -176,6 +212,7 @@ export default function App() {
   useEffect(() => { storage.setOrchestratorModelId(orchestratorModel); }, [orchestratorModel]);
   useEffect(() => { storage.setSummarizerModelId(summarizerModel); }, [summarizerModel]);
   useEffect(() => { storage.setMaxParticipants(maxParticipants); }, [maxParticipants]);
+  useEffect(() => { storage.setHumanParticipant(humanParticipant); }, [humanParticipant]);
 
   // ─── Settings handlers ──────────────────────────────────────────
   const handleOrchestratorChange = useCallback(async (modelId) => {
@@ -208,6 +245,9 @@ export default function App() {
   // ─── Participant ops ────────────────────────────────────────────
   const handleToggleParticipant = useCallback((participant, kind) => {
     const id = participant.participant_id;
+    // The human occupies one of the maxParticipants slots; reserve it
+    // when computing the room left for LLM picks.
+    const humanReserved = humanParticipant ? 1 : 0;
     setSelectedIds(prev => {
       if (prev.includes(id)) {
         // Deselect entirely
@@ -218,24 +258,101 @@ export default function App() {
         });
         return prev.filter(x => x !== id);
       }
-      if (prev.length >= maxParticipants) return prev;
+      if (prev.length + humanReserved >= maxParticipants) return prev;
       setEnabledMap(em => ({ ...em, [id]: true }));
       return [...prev, id];
     });
-  }, [maxParticipants]);
+  }, [maxParticipants, humanParticipant]);
 
   const handleSidebarToggleEnabled = useCallback((participantId, enabled) => {
     setEnabledMap(em => ({ ...em, [participantId]: enabled }));
   }, []);
 
   const handleSidebarRemove = useCallback((participantId) => {
+    if (humanParticipant && participantId === humanParticipant.participant_id) {
+      setHumanParticipant(null);
+      return;
+    }
     setSelectedIds(prev => prev.filter(x => x !== participantId));
     setEnabledMap(em => {
       const next = { ...em };
       delete next[participantId];
       return next;
     });
+  }, [humanParticipant]);
+
+  // ─── Human participant ops ───────────────────────────────────────
+  const handleOpenHumanModal = useCallback(() => {
+    setHumanEditing(humanParticipant);
+    setHumanModalOpen(true);
+  }, [humanParticipant]);
+
+  const handleSaveHuman = useCallback((spec) => {
+    setHumanParticipant(spec);
+    setHumanModalOpen(false);
+    setHumanEditing(null);
   }, []);
+
+  const handleRemoveHuman = useCallback(() => {
+    setHumanParticipant(null);
+    setHumanModalOpen(false);
+    setHumanEditing(null);
+  }, []);
+
+  const handleHumanSubmit = useCallback(async (text) => {
+    if (!sessionId || !awaitingHuman) return;
+    setHumanSubmitting(true);
+    try {
+      await submitHumanResponse(sessionId, { text });
+    } catch (err) {
+      console.error('Human response failed:', err);
+      setSystemMessages(prev => [...prev, {
+        text: `Couldn't send your message: ${err.message}`,
+      }]);
+    } finally {
+      setHumanSubmitting(false);
+    }
+  }, [sessionId, awaitingHuman]);
+
+  const handleHumanSkip = useCallback(async () => {
+    if (!sessionId || !awaitingHuman) return;
+    setHumanSubmitting(true);
+    try {
+      await submitHumanResponse(sessionId, { text: '', skip: true });
+    } catch (err) {
+      console.error('Human skip failed:', err);
+    } finally {
+      setHumanSubmitting(false);
+    }
+  }, [sessionId, awaitingHuman]);
+
+  const handleEditHumanCredential = useCallback(async (patch) => {
+    if (!sessionId) return;
+    try {
+      const result = await patchHumanCredential(sessionId, patch);
+      const updated = result.credential;
+      if (updated) {
+        // Reflect the edit in the persisted spec so re-opens of the
+        // Add-a-Human modal show the latest version.
+        setHumanParticipant(prev => prev ? {
+          ...prev,
+          name: updated.name || prev.name,
+          credential_summary: {
+            name: updated.name || prev.name,
+            expertise: updated.expertise || '',
+            personality: updated.personality || '',
+            credibility_for_question: updated.credibility_for_question ?? 0.55,
+            bias_to_watch: updated.bias_to_watch || '',
+          },
+        } : prev);
+        // Refresh the credentials cache so the modal reflects the edit.
+        const data = await fetchCredentials(sessionId);
+        setCredentialsData(data);
+      }
+    } catch (err) {
+      console.error('Edit human credential failed:', err);
+    }
+  }, [sessionId]);
 
   // ─── Auto-select toggle ─────────────────────────────────────────
   // When turning ON, snapshot the current manual selection so we can
@@ -400,8 +517,10 @@ export default function App() {
       kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
         : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
       name: p.name,
-      role_prompt: p.role_prompt || null,
-      model_id_override: modelAssignments[p.participant_id] || null,
+      role_prompt: p.kind === 'human' ? null : (p.role_prompt || null),
+      model_id_override: p.kind === 'human'
+        ? null
+        : (modelAssignments[p.participant_id] || null),
     }));
     const expert_payload = baseList
       .filter(p => (p.kind || '').startsWith('expert'))
@@ -411,6 +530,25 @@ export default function App() {
         model_id: modelAssignments[p.participant_id] || p.model_id,
         role_prompt: p.role_prompt,
       }));
+    // The human's pre-authored credential summary rides alongside the
+    // participants array. Backend rejects start if it sees a human in
+    // participants but no human_credential, so this MUST be present
+    // whenever the human is enabled.
+    const humanInList = baseList.find(p => p.kind === 'human');
+    let human_credential = null;
+    if (humanInList && humanParticipant) {
+      const cs = humanParticipant.credential_summary || {};
+      human_credential = {
+        participant_id: humanInList.participant_id,
+        name: humanInList.name,
+        expertise: cs.expertise || '',
+        personality: cs.personality || '',
+        credibility_for_question: typeof cs.credibility_for_question === 'number'
+          ? cs.credibility_for_question
+          : 0.55,
+        bias_to_watch: cs.bias_to_watch || '',
+      };
+    }
     return {
       question: theQuestion,
       participants,
@@ -421,8 +559,9 @@ export default function App() {
       max_participants: maxParticipants,
       // Sparse override map; backend clamps and falls back per-field.
       limits: limitsOverrides,
+      human_credential,
     };
-  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides]);
+  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides, humanParticipant]);
 
   // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -460,6 +599,7 @@ export default function App() {
     setPause(null);
     setActiveQuestion(theQuestion.trim());
     setCredentialsData(null);
+    setAwaitingHuman(null);
 
     // Resolve the final participant list. When auto-select is on, ask
     // the orchestrator to rank every available candidate; otherwise
@@ -485,16 +625,23 @@ export default function App() {
           || p.model_id || p.default_model_id || '',
       }));
       try {
+        // The human, if any, always gets a seat; ask the orchestrator
+        // for one fewer LLM pick so the total stays at maxParticipants.
+        const humanReserved = humanParticipant ? 1 : 0;
+        const llmTarget = Math.max(2, maxParticipants - humanReserved);
         const result = await autoSelectParticipants({
           question: theQuestion.trim(),
-          count: maxParticipants,
+          count: llmTarget,
           candidates: candidatesPayload,
           orchestrator_model_id: orchestratorModel,
         });
         const chosenIds = result.selected || [];
-        resolvedParticipants = chosenIds
+        const chosenLlms = chosenIds
           .map(id => allCatalogParticipants[id])
           .filter(Boolean);
+        resolvedParticipants = humanCatalogEntry
+          ? [humanCatalogEntry, ...chosenLlms]
+          : chosenLlms;
         if (resolvedParticipants.length < 2) {
           setIsRunning(false);
           setStatusText('');
@@ -583,6 +730,18 @@ export default function App() {
               stage: data.stage || 'built',
             });
           },
+          onHumanTurnNeeded: (data) => {
+            // Orchestrator is paused waiting on the human; render the
+            // green-bordered input slot and the lower-screen indicator.
+            setAwaitingHuman(data || null);
+            setStatusText(
+              `${data?.speaker_name || 'Human'} is up next.`,
+            );
+          },
+          onHumanTurnCleared: () => {
+            setAwaitingHuman(null);
+            setHumanSubmitting(false);
+          },
           onDone: () => {
             setIsRunning(false);
             setStatusText('');
@@ -608,6 +767,7 @@ export default function App() {
     buildStartPayload, enabledSelectedCount, dailyLimit,
     autoSelectMode, allCatalogParticipants, modelAssignments,
     maxParticipants, orchestratorModel,
+    humanParticipant, humanCatalogEntry,
   ]);
 
   const handleStartRandom = useCallback(() => {
@@ -648,6 +808,8 @@ export default function App() {
         onOpenExpertModal={handleOpenExpertModal}
         autoSelectMode={autoSelectMode}
         onToggleAutoSelectMode={handleToggleAutoSelectMode}
+        humanParticipant={humanParticipant}
+        onOpenHumanModal={handleOpenHumanModal}
 
         allModels={allModelsFlat}
         orchestratorModel={orchestratorModel}
@@ -706,6 +868,10 @@ export default function App() {
             participants={sessionParticipants.length > 0 ? sessionParticipants : selectedParticipants}
             showResponseTime={showResponseTime}
             showChatStats={showChatStats}
+            awaitingHuman={awaitingHuman}
+            humanSubmitting={humanSubmitting}
+            onHumanSubmit={handleHumanSubmit}
+            onHumanSkip={handleHumanSkip}
           />
         </div>
       </main>
@@ -735,6 +901,17 @@ export default function App() {
         data={credentialsData}
         onClose={() => setCredentialsOpen(false)}
         onRefresh={handleRefreshCredentials}
+        humanParticipantId={humanParticipant?.participant_id || null}
+        onEditHumanCredential={handleEditHumanCredential}
+      />
+      <HumanParticipantModal
+        isOpen={humanModalOpen}
+        initial={humanEditing}
+        question={activeQuestion}
+        orchestratorModel={orchestratorModel}
+        onClose={() => { setHumanModalOpen(false); setHumanEditing(null); }}
+        onSave={handleSaveHuman}
+        onRemove={humanEditing ? handleRemoveHuman : null}
       />
       <ConversationLimitsModal
         isOpen={limitsOpen}
