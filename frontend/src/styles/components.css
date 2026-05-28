@@ -590,6 +590,21 @@
   max-width: 400px;
 }
 
+/* Download strip rendered below the "End of Chat" marker. Mirrors the
+   items in the header DownloadMenu so the user doesn't have to scroll
+   back up to the top of a finished conversation to export it. */
+.chat-end-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.chat-end-download-btn {
+  white-space: nowrap;
+}
+
 /* ── Chat Controls ─────────────────────────────────────────────── */
 
 .chat-controls {
@@ -1280,6 +1295,16 @@
   .system-message.end-of-chat {
     font-size: 14px;
     padding: 14px;
+  }
+  /* On phones the download strip stacks so each label is fully
+     readable; on wider viewports it stays inline-wrap. */
+  .chat-end-downloads {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .chat-end-download-btn {
+    justify-content: center;
   }
   .btn-sm {
     padding: 5px 8px;

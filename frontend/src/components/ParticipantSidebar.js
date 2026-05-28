@@ -27,15 +27,15 @@ export default function ParticipantSidebar({
     <aside className="sidebar ccai-sidebar">
       <div className="ccai-sidebar-header">
         <h2 className="sidebar-title">Participants</h2>
-        <div className="ccai-sidebar-help">
-          {showAutoPlaceholder ? (
-            <em>Auto-select is on.</em>
-          ) : participants.length === 0 ? (
-            <em>Use the Participants dropdown in the header to add some.</em>
-          ) : (
-            <em>Drag to reorder is not supported yet — order is by selection.</em>
-          )}
-        </div>
+        {(showAutoPlaceholder || participants.length === 0) && (
+          <div className="ccai-sidebar-help">
+            {showAutoPlaceholder ? (
+              <em>Auto-select is on.</em>
+            ) : (
+              <em>Use the Participants dropdown in the header to add some.</em>
+            )}
+          </div>
+        )}
       </div>
       {showAutoPlaceholder && (
         <div className="ccai-sidebar-autoselect-empty">

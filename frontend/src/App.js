@@ -872,6 +872,12 @@ export default function App() {
             humanSubmitting={humanSubmitting}
             onHumanSubmit={handleHumanSubmit}
             onHumanSkip={handleHumanSkip}
+            onShowTableView={handleShowTableView}
+            onDownloadChatTxt={handleDownloadTxt}
+            onDownloadChatMd={handleDownloadMd}
+            onDownloadCsvTable={handleDownloadCsvTable}
+            onDownloadApiLog={handleDownloadApiLog}
+            hasApiLog={!!sessionId}
           />
         </div>
       </main>

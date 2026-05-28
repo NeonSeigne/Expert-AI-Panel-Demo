@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, UserCheck } from 'lucide-react';
+import { UserPlus, UserCheck, Table2 } from 'lucide-react';
 import AuthBadge from './AuthBadge';
 import ParticipantDropdown from './ParticipantDropdown';
 import DownloadMenu from './DownloadMenu';
@@ -106,7 +106,7 @@ export default function Header({
           {humanParticipant ? (
             <>
               <UserCheck size={14} style={{ marginRight: 4 }} />
-              Human: {humanParticipant.name}
+              {humanParticipant.name}
             </>
           ) : (
             <>
@@ -114,6 +114,18 @@ export default function Header({
               Add a Human Participant
             </>
           )}
+        </button>
+        <button
+          type="button"
+          className="btn-sm btn-outline ccai-table-view-btn"
+          onClick={onShowTableView}
+          disabled={!hasChat}
+          title={hasChat
+            ? 'Open the conversation summary table'
+            : 'Start a chat to view the summary table'}
+        >
+          <Table2 size={14} style={{ marginRight: 4 }} />
+          Table View
         </button>
         <DownloadMenu
           hasChat={hasChat}

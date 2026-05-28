@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Table2, FileText, FileCode, FileSpreadsheet, History } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import OrchestratorMessage from './OrchestratorMessage';
 import FailsafePauseBanner from './FailsafePauseBanner';
@@ -10,6 +11,11 @@ import HumanTurnIndicator from './HumanTurnIndicator';
  * status banners, and the failsafe-pause continue control. Participant
  * coloring is derived from each participant's index in the active
  * roster, so colors are stable per-participant for the whole chat.
+ *
+ * After "End of Chat" arrives we also render a download strip below the
+ * stats line that mirrors the header DownloadMenu items 1:1 (Summary
+ * table view, .txt, .md, .csv, full API log). Per UX request these
+ * stack vertically on narrow viewports.
  */
 export default function ChatArea({
   messages,
@@ -25,6 +31,12 @@ export default function ChatArea({
   humanSubmitting,
   onHumanSubmit,
   onHumanSkip,
+  onShowTableView,
+  onDownloadChatTxt,
+  onDownloadChatMd,
+  onDownloadCsvTable,
+  onDownloadApiLog,
+  hasApiLog,
 }) {
   const speakerIdxFor = useMemo(() => {
     const map = {};
@@ -101,6 +113,54 @@ export default function ChatArea({
       {showChatStats && stats && (
         <div className="chat-stats">
           {stats.count} participant messages &middot; {stats.totalTime}s total generation time
+        </div>
+      )}
+      {chatEnded && (
+        <div className="chat-end-downloads" role="group" aria-label="Conversation downloads">
+          <button
+            type="button"
+            className="btn-sm btn-outline chat-end-download-btn"
+            onClick={onShowTableView}
+            title="Open the conversation summary table"
+          >
+            <Table2 size={14} />
+            Summary table…
+          </button>
+          <button
+            type="button"
+            className="btn-sm btn-outline chat-end-download-btn"
+            onClick={onDownloadChatTxt}
+          >
+            <FileText size={14} />
+            Chat as .txt
+          </button>
+          <button
+            type="button"
+            className="btn-sm btn-outline chat-end-download-btn"
+            onClick={onDownloadChatMd}
+          >
+            <FileCode size={14} />
+            Chat as .md
+          </button>
+          <button
+            type="button"
+            className="btn-sm btn-outline chat-end-download-btn"
+            onClick={onDownloadCsvTable}
+            title="Download the summary table as CSV"
+          >
+            <FileSpreadsheet size={14} />
+            Summary table as .csv
+          </button>
+          <button
+            type="button"
+            className="btn-sm btn-outline chat-end-download-btn"
+            onClick={onDownloadApiLog}
+            disabled={!hasApiLog}
+            title="Download the full backend API call history for this session"
+          >
+            <History size={14} />
+            Full API history
+          </button>
         </div>
       )}
       <FailsafePauseBanner pause={pause} onContinue={onContinuePause} />
