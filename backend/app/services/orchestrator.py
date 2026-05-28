@@ -55,6 +55,7 @@ from app.services.credential import (
     refresh_credential_summary,
 )
 from app.services.json_calls import orchestrator_call
+from app.services.resilience import run_resilient_turn
 from app.services.models import (
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
@@ -500,10 +501,25 @@ async def _call_participant(
     label: str,
     max_tokens: int = 600,
     timeout: float = 45.0,
-) -> tuple[str, float, bool]:
-    """Run one participant turn and return (text, elapsed_seconds, ok).
+) -> tuple[str, float, bool, str]:
+    """Run one participant turn.
 
-    The state-machine handles auto-disable on repeated failure.
+    Returns ``(text, elapsed_seconds, ok, error_kind)``.
+
+    ``error_kind`` is ``""`` on success. On failure it's one of:
+      * ``"transient"`` — HTTP 5xx, 429, timeout, connection error. The
+        same model is worth retrying.
+      * ``"permanent"`` — auth, invalid request, content filter, model
+        gone. Retrying the same model won't help.
+      * ``"empty"`` — call returned a 200 with an empty body. Treated
+        as transient by the resilience layer (retry once before
+        substituting).
+      * ``"unknown"`` — orchestrator-side exception we couldn't
+        classify.
+
+    The state-machine handles auto-disable on repeated failure; the
+    resilience layer (`services.resilience.run_resilient_turn`) handles
+    in-turn retry / alternate / substitution under speed-priority.
     """
     others = _participant_roster_string(participant, _active_participants(session))
     base_directive = PARTICIPANT_BASE_DIRECTIVE.format(
@@ -560,19 +576,30 @@ async def _call_participant(
         log_entry["response"] = {"error": str(exc)}
         session.api_log.append(log_entry)
         participant.consecutive_failures += 1
-        return "", 0.0, False
+        return "", 0.0, False, "unknown"
 
     log_entry["response"] = result
     session.api_log.append(log_entry)
 
     if result.get("error"):
         participant.consecutive_failures += 1
-        return "", result.get("elapsed_seconds", 0), False
+        return (
+            "",
+            result.get("elapsed_seconds", 0),
+            False,
+            result.get("error_kind") or "permanent",
+        )
 
-    participant.consecutive_failures = 0
     text = strip_thinking(result.get("response", ""))
     elapsed = float(result.get("elapsed_seconds", 0) or 0)
-    return text, elapsed, True
+    if not text.strip():
+        # 200 OK but the model returned nothing usable. Worth one
+        # retry / substitute attempt before we surface participant_error.
+        participant.consecutive_failures += 1
+        return "", elapsed, False, "empty"
+
+    participant.consecutive_failures = 0
+    return text, elapsed, True, ""
 
 
 def _add_participant_message(
@@ -664,13 +691,16 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
         # Phase 1 deliberately uses a *bare* prompt (no transcript) so each
         # participant's first opinion is independent of the others.
         prompt = INITIAL_OPINION_PROMPT.format(question=session.question)
-        text, elapsed, ok = await _call_participant(
+        turn = await run_resilient_turn(
             session=session, participant=p,
             user_prompt=prompt,
             label="initial_opinion",
             max_tokens=700,
+            call_participant=_call_participant,
         )
-        if not ok or not text.strip():
+        for ev in turn.sse_events:
+            yield ev
+        if not turn.ok:
             yield _sse("participant_error", {
                 "participant_id": p.participant_id,
                 "name": p.name,
@@ -685,8 +715,11 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
                     ),
                 })
             continue
-        msg = _add_participant_message(session, p, text, phase=session.phase, elapsed=elapsed)
-        session.initial_opinions[p.participant_id] = text
+        speaker = turn.speaker
+        msg = _add_participant_message(
+            session, speaker, turn.text, phase=session.phase, elapsed=turn.elapsed,
+        )
+        session.initial_opinions[speaker.participant_id] = turn.text
         yield _sse("message", _msg_payload(msg))
 
         if _participant_msg_cap_hit(session):
@@ -764,13 +797,16 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
             transcript=transcript,
             pending_block=pending_block,
         )
-        text, elapsed, ok = await _call_participant(
+        turn = await run_resilient_turn(
             session=session, participant=p,
             user_prompt=prompt,
             label=f"critique_round_{round_number}",
             max_tokens=700,
+            call_participant=_call_participant,
         )
-        if not ok or not text.strip():
+        for ev in turn.sse_events:
+            yield ev
+        if not turn.ok:
             yield _sse("participant_error", {
                 "participant_id": p.participant_id, "name": p.name,
                 "phase": session.phase.value,
@@ -784,20 +820,22 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
                     ),
                 })
             continue
+        speaker = turn.speaker
+        text, elapsed = turn.text, turn.elapsed
 
         # Detect addressed_to so the consensus phase's targeted-response
         # logic can also reuse it - cheap classification call.
         addressed = await classify_addressed_to(
             orchestrator_model_id=_orchestrator_model_id(session),
             participants=_active_participants(session),
-            speaker_name=p.name,
+            speaker_name=speaker.name,
             message=text,
             api_log=session.api_log,
         )
         _bump_orchestrator_count(session)
 
         msg = _add_participant_message(
-            session, p, text, phase=session.phase, elapsed=elapsed,
+            session, speaker, text, phase=session.phase, elapsed=elapsed,
             addressed_to=addressed,
             replying_to=_replying_to_ids(pending),
         )
@@ -928,24 +966,29 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
                     credential_summary=cred_block,
                     targeted_question=question_text,
                 )
-            text, elapsed, ok = await _call_participant(
+            turn = await run_resilient_turn(
                 session=session, participant=target,
                 user_prompt=prompt2,
                 label="targeted_followup",
                 max_tokens=600,
+                call_participant=_call_participant,
             )
-            if not ok or not text.strip():
+            for ev in turn.sse_events:
+                yield ev
+            if not turn.ok:
                 yield _sse("participant_error", {
                     "participant_id": target.participant_id, "name": target.name,
                     "phase": session.phase.value,
                 })
                 continue
+            speaker = turn.speaker
+            text, elapsed = turn.text, turn.elapsed
             # When the orchestrator is relaying a verbatim question from
             # another participant, mark this turn as replying to that
             # asker so the frontend can render the "Replying to X" pill.
             replying_to = [asker.participant_id] if asker is not None else []
             msg = _add_participant_message(
-                session, target, text, phase=session.phase, elapsed=elapsed,
+                session, speaker, text, phase=session.phase, elapsed=elapsed,
                 replying_to=replying_to,
             )
             yield _sse("message", _msg_payload(msg))
@@ -992,21 +1035,26 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
             transcript=transcript,
             pending_block=pending_block,
         )
-        text, elapsed, ok = await _call_participant(
+        turn = await run_resilient_turn(
             session=session, participant=p,
             user_prompt=prompt,
             label="finalization",
             max_tokens=600,
+            call_participant=_call_participant,
         )
-        if not ok or not text.strip():
+        for ev in turn.sse_events:
+            yield ev
+        if not turn.ok:
             yield _sse("participant_error", {
                 "participant_id": p.participant_id, "name": p.name,
                 "phase": session.phase.value,
             })
             continue
-        session.final_opinions[p.participant_id] = text
+        speaker = turn.speaker
+        text, elapsed = turn.text, turn.elapsed
+        session.final_opinions[speaker.participant_id] = text
         msg = _add_participant_message(
-            session, p, text, phase=session.phase, elapsed=elapsed,
+            session, speaker, text, phase=session.phase, elapsed=elapsed,
             replying_to=_replying_to_ids(pending),
         )
         yield _sse("message", _msg_payload(msg))
@@ -1151,18 +1199,26 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         # message records who this turn was supposed to be replying to.
         pending = _pending_addressed_for(session, speaker)
 
-        text, elapsed, ok = await _call_participant(
+        turn = await run_resilient_turn(
             session=session, participant=speaker,
             user_prompt=prompt,
             label="consensus",
             max_tokens=700,
+            call_participant=_call_participant,
         )
-        if not ok or not text.strip():
+        for ev in turn.sse_events:
+            yield ev
+        if not turn.ok:
             yield _sse("participant_error", {
                 "participant_id": speaker.participant_id, "name": speaker.name,
                 "phase": session.phase.value,
             })
             continue
+        # Consensus phase doesn't swap participants, only LLMs behind
+        # them, so turn.speaker is the same instance as `speaker`. Use
+        # turn.speaker to stay consistent with other phases.
+        speaker = turn.speaker
+        text, elapsed = turn.text, turn.elapsed
 
         addressed = await classify_addressed_to(
             orchestrator_model_id=_orchestrator_model_id(session),

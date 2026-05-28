@@ -269,6 +269,14 @@ class Participant:
     # Robustness counter: 3 consecutive failures auto-disables.
     consecutive_failures: int = 0
 
+    # Set by the resilience layer when this participant's backing LLM
+    # had to be substituted mid-chat after the original model failed.
+    # The persona's name and role_prompt stay the same; only the model
+    # fields (model_id, base_url, etc.) get rewritten in place. We
+    # stash the originally-resolved model_id here so it's still
+    # recoverable in api_log entries and exports.
+    substituted_from_model_id: str = ""
+
 
 @dataclass
 class Session:
@@ -351,3 +359,23 @@ class Session:
     # the API layer reads it.
     api_log: list[dict[str, Any]] = field(default_factory=list)
     pending_continue: bool = False
+
+    # Resilience-layer state. Populated at /chat/start (api/chat.py) so
+    # the orchestrator can swap participants / backing LLMs without
+    # repeating the catalog + provider walks at runtime.
+    #
+    # * candidate_pool: fully-resolved Participant objects from the
+    #   catalog (Neon + extras) that the user did NOT pick. Used in
+    #   Phase 1 when an originally-selected participant fails their
+    #   first opinion: we pop one from this list as the "alternate".
+    #
+    # * substitution_chain: resolved model-dicts (the same shape
+    #   settings.resolve_model returns) in fallback order. Used when
+    #   the original participant's backing LLM has to be swapped:
+    #     gpt-5.4 -> gemini-2.5-flash -> every other external model
+    #     -> Neon "vanilla" models as last resort.
+    #
+    # Both are computed once per session; consumers should treat them
+    # as ordered queues (pop from front).
+    candidate_pool: list[Participant] = field(default_factory=list)
+    substitution_chain: list[dict[str, Any]] = field(default_factory=list)

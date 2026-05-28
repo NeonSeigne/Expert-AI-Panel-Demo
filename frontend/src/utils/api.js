@@ -125,6 +125,8 @@ function eventHandlerKey(eventType) {
     case 'failsafe_pause': return 'onFailsafePause';
     case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
     case 'participant_error': return 'onParticipantError';
+    case 'participant_substituted': return 'onParticipantSubstituted';
+    case 'participant_replaced': return 'onParticipantReplaced';
     case 'credentials_updated': return 'onCredentialsUpdated';
     case 'human_turn_needed': return 'onHumanTurnNeeded';
     case 'human_turn_cleared': return 'onHumanTurnCleared';

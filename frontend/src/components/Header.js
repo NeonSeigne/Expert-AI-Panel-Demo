@@ -42,6 +42,8 @@ export default function Header({
   onOrchestratorChange,
   summarizerModel,
   onSummarizerChange,
+  speedPriority,
+  onSpeedPriorityChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -144,6 +146,8 @@ export default function Header({
           onOrchestratorChange={onOrchestratorChange}
           summarizerModel={summarizerModel}
           onSummarizerChange={onSummarizerChange}
+          speedPriority={speedPriority}
+          onSpeedPriorityChange={onSpeedPriorityChange}
           showResponseTime={showResponseTime}
           onShowResponseTimeChange={onShowResponseTimeChange}
           showChatStats={showChatStats}

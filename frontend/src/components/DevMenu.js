@@ -19,6 +19,11 @@ import {
  *                          model, Create Expert Persona, then one
  *                          stacked row per active participant)
  *   - Max participants    (single item: - / value / + stepper, 3-9)
+ *   - Response priority   (accordion — Prioritize model choice vs.
+ *                          conversation speed; under "speed", the
+ *                          orchestrator races the chosen model
+ *                          against a fast fallback and aggressively
+ *                          substitutes failed LLMs)
  *   - Display options     (accordion — two toggles)
  *   - Transparency        (accordion — Credential Summary, Prompt
  *                          Catalog)
@@ -37,6 +42,8 @@ export default function DevMenu({
   onOrchestratorChange,
   summarizerModel,
   onSummarizerChange,
+  speedPriority,
+  onSpeedPriorityChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -57,10 +64,11 @@ export default function DevMenu({
   const [activeSub, setActiveSub] = useState(null); // null | "orch" | "sum" | <participant_id>
   const [q, setQ] = useState('');
   // Collapsed-by-default accordions. Keys correspond to the section
-  // ids the SectionHeader below toggles. If we ever add a fourth
+  // ids the SectionHeader below toggles. If we ever add a fifth
   // multi-item category, just add a key here.
   const [openSections, setOpenSections] = useState({
     modelSel: false,
+    responsePriority: false,
     display: false,
     transparency: false,
   });
@@ -227,6 +235,53 @@ export default function DevMenu({
               >+</button>
               <span className="dev-panel-hint">3-9</span>
             </div>
+
+            <div className="dev-panel-divider" />
+
+            {/* ── Response priority (accordion) ──────────────────── */}
+            {/* Two mutually-exclusive choices. Under "Prioritize
+                conversation speed" the backend also races the chosen
+                model against a fast fallback and aggressively
+                substitutes failed LLMs (see backend/app/services/
+                resilience.py). Under "Prioritize model choice" the
+                user's selection is preserved and a failed turn just
+                gets noted in chat. */}
+            <SectionHeader
+              label="Response priority"
+              open={openSections.responsePriority}
+              onToggle={() => toggleSection('responsePriority')}
+            />
+            {openSections.responsePriority && (
+              <>
+                <button
+                  className={`dev-panel-choice ${!speedPriority ? 'dev-panel-choice-active' : ''}`}
+                  onClick={() => onSpeedPriorityChange?.(false)}
+                  title={
+                    "Use the participant model you picked, and don't "
+                    + "swap models in mid-chat if one is slow or fails."
+                  }
+                >
+                  {!speedPriority
+                    ? <CheckSquare size={16} className="dev-check-icon" />
+                    : <Square size={16} className="dev-check-icon" />}
+                  Prioritize model choice
+                </button>
+                <button
+                  className={`dev-panel-choice ${speedPriority ? 'dev-panel-choice-active' : ''}`}
+                  onClick={() => onSpeedPriorityChange?.(true)}
+                  title={
+                    "Race the chosen model against a fast fallback "
+                    + "after 5s, and substitute another LLM behind the "
+                    + "persona if the chosen one fails outright."
+                  }
+                >
+                  {speedPriority
+                    ? <CheckSquare size={16} className="dev-check-icon" />
+                    : <Square size={16} className="dev-check-icon" />}
+                  Prioritize conversation speed
+                </button>
+              </>
+            )}
 
             <div className="dev-panel-divider" />
 

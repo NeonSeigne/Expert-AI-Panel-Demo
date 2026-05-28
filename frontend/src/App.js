@@ -12,6 +12,7 @@ import HumanParticipantModal from './components/HumanParticipantModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
+  getSpeedPriority, setSpeedPriority,
   getAuthStatus,
   exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
@@ -44,6 +45,11 @@ export default function App() {
   const [orchestratorModel, setOrchestratorModelState] = useState(persisted.orchestrator_model_id);
   const [summarizerModel, setSummarizerModelState] = useState(persisted.summarizer_model_id);
   const [maxParticipants, setMaxParticipants] = useState(persisted.max_participants || 5);
+  // Response-priority toggle. The backend is the source of truth (so
+  // it stays consistent across browsers), but we mirror the value
+  // here so the UI doesn't flicker after a settings change.
+  // Default false matches the backend default ("Prioritize model choice").
+  const [speedPriority, setSpeedPriorityState] = useState(false);
 
   // Backend catalog
   const [providers, setProviders] = useState([]);
@@ -139,6 +145,11 @@ export default function App() {
         setOrchestratorModelState(d.model_id);
       }
     }).catch(() => {});
+    // Hydrate the Response-priority toggle from the backend so the
+    // initial render of the Settings menu shows the real server state.
+    getSpeedPriority().then(d => {
+      if (typeof d?.enabled === 'boolean') setSpeedPriorityState(d.enabled);
+    }).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
     getRateLimitStatus().then(d => {
       if (d?.daily_limit) setDailyLimit(d.daily_limit);
@@ -225,6 +236,18 @@ export default function App() {
   }, []);
   const handleSummarizerChange = useCallback((modelId) => {
     setSummarizerModelState(modelId || null);
+  }, []);
+  const handleSpeedPriorityChange = useCallback(async (enabled) => {
+    // Optimistic update; revert on backend error so the UI never
+    // claims a setting the server didn't actually accept.
+    setSpeedPriorityState(enabled);
+    try {
+      const d = await setSpeedPriority(enabled);
+      if (typeof d?.enabled === 'boolean') setSpeedPriorityState(d.enabled);
+    } catch (err) {
+      console.error('Failed to set speed priority:', err);
+      setSpeedPriorityState(!enabled);
+    }
   }, []);
   const handleMaxParticipantsChange = useCallback((n) => {
     const clamped = Math.max(3, Math.min(9, n));
@@ -713,6 +736,30 @@ export default function App() {
               text: `${data.name || 'A participant'} couldn't respond this turn.`,
             }]);
           },
+          onParticipantSubstituted: (data) => {
+            // Resilience layer swapped the backing LLM behind a
+            // persona's prompt+name. Surface it as a system note so
+            // the user can reconcile any change in voice / latency
+            // with the chat metadata.
+            const name = data.name || 'A participant';
+            const toDisplay = data.to_model_display || data.to_model_id || 'a substitute model';
+            setSystemMessages(prev => [...prev, {
+              text: `${name}'s primary model didn't respond; continuing with ${toDisplay}.`,
+            }]);
+          },
+          onParticipantReplaced: (data) => {
+            // Phase 1 alternate kicked in. Replace the session
+            // roster snapshot so the sidebar re-renders with the
+            // new participant; also note the change in chat.
+            if (Array.isArray(data?.roster)) {
+              setSessionParticipants(data.roster);
+            }
+            const origName = data.original_name || 'A participant';
+            const altName = data.new_name || 'an alternate';
+            setSystemMessages(prev => [...prev, {
+              text: `${origName} couldn't give an initial opinion; ${altName} is taking their place.`,
+            }]);
+          },
           onFailsafePause: (data) => {
             setPause({ reason: 'messages', ...data });
           },
@@ -816,6 +863,8 @@ export default function App() {
         onOrchestratorChange={handleOrchestratorChange}
         summarizerModel={summarizerModel}
         onSummarizerChange={handleSummarizerChange}
+        speedPriority={speedPriority}
+        onSpeedPriorityChange={handleSpeedPriorityChange}
         showResponseTime={showResponseTime}
         onShowResponseTimeChange={setShowResponseTime}
         showChatStats={showChatStats}

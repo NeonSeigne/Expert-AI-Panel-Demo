@@ -27,6 +27,36 @@ _INPUT_SAFETY_MARGIN = 128
 # is huge - we'd rather get a truncated reply than no reply at all.
 _MIN_OUTPUT_TOKENS = 64
 
+# HTTP status codes that map to "transient" — worth retrying the same
+# model. 429 is rate-limit; 408/425 are timeout/too-early; 5xx are
+# server-side. Everything else 4xx is treated as "permanent" (auth,
+# invalid request, content filter, model gone) where retrying the same
+# model won't help, so the orchestrator's resilience layer should jump
+# straight to substituting the LLM backing the persona.
+_TRANSIENT_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _classify_http_status(status_code: int) -> str:
+    if status_code in _TRANSIENT_HTTP_STATUSES:
+        return "transient"
+    return "permanent"
+
+
+def _classify_exception(exc: BaseException) -> str:
+    """Map a raw httpx/asyncio exception to transient vs permanent.
+
+    Network blips, read timeouts, and connection resets are transient
+    (the model itself is probably still healthy). Anything else falls
+    through to "permanent" to avoid retry loops on misconfiguration.
+    """
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError,
+                        httpx.ReadError, httpx.WriteError, httpx.PoolTimeout,
+                        httpx.RemoteProtocolError)):
+        return "transient"
+    if isinstance(exc, asyncio.TimeoutError):
+        return "transient"
+    return "permanent"
+
 
 def _estimate_input_tokens(messages: list[dict[str, str]]) -> int:
     """Crude chars/4 token estimate matching context_budget's heuristic."""
@@ -153,12 +183,15 @@ async def openai_chat_completion(
                 continue
             elapsed = time.time() - t0
             detail = exc.response.text[:300] if exc.response else str(exc)
-            LOG.error("OpenAI-compat %s error %s: %s", base_url, exc.response.status_code, detail)
+            status = exc.response.status_code if exc.response is not None else 0
+            LOG.error("OpenAI-compat %s error %s: %s", base_url, status, detail)
             return {
-                "response": f"[Error {exc.response.status_code}]: {detail}",
+                "response": f"[Error {status}]: {detail}",
                 "elapsed_seconds": round(elapsed, 2),
                 "model": model,
                 "error": True,
+                "error_kind": _classify_http_status(status),
+                "error_status": status,
             }
         except Exception as exc:
             if attempt == 0:
@@ -172,6 +205,7 @@ async def openai_chat_completion(
                 "elapsed_seconds": round(elapsed, 2),
                 "model": model,
                 "error": True,
+                "error_kind": _classify_exception(exc),
             }
 
 

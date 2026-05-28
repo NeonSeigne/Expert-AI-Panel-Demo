@@ -222,9 +222,15 @@ async def _call_hana(
         }
     except Exception as exc:
         LOG.exception("HANA inference failed for %s: %s", resolved["model_id"], exc)
+        # HANA failures are conservatively classified as "transient"
+        # because HANA itself doesn't surface a stable error taxonomy
+        # and most observed failures here have been timeouts or
+        # backend-unavailable, both of which are worth a same-model
+        # retry before the orchestrator decides to substitute.
         return {
             "response": f"[Error]: {exc}",
             "elapsed_seconds": 0,
             "model": resolved["model_id"],
             "error": True,
+            "error_kind": "transient",
         }
