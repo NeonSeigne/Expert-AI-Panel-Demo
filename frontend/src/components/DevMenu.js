@@ -44,6 +44,11 @@ export default function DevMenu({
   onSummarizerChange,
   speedPriority,
   onSpeedPriorityChange,
+  conversationFormats,
+  conversationStructureId,
+  onConversationStructureChange,
+  decisionMethodId,
+  onDecisionMethodChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -68,6 +73,7 @@ export default function DevMenu({
   // multi-item category, just add a key here.
   const [openSections, setOpenSections] = useState({
     modelSel: false,
+    conversationFormat: false,
     responsePriority: false,
     display: false,
     transparency: false,
@@ -235,6 +241,28 @@ export default function DevMenu({
               >+</button>
               <span className="dev-panel-hint">3-9</span>
             </div>
+
+            <div className="dev-panel-divider" />
+
+            {/* ── Conversation format (accordion) ───────────────── */}
+            {/* Two mutually-exclusive picker lists. The catalog is
+                served by /api/chat/conversation-formats so adding a
+                new structure or decision-method plugin server-side
+                doesn't need a frontend code change. */}
+            <SectionHeader
+              label="Conversation format"
+              open={openSections.conversationFormat}
+              onToggle={() => toggleSection('conversationFormat')}
+            />
+            {openSections.conversationFormat && (
+              <ConversationFormatPicker
+                catalog={conversationFormats}
+                structureId={conversationStructureId}
+                onStructureChange={onConversationStructureChange}
+                decisionId={decisionMethodId}
+                onDecisionChange={onDecisionMethodChange}
+              />
+            )}
 
             <div className="dev-panel-divider" />
 
@@ -483,5 +511,72 @@ function SectionHeader({ label, open, onToggle }) {
         ? <ChevronDown size={12} className="dev-panel-section-chevron" />
         : <ChevronRight size={12} className="dev-panel-section-chevron" />}
     </button>
+  );
+}
+
+
+/**
+ * Two stacked radio-style pickers for the conversation structure and
+ * decision-making method. Driven entirely by the server catalog so
+ * adding a plugin doesn't need a code change here. A null current
+ * selection means "follow the backend's default" — we highlight that
+ * default but the explicit user choice always wins when set.
+ */
+function ConversationFormatPicker({
+  catalog,
+  structureId, onStructureChange,
+  decisionId, onDecisionChange,
+}) {
+  const structures = Array.isArray(catalog?.structures) ? catalog.structures : [];
+  const decisions = Array.isArray(catalog?.decisions) ? catalog.decisions : [];
+  const defStruct = catalog?.default_structure_id || null;
+  const defDec = catalog?.default_decision_id || null;
+  const effectiveStruct = structureId || defStruct;
+  const effectiveDec = decisionId || defDec;
+
+  return (
+    <>
+      <div className="dev-panel-label dev-panel-sublabel">Discussion structure</div>
+      {structures.length === 0 && (
+        <div className="dev-panel-hint" style={{ padding: '4px 10px' }}>
+          (catalog unavailable)
+        </div>
+      )}
+      {structures.map(s => (
+        <button
+          key={s.id}
+          className={`dev-panel-choice ${effectiveStruct === s.id ? 'dev-panel-choice-active' : ''}`}
+          onClick={() => onStructureChange?.(s.id)}
+          title={s.description || ''}
+        >
+          {effectiveStruct === s.id
+            ? <CheckSquare size={16} className="dev-check-icon" />
+            : <Square size={16} className="dev-check-icon" />}
+          {s.name}
+        </button>
+      ))}
+
+      <div className="dev-panel-label dev-panel-sublabel" style={{ marginTop: 6 }}>
+        Decision method
+      </div>
+      {decisions.length === 0 && (
+        <div className="dev-panel-hint" style={{ padding: '4px 10px' }}>
+          (catalog unavailable)
+        </div>
+      )}
+      {decisions.map(d => (
+        <button
+          key={d.id}
+          className={`dev-panel-choice ${effectiveDec === d.id ? 'dev-panel-choice-active' : ''}`}
+          onClick={() => onDecisionChange?.(d.id)}
+          title={d.description || ''}
+        >
+          {effectiveDec === d.id
+            ? <CheckSquare size={16} className="dev-check-icon" />
+            : <Square size={16} className="dev-check-icon" />}
+          {d.name}
+        </button>
+      ))}
+    </>
   );
 }

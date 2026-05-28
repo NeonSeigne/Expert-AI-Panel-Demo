@@ -38,6 +38,12 @@ const DEFAULTS = {
   // their summary every session. Cleared from storage when the user
   // removes the human via the sidebar.
   human_participant: null,
+  // Conversation-format plugin choices (see backend
+  // /api/chat/conversation-formats). null means "use server default"
+  // — the backend returns `default_structure_id` / `default_decision_id`
+  // alongside the catalog so the UI can highlight them.
+  conversation_structure_id: null,
+  decision_method_id: null,
 };
 
 function readAll() {
@@ -117,4 +123,12 @@ export function setAutoSelectMode(on) {
 
 export function setHumanParticipant(humanOrNull) {
   return patchState({ human_participant: humanOrNull || null });
+}
+
+export function setConversationStructureId(id) {
+  return patchState({ conversation_structure_id: id || null });
+}
+
+export function setDecisionMethodId(id) {
+  return patchState({ decision_method_id: id || null });
 }

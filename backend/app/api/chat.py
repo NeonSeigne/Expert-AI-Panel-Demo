@@ -166,6 +166,13 @@ class StartChatRequest(BaseModel):
     # that has kind == "human". Capped at one human per session.
     human_credential: HumanCredentialPayload | None = None
 
+    # Conversation-format plugin selection. IDs come from
+    # app.services.conversation.STRUCTURE_REGISTRY /
+    # DECISION_REGISTRY. Missing or unknown IDs are silently coerced
+    # to the defaults (collaborative + consensus) at start time.
+    conversation_structure_id: str | None = None
+    decision_method_id: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Settings endpoints (orchestrator default + speed priority)
@@ -185,6 +192,29 @@ async def api_set_orchestrator(req: SetOrchestratorRequest):
 @router.get("/chat/speed-priority")
 async def api_get_speed_priority():
     return {"enabled": settings.speed_priority}
+
+
+@router.get("/chat/conversation-formats")
+async def api_conversation_formats():
+    """Catalog the available conversation structures + decision methods.
+
+    The frontend reads this once to populate the "Conversation format"
+    accordion in Settings. IDs returned here are the same values
+    accepted by /chat/start under `conversation_structure_id` and
+    `decision_method_id`.
+    """
+    from app.services.conversation import (
+        list_structures,
+        list_decisions,
+        DEFAULT_STRUCTURE_ID,
+        DEFAULT_DECISION_ID,
+    )
+    return {
+        "structures": list_structures(),
+        "decisions": list_decisions(),
+        "default_structure_id": DEFAULT_STRUCTURE_ID,
+        "default_decision_id": DEFAULT_DECISION_ID,
+    }
 
 
 @router.put("/chat/speed-priority")
@@ -565,6 +595,20 @@ async def api_start_chat(req: StartChatRequest, request: Request):
             ))
     session.candidate_pool = candidate_pool
     session.substitution_chain = build_substitution_chain(neon_hana_model_ids)
+
+    # Conversation-format plugin selection. Coerce unknown IDs to the
+    # defaults via the get_structure/get_decision resolvers.
+    from app.services.conversation import (
+        get_structure as _get_structure_cls,
+        get_decision as _get_decision_cls,
+        STRUCTURE_REGISTRY as _STRUCT_REG,
+        DECISION_REGISTRY as _DEC_REG,
+    )
+    if req.conversation_structure_id and req.conversation_structure_id in _STRUCT_REG:
+        session.conversation_structure_id = req.conversation_structure_id
+    if req.decision_method_id and req.decision_method_id in _DEC_REG:
+        session.decision_method_id = req.decision_method_id
+
     if humans and req.human_credential is not None:
         session.human_credential = normalize_one_credential({
             "participant_id": req.human_credential.participant_id,

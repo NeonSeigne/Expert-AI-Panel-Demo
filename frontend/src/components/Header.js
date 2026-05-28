@@ -44,6 +44,11 @@ export default function Header({
   onSummarizerChange,
   speedPriority,
   onSpeedPriorityChange,
+  conversationFormats,
+  conversationStructureId,
+  onConversationStructureChange,
+  decisionMethodId,
+  onDecisionMethodChange,
   showResponseTime,
   onShowResponseTimeChange,
   showChatStats,
@@ -148,6 +153,11 @@ export default function Header({
           onSummarizerChange={onSummarizerChange}
           speedPriority={speedPriority}
           onSpeedPriorityChange={onSpeedPriorityChange}
+          conversationFormats={conversationFormats}
+          conversationStructureId={conversationStructureId}
+          onConversationStructureChange={onConversationStructureChange}
+          decisionMethodId={decisionMethodId}
+          onDecisionMethodChange={onDecisionMethodChange}
           showResponseTime={showResponseTime}
           onShowResponseTimeChange={onShowResponseTimeChange}
           showChatStats={showChatStats}

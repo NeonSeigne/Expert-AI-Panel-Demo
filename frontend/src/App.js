@@ -16,6 +16,7 @@ import {
   getAuthStatus,
   exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
+  fetchConversationFormats,
   autoSelectParticipants,
   fetchPromptCatalog,
   getRateLimitStatus,
@@ -50,6 +51,31 @@ export default function App() {
   // here so the UI doesn't flicker after a settings change.
   // Default false matches the backend default ("Prioritize model choice").
   const [speedPriority, setSpeedPriorityState] = useState(false);
+
+  // Conversation-format plugin catalog + current selection. The
+  // catalog is fetched once on mount from /api/chat/conversation-formats
+  // so adding a new structure / decision plugin server-side doesn't
+  // require a frontend change. Selections fall back to whatever the
+  // backend reports as its default until the user picks otherwise.
+  const [conversationFormats, setConversationFormats] = useState({
+    structures: [], decisions: [],
+    default_structure_id: 'collaborative',
+    default_decision_id: 'consensus',
+  });
+  const [conversationStructureId, setConversationStructureIdState] = useState(
+    persisted.conversation_structure_id || null,
+  );
+  const [decisionMethodId, setDecisionMethodIdState] = useState(
+    persisted.decision_method_id || null,
+  );
+  const handleConversationStructureChange = useCallback((id) => {
+    setConversationStructureIdState(id || null);
+    storage.setConversationStructureId(id || null);
+  }, []);
+  const handleDecisionMethodChange = useCallback((id) => {
+    setDecisionMethodIdState(id || null);
+    storage.setDecisionMethodId(id || null);
+  }, []);
 
   // Backend catalog
   const [providers, setProviders] = useState([]);
@@ -149,6 +175,10 @@ export default function App() {
     // initial render of the Settings menu shows the real server state.
     getSpeedPriority().then(d => {
       if (typeof d?.enabled === 'boolean') setSpeedPriorityState(d.enabled);
+    }).catch(() => {});
+    fetchConversationFormats().then(catalog => {
+      if (!catalog || !Array.isArray(catalog.structures)) return;
+      setConversationFormats(catalog);
     }).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
     getRateLimitStatus().then(d => {
@@ -583,8 +613,17 @@ export default function App() {
       // Sparse override map; backend clamps and falls back per-field.
       limits: limitsOverrides,
       human_credential,
+      // Conversation format selection. null fields make the backend
+      // fall back to its built-in defaults (collaborative + consensus).
+      conversation_structure_id: conversationStructureId,
+      decision_method_id: decisionMethodId,
     };
-  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides, humanParticipant]);
+  }, [
+    selectedParticipants, enabledMap, modelAssignments,
+    orchestratorModel, summarizerModel, maxParticipants,
+    limitsOverrides, humanParticipant,
+    conversationStructureId, decisionMethodId,
+  ]);
 
   // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -760,6 +799,33 @@ export default function App() {
               text: `${origName} couldn't give an initial opinion; ${altName} is taking their place.`,
             }]);
           },
+          onVoteCast: (data) => {
+            // One per-ballot from a vote-based decision method. We
+            // surface these as system notes so the user can follow
+            // the tally as it happens; the final report message will
+            // contain the canonical summary.
+            const voter = data?.voter_name || 'A voter';
+            let line;
+            if (data?.vote) {
+              line = `${voter} votes ${data.vote}.`;
+            } else if (Array.isArray(data?.ranking) && data.ranking.length > 0) {
+              line = `${voter} submitted ranking: ${data.ranking.join(' > ')}.`;
+            } else if (typeof data?.choice === 'number' && data.choice > 0) {
+              line = `${voter} votes for option ${data.choice}.`;
+            } else {
+              line = `${voter} abstained or returned an invalid ballot.`;
+            }
+            setSystemMessages(prev => [...prev, { text: line }]);
+          },
+          onVoteTally: (data) => {
+            // Final tally summary. The orchestrator message that
+            // follows contains the rendered report, so we just log
+            // a one-liner here for the system feed.
+            const kind = data?.kind || 'vote';
+            setSystemMessages(prev => [...prev, {
+              text: `Vote complete (${kind}); see report below.`,
+            }]);
+          },
           onFailsafePause: (data) => {
             setPause({ reason: 'messages', ...data });
           },
@@ -865,6 +931,11 @@ export default function App() {
         onSummarizerChange={handleSummarizerChange}
         speedPriority={speedPriority}
         onSpeedPriorityChange={handleSpeedPriorityChange}
+        conversationFormats={conversationFormats}
+        conversationStructureId={conversationStructureId}
+        onConversationStructureChange={handleConversationStructureChange}
+        decisionMethodId={decisionMethodId}
+        onDecisionMethodChange={handleDecisionMethodChange}
         showResponseTime={showResponseTime}
         onShowResponseTimeChange={setShowResponseTime}
         showChatStats={showChatStats}

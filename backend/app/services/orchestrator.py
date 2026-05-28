@@ -1505,7 +1505,19 @@ async def _phase_closure(session: Session) -> AsyncIterator[str]:
 # ---------------------------------------------------------------------------
 
 async def run_conversation(session: Session) -> AsyncIterator[str]:
-    """Drive the full six-phase conversation, yielding SSE chunks."""
+    """Drive the full conversation, yielding SSE chunks.
+
+    The flow is structure → decision: the chosen ConversationStructure
+    runs its phases, then hands a DecisionInput to the chosen
+    DecisionMethod which runs the decision phase(s). Both are
+    resolved from `session.conversation_structure_id` /
+    `session.decision_method_id` (defaults: collaborative + consensus,
+    which preserves the original CCAI behavior).
+    """
+    # Lazy import so the conversation package can import orchestrator
+    # helpers without a circular module load.
+    from app.services.conversation import get_structure, get_decision
+
     actives = _active_participants(session)
     if len(actives) < 2:
         yield _sse("error", {
@@ -1518,24 +1530,17 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
         for extra in actives[session.max_participants:]:
             extra.enabled = False
 
+    structure_cls = get_structure(session.conversation_structure_id)
+    decision_cls = get_decision(session.decision_method_id)
+    structure = structure_cls(session)
+
     try:
-        async for chunk in _phase_initial_opinions(session):
+        async for chunk in structure.run():
             yield chunk
 
-        for round_n in range(1, session.limits.critique_rounds + 1):
-            async for chunk in _phase_critique(session, round_n):
-                yield chunk
-
-        async for chunk in _phase_status_assessment(session):
-            yield chunk
-
-        async for chunk in _phase_finalization(session):
-            yield chunk
-
-        async for chunk in _phase_consensus(session):
-            yield chunk
-
-        async for chunk in _phase_closure(session):
+        decision_input = structure.build_decision_input()
+        decision = decision_cls(session, decision_input)
+        async for chunk in decision.run():
             yield chunk
     except Exception as exc:
         LOG.exception("Conversation crashed: %s", exc)

@@ -29,6 +29,18 @@ class Phase(str, Enum):
     CLOSURE = "closure"
     FAILSAFE_PAUSED = "failsafe_paused"
     FINISHED = "finished"
+    # Robert's Rules of Order conversation-structure phases. These run
+    # in place of (or alongside) the Collaborative Discussion phases
+    # when the user picks the "Robert's Rules" conversation structure.
+    RR_OPENING = "rr_opening"
+    RR_INITIAL_REMARKS = "rr_initial_remarks"
+    RR_MOTION = "rr_motion"
+    RR_DEBATE = "rr_debate"
+    RR_MOVE_THE_QUESTION = "rr_move_the_question"
+    # Vote-based decision-method phases. Used by MajorityRulesDecision,
+    # RankedChoiceDecision, and RobertsRulesVote so the frontend can
+    # render an appropriate phase label.
+    VOTING = "voting"
 
 
 # How many participants a session may include (overridable by the user
@@ -379,3 +391,19 @@ class Session:
     # as ordered queues (pop from front).
     candidate_pool: list[Participant] = field(default_factory=list)
     substitution_chain: list[dict[str, Any]] = field(default_factory=list)
+
+    # Conversation-format plugin selection. Resolved via
+    # `app.services.conversation.get_structure(...)` /
+    # `get_decision(...)`. Default to the original CCAI behavior
+    # (collaborative discussion + consensus decision) so older
+    # /chat/start payloads keep working without changes.
+    conversation_structure_id: str = "collaborative"
+    decision_method_id: str = "consensus"
+
+    # Robert's Rules state. Only populated when
+    # `conversation_structure_id == "roberts_rules"`. The decision
+    # method reads `main_motion` and (optionally) `proposed_motions`
+    # so a non-RR decision method like RankedChoice can still operate
+    # on RR output.
+    main_motion: str | None = None
+    proposed_motions: list[dict[str, Any]] = field(default_factory=list)
