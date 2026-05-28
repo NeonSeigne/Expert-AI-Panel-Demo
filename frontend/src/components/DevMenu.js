@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  ChevronRight, Download, Settings2, Search, Sun, Moon,
+  ChevronRight, ChevronDown, Settings2, Search, Sun, Moon,
   Square, CheckSquare, UserPlus, ScrollText, SlidersHorizontal,
   BookOpen,
 } from 'lucide-react';
@@ -8,28 +8,26 @@ import {
 /**
  * Settings menu (gear-icon dropdown in the header).
  *
- * Layout, top-to-bottom, all category items indented under the small
- * uppercase label that introduces them:
- *   - Theme               (Sun / Moon toggle)
- *   - Models              (Orchestrator / Summarizer — stacked rows
- *                          with the currently-chosen model name on a
- *                          second line, ellipsis-truncated)
- *   - Max participants    (- / value / + stepper, 3-9)
- *   - Participants        (Create Expert Persona…, then per-participant
- *                          rows in the same stacked-row style)
- *   - Display options     (toggles)
- *   - Transparency        (Credential Summary, Prompt Catalog — no
- *                          right-side chevrons; just the labelled
- *                          buttons)
- *   - Advanced            (Conversation limits…)
- *   - Downloads           (chat .txt / .md / summary .csv — same items
- *                          are also reachable from the header
- *                          DownloadMenu; the "Full API history" item
- *                          is *only* in DownloadMenu)
+ * Layout, top-to-bottom. Multi-item categories are *collapsible
+ * accordions* that default to closed; single-item categories stay
+ * inline beneath their small uppercase label.
  *
- * The header download strip that used to live in this component has
- * moved into a sibling DownloadMenu component, so this file no longer
- * renders any header-bar buttons; just the gear and its panel.
+ *   - Theme               (single item: Sun/Moon toggle)
+ *   - Model Selection     (accordion — merges what used to be the
+ *                          separate "Models" and "Participants"
+ *                          categories: Orchestrator model, Summarizer
+ *                          model, Create Expert Persona, then one
+ *                          stacked row per active participant)
+ *   - Max participants    (single item: - / value / + stepper, 3-9)
+ *   - Display options     (accordion — two toggles)
+ *   - Transparency        (accordion — Credential Summary, Prompt
+ *                          Catalog)
+ *   - Advanced            (single item: Conversation limits…)
+ *
+ * The Downloads section that previously lived at the bottom of this
+ * panel has been removed; every item it offered is already reachable
+ * from the header DownloadMenu, so duplicating them here just made the
+ * settings menu unnecessarily long.
  */
 export default function DevMenu({
   theme,
@@ -54,14 +52,18 @@ export default function DevMenu({
   onShowPromptCatalog,
   onShowConversationLimits,
   conversationLimitsOverridden,
-  onDownloadChatTxt,
-  onDownloadChatMd,
-  onDownloadCsvTable,
-  hasChat,
 }) {
   const [open, setOpen] = useState(false);
   const [activeSub, setActiveSub] = useState(null); // null | "orch" | "sum" | <participant_id>
   const [q, setQ] = useState('');
+  // Collapsed-by-default accordions. Keys correspond to the section
+  // ids the SectionHeader below toggles. If we ever add a fourth
+  // multi-item category, just add a key here.
+  const [openSections, setOpenSections] = useState({
+    modelSel: false,
+    display: false,
+    transparency: false,
+  });
   const wrapRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -106,6 +108,23 @@ export default function DevMenu({
     else if (subject) onModelAssignmentChange(subject, id);
   };
 
+  // Toggle a multi-item accordion. Closing the Model Selection section
+  // while a model sub-panel is open would leave the sub-panel orphaned
+  // (its anchor row is no longer rendered), so we also clear activeSub
+  // in that case.
+  const toggleSection = (id) => {
+    setOpenSections(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      if (id === 'modelSel' && !next.modelSel) {
+        setActiveSub(null);
+        setQ('');
+      }
+      return next;
+    });
+  };
+
+  const modelSelOpen = openSections.modelSel;
+
   return (
     <div className="dev-wrap" ref={wrapRef}>
       <div className="dev-dropdown-header">
@@ -119,7 +138,7 @@ export default function DevMenu({
         {open && (
           <div className="dev-panel">
 
-            {/* ── Theme ─────────────────────────────────────────── */}
+            {/* ── Theme (single item) ─────────────────────────────── */}
             <div className="dev-panel-label">Theme</div>
             <button
               className="dev-panel-row"
@@ -134,32 +153,65 @@ export default function DevMenu({
 
             <div className="dev-panel-divider" />
 
-            {/* ── Models ────────────────────────────────────────── */}
-            <div className="dev-panel-label">Models</div>
-            <button
-              className="dev-panel-row dev-panel-row-stack"
-              onClick={() => { setActiveSub(s => s === 'orch' ? null : 'orch'); setQ(''); }}
-            >
-              <div className="dev-panel-row-text">
-                <div className="dev-panel-row-name">Orchestrator model…</div>
-                <div className="dev-panel-row-sub">{orchName}</div>
-              </div>
-              <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
-            </button>
-            <button
-              className="dev-panel-row dev-panel-row-stack"
-              onClick={() => { setActiveSub(s => s === 'sum' ? null : 'sum'); setQ(''); }}
-            >
-              <div className="dev-panel-row-text">
-                <div className="dev-panel-row-name">Summarizer model…</div>
-                <div className="dev-panel-row-sub">{sumName}</div>
-              </div>
-              <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
-            </button>
+            {/* ── Model Selection (accordion: merged Models + Participants) ─ */}
+            <SectionHeader
+              label="Model Selection"
+              open={modelSelOpen}
+              onToggle={() => toggleSection('modelSel')}
+            />
+            {modelSelOpen && (
+              <>
+                <button
+                  className="dev-panel-row dev-panel-row-stack"
+                  onClick={() => { setActiveSub(s => s === 'orch' ? null : 'orch'); setQ(''); }}
+                >
+                  <div className="dev-panel-row-text">
+                    <div className="dev-panel-row-name">Orchestrator model…</div>
+                    <div className="dev-panel-row-sub">{orchName}</div>
+                  </div>
+                  <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                </button>
+                <button
+                  className="dev-panel-row dev-panel-row-stack"
+                  onClick={() => { setActiveSub(s => s === 'sum' ? null : 'sum'); setQ(''); }}
+                >
+                  <div className="dev-panel-row-text">
+                    <div className="dev-panel-row-name">Summarizer model…</div>
+                    <div className="dev-panel-row-sub">{sumName}</div>
+                  </div>
+                  <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                </button>
+                <button
+                  className="dev-panel-row"
+                  onClick={() => { onOpenExpertModal(null); setOpen(false); }}
+                >
+                  <UserPlus size={14} className="dev-check-icon" />
+                  Create Expert Persona…
+                </button>
+                {(participants || []).map(p => {
+                  const assigned = modelAssignments[p.participant_id];
+                  const labelName = assigned ? nameForModel(assigned)
+                    : (p.default_model_id ? nameForModel(p.default_model_id) : '(default)');
+                  return (
+                    <button
+                      key={p.participant_id}
+                      className="dev-panel-row dev-panel-row-stack"
+                      onClick={() => { setActiveSub(s => s === p.participant_id ? null : p.participant_id); setQ(''); }}
+                    >
+                      <div className="dev-panel-row-text">
+                        <div className="dev-panel-row-name">{p.name}</div>
+                        <div className="dev-panel-row-sub">{labelName}</div>
+                      </div>
+                      <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                    </button>
+                  );
+                })}
+              </>
+            )}
 
             <div className="dev-panel-divider" />
 
-            {/* ── Max participants ──────────────────────────────── */}
+            {/* ── Max participants (single item) ─────────────────── */}
             <div className="dev-panel-label">Max participants ({maxParticipants})</div>
             <div className="ccai-stepper-row">
               <button
@@ -178,86 +230,71 @@ export default function DevMenu({
 
             <div className="dev-panel-divider" />
 
-            {/* ── Participants ──────────────────────────────────── */}
-            <div className="dev-panel-label">Participants</div>
-            <button
-              className="dev-panel-row"
-              onClick={() => { onOpenExpertModal(null); setOpen(false); }}
-            >
-              <UserPlus size={14} className="dev-check-icon" />
-              Create Expert Persona…
-            </button>
-            {(participants || []).map(p => {
-              const assigned = modelAssignments[p.participant_id];
-              const labelName = assigned ? nameForModel(assigned)
-                : (p.default_model_id ? nameForModel(p.default_model_id) : '(default)');
-              return (
+            {/* ── Display options (accordion) ────────────────────── */}
+            <SectionHeader
+              label="Display options"
+              open={openSections.display}
+              onToggle={() => toggleSection('display')}
+            />
+            {openSections.display && (
+              <>
                 <button
-                  key={p.participant_id}
-                  className="dev-panel-row dev-panel-row-stack"
-                  onClick={() => { setActiveSub(s => s === p.participant_id ? null : p.participant_id); setQ(''); }}
+                  className={`dev-panel-choice ${showResponseTime ? 'dev-panel-choice-active' : ''}`}
+                  onClick={() => onShowResponseTimeChange(!showResponseTime)}
                 >
-                  <div className="dev-panel-row-text">
-                    <div className="dev-panel-row-name">{p.name}</div>
-                    <div className="dev-panel-row-sub">{labelName}</div>
-                  </div>
-                  <ChevronRight size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  {showResponseTime ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
+                  Response times on messages
                 </button>
-              );
-            })}
+                <button
+                  className={`dev-panel-choice ${showChatStats ? 'dev-panel-choice-active' : ''}`}
+                  onClick={() => onShowChatStatsChange(!showChatStats)}
+                >
+                  {showChatStats ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
+                  Chat stats after end
+                </button>
+              </>
+            )}
 
             <div className="dev-panel-divider" />
 
-            {/* ── Display options ───────────────────────────────── */}
-            <div className="dev-panel-label">Display options</div>
-            <button
-              className={`dev-panel-choice ${showResponseTime ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onShowResponseTimeChange(!showResponseTime)}
-            >
-              {showResponseTime ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Response times on messages
-            </button>
-            <button
-              className={`dev-panel-choice ${showChatStats ? 'dev-panel-choice-active' : ''}`}
-              onClick={() => onShowChatStatsChange(!showChatStats)}
-            >
-              {showChatStats ? <CheckSquare size={16} className="dev-check-icon" /> : <Square size={16} className="dev-check-icon" />}
-              Chat stats after end
-            </button>
+            {/* ── Transparency (accordion) ───────────────────────── */}
+            {/* No right-side chevrons on the rows themselves: these
+                buttons open a modal and don't expand a sub-panel, so a
+                row-level chevron would be misleading. */}
+            <SectionHeader
+              label="Transparency"
+              open={openSections.transparency}
+              onToggle={() => toggleSection('transparency')}
+            />
+            {openSections.transparency && (
+              <>
+                <button
+                  className="dev-panel-row"
+                  disabled={!hasCredentials}
+                  onClick={() => { onShowCredentials?.(); setOpen(false); }}
+                  title={
+                    hasCredentials
+                      ? "View the orchestrator's per-participant Credential Summary"
+                      : "Credential Summary is built after Phase 1 (initial opinions). Start a chat first."
+                  }
+                >
+                  <ScrollText size={14} className="dev-check-icon" />
+                  View Credential Summary…
+                </button>
+                <button
+                  className="dev-panel-row"
+                  onClick={() => { onShowPromptCatalog?.(); setOpen(false); }}
+                  title="View every prompt template the orchestrator and participants use, grouped by phase."
+                >
+                  <BookOpen size={14} className="dev-check-icon" />
+                  View current chat prompts…
+                </button>
+              </>
+            )}
 
             <div className="dev-panel-divider" />
 
-            {/* ── Transparency ──────────────────────────────────── */}
-            {/* No right-side chevrons here: these buttons trigger a
-                modal and don't expand a sub-panel, so the chevron the
-                old layout had was misleading and (per user feedback)
-                wrapped onto a noisy second line. */}
-            <div className="dev-panel-label">Transparency</div>
-            <button
-              className="dev-panel-row"
-              disabled={!hasCredentials}
-              onClick={() => { onShowCredentials?.(); setOpen(false); }}
-              title={
-                hasCredentials
-                  ? "View the orchestrator's per-participant Credential Summary"
-                  : "Credential Summary is built after Phase 1 (initial opinions). Start a chat first."
-              }
-            >
-              <ScrollText size={14} className="dev-check-icon" />
-              View Credential Summary…
-            </button>
-            <button
-              className="dev-panel-row"
-              onClick={() => { onShowPromptCatalog?.(); setOpen(false); }}
-              title="View every prompt template the orchestrator and participants use, grouped by phase."
-            >
-              <BookOpen size={14} className="dev-check-icon" />
-              View current chat prompts…
-            </button>
-
-            <div className="dev-panel-divider" />
-
-            {/* ── Advanced ──────────────────────────────────────── */}
+            {/* ── Advanced (single item) ─────────────────────────── */}
             <div className="dev-panel-label">Advanced</div>
             <button
               className="dev-panel-row"
@@ -280,43 +317,13 @@ export default function DevMenu({
               )}
               <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0 }} />
             </button>
-
-            <div className="dev-panel-divider" />
-
-            {/* ── Downloads ─────────────────────────────────────── */}
-            {/* These three are intentional duplicates of items in the
-                header DownloadMenu. The "Full API history" item lives
-                only in DownloadMenu (per UX request) and is therefore
-                not listed here. */}
-            <div className="dev-panel-label">Downloads</div>
-            <button
-              className="dev-panel-row"
-              disabled={!hasChat}
-              onClick={() => { onDownloadChatTxt(); setOpen(false); }}
-            >
-              <Download size={14} className="dev-check-icon" />
-              Chat as .txt
-            </button>
-            <button
-              className="dev-panel-row"
-              disabled={!hasChat}
-              onClick={() => { onDownloadChatMd(); setOpen(false); }}
-            >
-              <Download size={14} className="dev-check-icon" />
-              Chat as .md
-            </button>
-            <button
-              className="dev-panel-row"
-              disabled={!hasChat}
-              onClick={() => { onDownloadCsvTable(); setOpen(false); }}
-            >
-              <Download size={14} className="dev-check-icon" />
-              Summary table as .csv
-            </button>
           </div>
         )}
 
-        {open && activeSub && (
+        {/* Model picker sub-panel — only meaningful while the Model
+            Selection accordion is open, since that's the only section
+            whose rows set activeSub. */}
+        {open && modelSelOpen && activeSub && (
           <div className="dev-sub-panel">
             <div className="dev-sub-header">
               <span className="dev-sub-title">
@@ -400,5 +407,26 @@ export default function DevMenu({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Clickable section header for the multi-item categories. Visually
+ * matches the existing uppercase `dev-panel-label` style, but is a
+ * button with a chevron that flips when the section is open.
+ */
+function SectionHeader({ label, open, onToggle }) {
+  return (
+    <button
+      type="button"
+      className={`dev-panel-section-header ${open ? 'dev-panel-section-header-open' : ''}`}
+      onClick={onToggle}
+      aria-expanded={open}
+    >
+      <span>{label}</span>
+      {open
+        ? <ChevronDown size={12} className="dev-panel-section-chevron" />
+        : <ChevronRight size={12} className="dev-panel-section-chevron" />}
+    </button>
   );
 }

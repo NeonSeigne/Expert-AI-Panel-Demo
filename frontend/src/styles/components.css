@@ -831,6 +831,38 @@
   padding: 4px 10px 2px;
 }
 
+/* Clickable section header used for multi-item accordion categories
+   inside the settings panel. Matches the .dev-panel-label visual style
+   (same uppercase / size / color) so collapsed sections read as plain
+   labels at rest; the chevron makes the click affordance discoverable
+   and the hover background tells the user it's interactive. */
+.dev-panel-section-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 10px 2px !important;
+  border: none;
+  background: transparent;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary) !important;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dev-panel-section-header:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary) !important;
+}
+
+.dev-panel-section-chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 /* Indented row used for every actionable item inside a category, so
    labels (left-aligned at 10px) read as clear group headers and the
    items below them sit at a 22px hang. Matches the look of the

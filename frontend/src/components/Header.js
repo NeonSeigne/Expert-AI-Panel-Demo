@@ -159,10 +159,6 @@ export default function Header({
           onShowPromptCatalog={onShowPromptCatalog}
           onShowConversationLimits={onShowConversationLimits}
           conversationLimitsOverridden={conversationLimitsOverridden}
-          onDownloadChatTxt={onDownloadChatTxt}
-          onDownloadChatMd={onDownloadChatMd}
-          onDownloadCsvTable={onDownloadCsvTable}
-          hasChat={hasChat}
         />
       </div>
     </header>
