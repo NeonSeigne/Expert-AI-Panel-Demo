@@ -25,7 +25,7 @@ import {
  *                          against a fast fallback and aggressively
  *                          substitutes failed LLMs)
  *   - Display options     (accordion — two toggles)
- *   - Transparency        (accordion — Credential Summary, Prompt
+ *   - View Prompts        (accordion — Credential Summary, Prompt
  *                          Catalog)
  *   - Advanced            (single item: Conversation limits…)
  *
@@ -340,12 +340,12 @@ export default function DevMenu({
 
             <div className="dev-panel-divider" />
 
-            {/* ── Transparency (accordion) ───────────────────────── */}
+            {/* ── View Prompts (accordion) ───────────────────────── */}
             {/* No right-side chevrons on the rows themselves: these
                 buttons open a modal and don't expand a sub-panel, so a
                 row-level chevron would be misleading. */}
             <SectionHeader
-              label="Transparency"
+              label="View Prompts"
               open={openSections.transparency}
               onToggle={() => toggleSection('transparency')}
             />

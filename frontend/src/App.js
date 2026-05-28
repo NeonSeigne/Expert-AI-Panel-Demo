@@ -563,8 +563,13 @@ export default function App() {
   // selectedParticipants-derived list (used by the auto-select flow
   // because the freshly-chosen list isn't in state yet when we need it).
   const buildStartPayload = useCallback((theQuestion, participantsOverride) => {
-    const baseList = participantsOverride
-      ?? selectedParticipants.filter(p => enabledMap[p.participant_id] !== false);
+    // Always honor the sidebar enabled toggles, including when
+    // auto-select supplies a participantsOverride list (which used to
+    // bypass enabledMap and always prepend a disabled human).
+    const sourceList = participantsOverride ?? selectedParticipants;
+    const baseList = sourceList.filter(
+      p => enabledMap[p.participant_id] !== false,
+    );
     const participants = baseList.map(p => ({
       participant_id: p.participant_id,
       kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
@@ -687,9 +692,11 @@ export default function App() {
           || p.model_id || p.default_model_id || '',
       }));
       try {
-        // The human, if any, always gets a seat; ask the orchestrator
-        // for one fewer LLM pick so the total stays at maxParticipants.
-        const humanReserved = humanParticipant ? 1 : 0;
+        // Reserve a seat for the human only when they are enabled in
+        // the sidebar; a disabled human should not be auto-included.
+        const humanEnabled = humanParticipant
+          && enabledMap[humanParticipant.participant_id] !== false;
+        const humanReserved = humanEnabled ? 1 : 0;
         const llmTarget = Math.max(2, maxParticipants - humanReserved);
         const result = await autoSelectParticipants({
           question: theQuestion.trim(),
@@ -701,7 +708,7 @@ export default function App() {
         const chosenLlms = chosenIds
           .map(id => allCatalogParticipants[id])
           .filter(Boolean);
-        resolvedParticipants = humanCatalogEntry
+        resolvedParticipants = humanEnabled && humanCatalogEntry
           ? [humanCatalogEntry, ...chosenLlms]
           : chosenLlms;
         if (resolvedParticipants.length < 2) {
@@ -879,7 +886,7 @@ export default function App() {
   }, [
     buildStartPayload, enabledSelectedCount, dailyLimit,
     autoSelectMode, allCatalogParticipants, modelAssignments,
-    maxParticipants, orchestratorModel,
+    maxParticipants, orchestratorModel, enabledMap,
     humanParticipant, humanCatalogEntry,
   ]);
 
