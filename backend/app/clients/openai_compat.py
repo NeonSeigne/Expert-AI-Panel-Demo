@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
@@ -18,6 +19,11 @@ _MAX_COMPLETION_TOKEN_MODELS = {
     "gpt-5", "gpt-oss",
 }
 _NO_TEMPERATURE_MODELS = {"o1", "o1-mini", "o1-preview", "o3", "o3-mini", "o4-mini"}
+
+# Models that emit long internal reasoning traces; allow a higher completion
+# cap. Flash/mini/instruct models use the requested max_tokens as-is.
+_THINKING_MULTIPLIER_MODEL_PREFIXES = _MAX_COMPLETION_TOKEN_MODELS
+_THINKING_NAME_HINTS = ("thinking", "reasoning", "-think", "/think")
 
 # Reserve a few tokens for chat-template framing the server tacks on (the
 # vLLM server and OpenAI both add a small overhead per request that our
@@ -68,6 +74,13 @@ def _estimate_input_tokens(messages: list[dict[str, str]]) -> int:
     return total
 
 
+def _model_wants_thinking_multiplier(model: str) -> bool:
+    mid = (model or "").lower()
+    if any(mid.startswith(prefix) for prefix in _THINKING_MULTIPLIER_MODEL_PREFIXES):
+        return True
+    return any(hint in mid for hint in _THINKING_NAME_HINTS)
+
+
 def _resolve_effective_max(
     model: str, requested: int, messages: list[dict[str, str]],
 ) -> tuple[int, int, int]:
@@ -86,7 +99,8 @@ def _resolve_effective_max(
     window = context_window_for(model)
     input_estimate = _estimate_input_tokens(messages)
     headroom = max(_MIN_OUTPUT_TOKENS, window - input_estimate - _INPUT_SAFETY_MARGIN)
-    effective_max = max(_MIN_OUTPUT_TOKENS, min(requested * 4, headroom))
+    multiplier = 4 if _model_wants_thinking_multiplier(model) else 1
+    effective_max = max(_MIN_OUTPUT_TOKENS, min(requested * multiplier, headroom))
     return effective_max, input_estimate, window
 
 
@@ -110,6 +124,7 @@ async def openai_chat_completion(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     timeout: float | None = None,
+    on_text_delta: Any | None = None,
 ) -> dict[str, Any]:
     """Send a chat completion request to any OpenAI-compatible endpoint."""
     url = f"{base_url.rstrip('/')}/chat/completions"
@@ -123,11 +138,12 @@ async def openai_chat_completion(
     effective_max, input_estimate, window = _resolve_effective_max(
         model, max_tokens, messages,
     )
-    if effective_max < max_tokens * 4:
+    mult = 4 if _model_wants_thinking_multiplier(model) else 1
+    if effective_max < max_tokens * mult:
         LOG.info(
-            "Capped max_tokens for %s: requested %d (x4=%d), input ~=%d, "
+            "Capped max_tokens for %s: requested %d (x%d=%d), input ~=%d, "
             "window=%d, sending %d",
-            model, max_tokens, max_tokens * 4, input_estimate, window,
+            model, max_tokens, mult, max_tokens * mult, input_estimate, window,
             effective_max,
         )
     effective_timeout = max(timeout * 2, 120) if timeout else timeout
@@ -146,6 +162,59 @@ async def openai_chat_completion(
     req_timeout = httpx.Timeout(effective_timeout) if effective_timeout else None
     client = _get_client()
     t0 = time.time()
+
+    if on_text_delta is not None:
+        body["stream"] = True
+        try:
+            parts: list[str] = []
+            async with client.stream(
+                "POST", url, json=body, headers=headers, timeout=req_timeout,
+            ) as resp:
+                if resp.status_code >= 400:
+                    detail = (await resp.aread()).decode("utf-8", errors="replace")[:300]
+                    return {
+                        "response": f"[Error {resp.status_code}]: {detail}",
+                        "elapsed_seconds": round(time.time() - t0, 2),
+                        "model": model,
+                        "error": True,
+                        "error_kind": _classify_http_status(resp.status_code),
+                        "error_status": resp.status_code,
+                    }
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    piece = delta.get("content") or ""
+                    if piece:
+                        parts.append(piece)
+                        on_text_delta(piece)
+            text = strip_thinking("".join(parts))
+            return {
+                "response": text.strip(),
+                "elapsed_seconds": round(time.time() - t0, 2),
+                "model": model,
+                "finish_reason": "stop",
+            }
+        except Exception as exc:
+            LOG.exception("OpenAI-compat stream failed: %s", exc)
+            return {
+                "response": f"[Error]: {exc}",
+                "elapsed_seconds": round(time.time() - t0, 2),
+                "model": model,
+                "error": True,
+                "error_kind": _classify_exception(exc),
+            }
+
     for attempt in range(2):
         try:
             resp = await client.post(url, json=body, headers=headers, timeout=req_timeout)

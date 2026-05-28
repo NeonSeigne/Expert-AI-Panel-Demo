@@ -753,8 +753,37 @@ export default function App() {
             setSessionParticipants(data.participants || []);
           },
           onMessage: (data) => {
-            setMessages(prev => [...prev, data]);
+            setMessages(prev => {
+              const mid = data?.message_id;
+              if (!mid) return [...prev, data];
+              const idx = prev.findIndex(m => m.message_id === mid);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = { ...next[idx], ...data, streaming: false };
+                return next;
+              }
+              return [...prev, data];
+            });
             setStatusText('Conversation in progress...');
+          },
+          onMessageStreamStart: (data) => {
+            setMessages(prev => [...prev, {
+              ...data,
+              role: 'participant',
+              text: '',
+              streaming: true,
+              timestamp: Date.now() / 1000,
+            }]);
+          },
+          onMessageDelta: (data) => {
+            const mid = data?.message_id;
+            const delta = data?.delta || '';
+            if (!mid || !delta) return;
+            setMessages(prev => prev.map(m => (
+              m.message_id === mid
+                ? { ...m, text: `${m.text || ''}${delta}` }
+                : m
+            )));
           },
           onOrchestrator: (data) => {
             // Orchestrator events with kind == "status" but no text are

@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator
 from app.services.conversation.decisions.base import DecisionMethod
 from app.services.conversation.voting import (
     cast_vote_yesno,
+    gather_votes_parallel,
     tally_yesno_votes,
 )
 from app.services.json_calls import orchestrator_call
@@ -114,10 +115,13 @@ class RobertsRulesVote(DecisionMethod):
         yield _sse("orchestrator", _msg_payload(msg))
 
         ballots: list[dict[str, Any]] = []
-        for p in voters:
-            result = await cast_vote_yesno(
-                session=session, participant=p, motion=motion,
-            )
+        for p, result in await gather_votes_parallel(
+            voters,
+            cast_vote_yesno,
+            session=session,
+            default_mode="yesno",
+            motion=motion,
+        ):
             ballot = {
                 "voter_id": p.participant_id,
                 "voter_name": p.name,

@@ -26,6 +26,7 @@ from app.services.conversation.decisions.base import DecisionMethod
 from app.services.conversation.voting import (
     cast_vote_ranking,
     extract_candidate_options,
+    gather_votes_parallel,
     run_irv,
 )
 from app.services.models import Phase
@@ -94,11 +95,14 @@ class RankedChoiceDecision(DecisionMethod):
 
         ballots: list[dict[str, Any]] = []
         rankings_only: list[list[int]] = []
-        for p in voters:
-            result = await cast_vote_ranking(
-                session=session, participant=p,
-                question=di.question, options=options,
-            )
+        for p, result in await gather_votes_parallel(
+            voters,
+            cast_vote_ranking,
+            session=session,
+            default_mode="rank",
+            question=di.question,
+            options=options,
+        ):
             ranking = result.get("ranking") or []
             ballots.append({
                 "voter_id": p.participant_id,

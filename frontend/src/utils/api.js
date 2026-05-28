@@ -117,6 +117,8 @@ function eventHandlerKey(eventType) {
   switch (eventType) {
     case 'session': return 'onSession';
     case 'message': return 'onMessage';
+    case 'message_stream_start': return 'onMessageStreamStart';
+    case 'message_delta': return 'onMessageDelta';
     case 'orchestrator': return 'onOrchestrator';
     case 'system': return 'onSystem';
     case 'status': return 'onStatus';

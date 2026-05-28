@@ -407,3 +407,15 @@ class Session:
     # on RR output.
     main_motion: str | None = None
     proposed_motions: list[dict[str, Any]] = field(default_factory=list)
+
+    # Rolling summary for orchestrator judge prompts when the transcript
+    # grows past the compact-transcript char budget (see orchestrator_speed).
+    orchestrator_context_summary: str = ""
+    orchestrator_context_through_idx: int = -1
+
+    # Background task that builds per-participant contribution summaries
+    # for the Table View. Kicked off by run_conversation just before the
+    # decision phase so that by the time the user opens Table View the
+    # work is already done. `Any` rather than `asyncio.Task` to avoid the
+    # import-time dependency on a running loop.
+    contribution_summary_task: Any = None

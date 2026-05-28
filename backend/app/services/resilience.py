@@ -329,6 +329,8 @@ async def run_resilient_turn(
     label: str,
     max_tokens: int,
     call_participant: CallParticipantFn,
+    stream_events: list[str] | None = None,
+    stream_message_id: str | None = None,
 ) -> ResilientTurnResult:
     """Phase-aware wrapper around a single participant LLM turn.
 
@@ -356,6 +358,8 @@ async def run_resilient_turn(
         user_prompt=user_prompt,
         label=label,
         max_tokens=max_tokens,
+        stream_events=stream_events,
+        stream_message_id=stream_message_id,
     )
 
     if ok and text.strip():

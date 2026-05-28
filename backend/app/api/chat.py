@@ -985,6 +985,13 @@ async def api_table_view(session_id: str):
     if not session:
         raise HTTPException(404, "Session not found")
 
+    from app.services.orchestrator import ensure_contribution_summaries
+
+    try:
+        await ensure_contribution_summaries(session)
+    except Exception as exc:
+        LOG.warning("Failed to build contribution summaries: %s", exc)
+
     rows = []
     for p in session.participants:
         first = (session.initial_opinions or {}).get(p.participant_id, "")

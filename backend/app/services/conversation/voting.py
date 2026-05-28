@@ -19,10 +19,11 @@ method classes can compose them however they want.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from app.clients.llm_router import chat_completion
 from app.services.json_calls import (
@@ -192,6 +193,36 @@ async def extract_candidate_options(
                 break
 
     return options
+
+
+async def gather_votes_parallel(
+    voters: list[Participant],
+    cast_fn: Callable[..., Awaitable[dict[str, Any]]],
+    *,
+    session: Session,
+    default_mode: str = "single",
+    **cast_kwargs: Any,
+) -> list[tuple[Participant, dict[str, Any]]]:
+    """Run ballot calls concurrently; roster order is preserved."""
+    if not voters:
+        return []
+
+    async def _one(p: Participant) -> tuple[Participant, dict[str, Any]]:
+        result = await cast_fn(session=session, participant=p, **cast_kwargs)
+        return p, result
+
+    gathered = await asyncio.gather(
+        *[_one(p) for p in voters],
+        return_exceptions=True,
+    )
+    out: list[tuple[Participant, dict[str, Any]]] = []
+    for p, item in zip(voters, gathered):
+        if isinstance(item, BaseException):
+            LOG.exception("Parallel vote failed for %s: %s", p.participant_id, item)
+            out.append((p, _vote_default(default_mode)))
+        else:
+            out.append(item)
+    return out
 
 
 async def cast_vote_single(

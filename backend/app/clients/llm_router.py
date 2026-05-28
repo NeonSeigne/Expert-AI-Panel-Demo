@@ -45,10 +45,18 @@ async def chat_completion(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     timeout: float | None = None,
+    on_text_delta: Any | None = None,
 ) -> dict[str, Any]:
     """Unified LLM call that routes Neon models through HANA and others through OpenAI-compat."""
     if resolved.get("is_neon"):
         return await _call_hana(resolved, messages, temperature, max_tokens)
+
+    # Streaming uses a single request path (no model racing).
+    if on_text_delta is not None:
+        return await _plain_openai(
+            resolved, messages, temperature, max_tokens, timeout,
+            on_text_delta=on_text_delta,
+        )
 
     from app.config import settings
     if settings.speed_priority:
@@ -63,6 +71,7 @@ async def _plain_openai(
     temperature: float,
     max_tokens: int,
     timeout: float | None,
+    on_text_delta: Any | None = None,
 ) -> dict[str, Any]:
     return await openai_chat_completion(
         base_url=resolved["base_url"],
@@ -72,6 +81,7 @@ async def _plain_openai(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
+        on_text_delta=on_text_delta,
     )
 
 
