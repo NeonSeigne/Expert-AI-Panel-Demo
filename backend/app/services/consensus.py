@@ -7,6 +7,7 @@ All four are short JSON-shaped orchestrator calls layered on top of
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.services.json_calls import orchestrator_call
@@ -99,6 +100,64 @@ def _normalize_groups(
     return out
 
 
+def _heuristic_addressed_to(
+    participants: list[Any],
+    speaker_name: str,
+    message: str,
+) -> str | None:
+    """Fast path when the addressee is obvious from the text.
+
+    Returns a participant_id when confidence is high; otherwise None
+    so the orchestrator LLM classifier runs.
+    """
+    if not message or not participants:
+        return None
+
+    others = [p for p in participants if p.name != speaker_name]
+    if len(others) == 1:
+        return others[0].participant_id
+
+    text = message.strip()
+    lower = text.lower()
+
+    # "@Name" or "Name:" at start of a sentence
+    for p in others:
+        name = p.name.strip()
+        if not name:
+            continue
+        nl = name.lower()
+        if re.search(rf"@{re.escape(nl)}\b", lower):
+            return p.participant_id
+        if re.search(
+            rf"(^|[.!?\n]\s*){re.escape(nl)}\s*[:,]",
+            lower,
+        ):
+            return p.participant_id
+
+    # "I agree with Name" / "Name, I think"
+    hits: list[str] = []
+    for p in others:
+        name = p.name.strip()
+        if not name:
+            continue
+        nl = re.escape(name.lower())
+        if re.search(
+            rf"\b(?:agree with|disagree with|respond to|reply to|"
+            rf"building on|thank you,?)\s+{nl}\b",
+            lower,
+        ):
+            hits.append(p.participant_id)
+        elif re.search(rf"\b{nl}\b[,:]?\s+(?:you|your|i think|i believe)\b", lower):
+            hits.append(p.participant_id)
+        elif re.search(rf"\b{nl}\b", lower) and len(name) >= 4:
+            hits.append(p.participant_id)
+
+    unique = list(dict.fromkeys(hits))
+    if len(unique) == 1:
+        return unique[0]
+    return None
+
+
 async def classify_addressed_to(
     *,
     orchestrator_model_id: str,
@@ -107,6 +166,10 @@ async def classify_addressed_to(
     message: str,
     api_log: list[dict[str, Any]] | None = None,
 ) -> str | None:
+    heuristic = _heuristic_addressed_to(participants, speaker_name, message)
+    if heuristic is not None:
+        return heuristic
+
     prompt = ADDRESSED_TO_PROMPT.format(
         roster_block=_format_roster_block(participants),
         speaker=speaker_name,

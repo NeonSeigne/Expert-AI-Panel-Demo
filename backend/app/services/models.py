@@ -29,6 +29,18 @@ class Phase(str, Enum):
     CLOSURE = "closure"
     FAILSAFE_PAUSED = "failsafe_paused"
     FINISHED = "finished"
+    # Robert's Rules of Order conversation-structure phases. These run
+    # in place of (or alongside) the Collaborative Discussion phases
+    # when the user picks the "Robert's Rules" conversation structure.
+    RR_OPENING = "rr_opening"
+    RR_INITIAL_REMARKS = "rr_initial_remarks"
+    RR_MOTION = "rr_motion"
+    RR_DEBATE = "rr_debate"
+    RR_MOVE_THE_QUESTION = "rr_move_the_question"
+    # Vote-based decision-method phases. Used by MajorityRulesDecision,
+    # RankedChoiceDecision, and RobertsRulesVote so the frontend can
+    # render an appropriate phase label.
+    VOTING = "voting"
 
 
 # How many participants a session may include (overridable by the user
@@ -269,6 +281,14 @@ class Participant:
     # Robustness counter: 3 consecutive failures auto-disables.
     consecutive_failures: int = 0
 
+    # Set by the resilience layer when this participant's backing LLM
+    # had to be substituted mid-chat after the original model failed.
+    # The persona's name and role_prompt stay the same; only the model
+    # fields (model_id, base_url, etc.) get rewritten in place. We
+    # stash the originally-resolved model_id here so it's still
+    # recoverable in api_log entries and exports.
+    substituted_from_model_id: str = ""
+
 
 @dataclass
 class Session:
@@ -351,3 +371,51 @@ class Session:
     # the API layer reads it.
     api_log: list[dict[str, Any]] = field(default_factory=list)
     pending_continue: bool = False
+
+    # Resilience-layer state. Populated at /chat/start (api/chat.py) so
+    # the orchestrator can swap participants / backing LLMs without
+    # repeating the catalog + provider walks at runtime.
+    #
+    # * candidate_pool: fully-resolved Participant objects from the
+    #   catalog (Neon + extras) that the user did NOT pick. Used in
+    #   Phase 1 when an originally-selected participant fails their
+    #   first opinion: we pop one from this list as the "alternate".
+    #
+    # * substitution_chain: resolved model-dicts (the same shape
+    #   settings.resolve_model returns) in fallback order. Used when
+    #   the original participant's backing LLM has to be swapped:
+    #     gpt-5.4 -> gemini-2.5-flash -> every other external model
+    #     -> Neon "vanilla" models as last resort.
+    #
+    # Both are computed once per session; consumers should treat them
+    # as ordered queues (pop from front).
+    candidate_pool: list[Participant] = field(default_factory=list)
+    substitution_chain: list[dict[str, Any]] = field(default_factory=list)
+
+    # Conversation-format plugin selection. Resolved via
+    # `app.services.conversation.get_structure(...)` /
+    # `get_decision(...)`. Default to the original CCAI behavior
+    # (collaborative discussion + consensus decision) so older
+    # /chat/start payloads keep working without changes.
+    conversation_structure_id: str = "collaborative"
+    decision_method_id: str = "consensus"
+
+    # Robert's Rules state. Only populated when
+    # `conversation_structure_id == "roberts_rules"`. The decision
+    # method reads `main_motion` and (optionally) `proposed_motions`
+    # so a non-RR decision method like RankedChoice can still operate
+    # on RR output.
+    main_motion: str | None = None
+    proposed_motions: list[dict[str, Any]] = field(default_factory=list)
+
+    # Rolling summary for orchestrator judge prompts when the transcript
+    # grows past the compact-transcript char budget (see orchestrator_speed).
+    orchestrator_context_summary: str = ""
+    orchestrator_context_through_idx: int = -1
+
+    # Background task that builds per-participant contribution summaries
+    # for the Table View. Kicked off by run_conversation just before the
+    # decision phase so that by the time the user opens Table View the
+    # work is already done. `Any` rather than `asyncio.Task` to avoid the
+    # import-time dependency on a running loop.
+    contribution_summary_task: Any = None

@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from dataclasses import asdict
 from typing import Any, AsyncIterator
 
@@ -55,6 +56,14 @@ from app.services.credential import (
     refresh_credential_summary,
 )
 from app.services.json_calls import orchestrator_call
+from app.services.orchestrator_speed import (
+    _AiTurnResult,
+    _AiTurnSpec,
+    compact_transcript_for_orchestrator,
+    orchestrator_fast_model_id,
+    run_roster_ai_turns_parallel,
+)
+from app.services.resilience import run_resilient_turn
 from app.services.models import (
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
@@ -420,7 +429,7 @@ async def _do_human_turn(
     addressed: str | None = None
     if classify_addressed:
         addressed = await classify_addressed_to(
-            orchestrator_model_id=_orchestrator_model_id(session),
+            orchestrator_model_id=orchestrator_fast_model_id(session),
             participants=actives,
             speaker_name=participant.name,
             message=text,
@@ -500,10 +509,27 @@ async def _call_participant(
     label: str,
     max_tokens: int = 600,
     timeout: float = 45.0,
-) -> tuple[str, float, bool]:
-    """Run one participant turn and return (text, elapsed_seconds, ok).
+    stream_events: list[str] | None = None,
+    stream_message_id: str | None = None,
+) -> tuple[str, float, bool, str]:
+    """Run one participant turn.
 
-    The state-machine handles auto-disable on repeated failure.
+    Returns ``(text, elapsed_seconds, ok, error_kind)``.
+
+    ``error_kind`` is ``""`` on success. On failure it's one of:
+      * ``"transient"`` — HTTP 5xx, 429, timeout, connection error. The
+        same model is worth retrying.
+      * ``"permanent"`` — auth, invalid request, content filter, model
+        gone. Retrying the same model won't help.
+      * ``"empty"`` — call returned a 200 with an empty body. Treated
+        as transient by the resilience layer (retry once before
+        substituting).
+      * ``"unknown"`` — orchestrator-side exception we couldn't
+        classify.
+
+    The state-machine handles auto-disable on repeated failure; the
+    resilience layer (`services.resilience.run_resilient_turn`) handles
+    in-turn retry / alternate / substitution under speed-priority.
     """
     others = _participant_roster_string(participant, _active_participants(session))
     base_directive = PARTICIPANT_BASE_DIRECTIVE.format(
@@ -547,6 +573,25 @@ async def _call_participant(
         "request": {"messages": api_messages, "max_tokens": max_tokens},
     }
 
+    msg_id = stream_message_id or str(uuid.uuid4())
+    on_text_delta_cb = None
+    if stream_events is not None:
+        stream_events.append(_sse("message_stream_start", {
+            "message_id": msg_id,
+            "speaker_id": participant.participant_id,
+            "speaker_name": participant.name,
+            "kind": participant.kind,
+            "phase": session.phase.value,
+            "model_id": participant.model_id,
+            "model_display": participant.display_name,
+        }))
+
+        def on_text_delta_cb(piece: str) -> None:
+            stream_events.append(_sse("message_delta", {
+                "message_id": msg_id,
+                "delta": piece,
+            }))
+
     try:
         result = await chat_completion(
             resolved=resolved,
@@ -554,25 +599,37 @@ async def _call_participant(
             temperature=0.7,
             max_tokens=max_tokens,
             timeout=timeout,
+            on_text_delta=on_text_delta_cb,
         )
     except Exception as exc:
         LOG.exception("Participant %s call failed: %s", participant.participant_id, exc)
         log_entry["response"] = {"error": str(exc)}
         session.api_log.append(log_entry)
         participant.consecutive_failures += 1
-        return "", 0.0, False
+        return "", 0.0, False, "unknown"
 
     log_entry["response"] = result
     session.api_log.append(log_entry)
 
     if result.get("error"):
         participant.consecutive_failures += 1
-        return "", result.get("elapsed_seconds", 0), False
+        return (
+            "",
+            result.get("elapsed_seconds", 0),
+            False,
+            result.get("error_kind") or "permanent",
+        )
 
-    participant.consecutive_failures = 0
     text = strip_thinking(result.get("response", ""))
     elapsed = float(result.get("elapsed_seconds", 0) or 0)
-    return text, elapsed, True
+    if not text.strip():
+        # 200 OK but the model returned nothing usable. Worth one
+        # retry / substitute attempt before we surface participant_error.
+        participant.consecutive_failures += 1
+        return "", elapsed, False, "empty"
+
+    participant.consecutive_failures = 0
+    return text, elapsed, True, ""
 
 
 def _add_participant_message(
@@ -584,8 +641,10 @@ def _add_participant_message(
     elapsed: float,
     addressed_to: str | None = None,
     replying_to: list[str] | None = None,
+    message_id: str | None = None,
 ) -> dict[str, Any]:
     msg = {
+        "message_id": message_id or str(uuid.uuid4()),
         "speaker_id": participant.participant_id,
         "speaker_name": participant.name,
         "role": "participant",
@@ -649,49 +708,42 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     yield _sse("status", {"message": "Phase 1: collecting independent first opinions..."})
 
     actives = _active_participants(session)
-    for p in actives:
+
+    async def _human_initial(p: Participant) -> AsyncIterator[str]:
+        async for chunk in _do_human_turn(
+            session, p, phase=session.phase, actives=actives,
+            track_initial_opinion=True,
+            prompt_context=(
+                "Share your initial opinion on the question. "
+                "You're speaking BEFORE seeing the other participants."
+            ),
+        ):
+            yield chunk
+
+    async def _post_initial(result: _AiTurnResult) -> dict[str, Any]:
+        session.initial_opinions[result.participant.participant_id] = result.turn.text
+        return {}
+
+    def _build_initial_spec(p: Participant) -> _AiTurnSpec | None:
         if p.kind == "human":
-            async for chunk in _do_human_turn(
-                session, p, phase=session.phase, actives=actives,
-                track_initial_opinion=True,
-                prompt_context=(
-                    "Share your initial opinion on the question. "
-                    "You're speaking BEFORE seeing the other participants."
-                ),
-            ):
-                yield chunk
-            continue
-        # Phase 1 deliberately uses a *bare* prompt (no transcript) so each
-        # participant's first opinion is independent of the others.
-        prompt = INITIAL_OPINION_PROMPT.format(question=session.question)
-        text, elapsed, ok = await _call_participant(
-            session=session, participant=p,
-            user_prompt=prompt,
+            return None
+        return _AiTurnSpec(
+            participant=p,
+            user_prompt=INITIAL_OPINION_PROMPT.format(question=session.question),
             label="initial_opinion",
             max_tokens=700,
         )
-        if not ok or not text.strip():
-            yield _sse("participant_error", {
-                "participant_id": p.participant_id,
-                "name": p.name,
-                "phase": session.phase.value,
-            })
-            if p.consecutive_failures >= session.limits.auto_disable_failures:
-                p.enabled = False
-                yield _sse("status", {
-                    "message": (
-                        f"{p.name} auto-disabled after "
-                        f"{session.limits.auto_disable_failures} failures."
-                    ),
-                })
-            continue
-        msg = _add_participant_message(session, p, text, phase=session.phase, elapsed=elapsed)
-        session.initial_opinions[p.participant_id] = text
-        yield _sse("message", _msg_payload(msg))
 
-        if _participant_msg_cap_hit(session):
-            async for chunk in _wait_for_continue(session, "messages"):
-                yield chunk
+    async for chunk in run_roster_ai_turns_parallel(
+        session,
+        actives,
+        phase=session.phase,
+        build_spec=_build_initial_spec,
+        call_participant=_call_participant,
+        on_human_turn=_human_initial,
+        post_process=_post_initial,
+    ):
+        yield chunk
 
     yield _sse("status", {"message": "Building Credential Summary..."})
     creds = await build_credential_summary(
@@ -737,78 +789,72 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
     })
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
-    for p in actives:
+    # Freeze transcript + pending threads at round start so parallel
+    # turns see the same context and reply metadata stays consistent.
+    transcript_snapshot = _format_history(session.messages)
+    pending_snapshot = {
+        p.participant_id: _pending_addressed_for(session, p)
+        for p in actives
+        if p.kind != "human"
+    }
+
+    async def _human_critique(p: Participant) -> AsyncIterator[str]:
+        async for chunk in _do_human_turn(
+            session, p, phase=session.phase, actives=actives,
+            classify_addressed=True,
+            prompt_context=(
+                f"Critique round {round_number} of {round_total}. "
+                "Push back on, agree with, or build on what others "
+                "have said. Address other participants by name."
+            ),
+        ):
+            yield chunk
+
+    def _build_critique_spec(p: Participant) -> _AiTurnSpec | None:
         if p.kind == "human":
-            async for chunk in _do_human_turn(
-                session, p, phase=session.phase, actives=actives,
-                classify_addressed=True,
-                prompt_context=(
-                    f"Critique round {round_number} of {round_total}. "
-                    "Push back on, agree with, or build on what others "
-                    "have said. Address other participants by name."
-                ),
-            ):
-                yield chunk
-            continue
-        transcript = _format_history(session.messages)
-        # Snapshot pending threads BEFORE the call so we can both render
-        # them in the prompt and stamp them onto the outgoing message as
-        # `replying_to` (frontend pill).
-        pending = _pending_addressed_for(session, p)
+            return None
+        pending = pending_snapshot.get(p.participant_id, [])
         pending_block = _format_pending_block(pending)
         prompt = CRITIQUE_PROMPT.format(
             round_number=round_number,
             round_total=round_total,
             question=session.question,
             credential_summary=cred_block,
-            transcript=transcript,
+            transcript=transcript_snapshot,
             pending_block=pending_block,
         )
-        text, elapsed, ok = await _call_participant(
-            session=session, participant=p,
+        return _AiTurnSpec(
+            participant=p,
             user_prompt=prompt,
             label=f"critique_round_{round_number}",
             max_tokens=700,
         )
-        if not ok or not text.strip():
-            yield _sse("participant_error", {
-                "participant_id": p.participant_id, "name": p.name,
-                "phase": session.phase.value,
-            })
-            if p.consecutive_failures >= session.limits.auto_disable_failures:
-                p.enabled = False
-                yield _sse("status", {
-                    "message": (
-                        f"{p.name} auto-disabled after "
-                        f"{session.limits.auto_disable_failures} failures."
-                    ),
-                })
-            continue
 
-        # Detect addressed_to so the consensus phase's targeted-response
-        # logic can also reuse it - cheap classification call.
+    async def _post_critique(result: _AiTurnResult) -> dict[str, Any]:
+        speaker = result.turn.speaker
         addressed = await classify_addressed_to(
-            orchestrator_model_id=_orchestrator_model_id(session),
+            orchestrator_model_id=orchestrator_fast_model_id(session),
             participants=_active_participants(session),
-            speaker_name=p.name,
-            message=text,
+            speaker_name=speaker.name,
+            message=result.turn.text,
             api_log=session.api_log,
         )
         _bump_orchestrator_count(session)
+        return {
+            "addressed_to": addressed,
+            "replying_to": _replying_to_ids(result.pending),
+        }
 
-        msg = _add_participant_message(
-            session, p, text, phase=session.phase, elapsed=elapsed,
-            addressed_to=addressed,
-            replying_to=_replying_to_ids(pending),
-        )
-        yield _sse("message", _msg_payload(msg))
-
-        if _participant_msg_cap_hit(session):
-            async for chunk in _wait_for_continue(session, "messages"):
-                yield chunk
-        if _orchestrator_cap_hit(session):
-            async for chunk in _wait_for_continue(session, "orchestrator"):
-                yield chunk
+    async for chunk in run_roster_ai_turns_parallel(
+        session,
+        actives,
+        phase=session.phase,
+        build_spec=_build_critique_spec,
+        call_participant=_call_participant,
+        on_human_turn=_human_critique,
+        post_process=_post_critique,
+    ):
+        yield chunk
 
 
 async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
@@ -816,33 +862,18 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
     yield _sse("status", {"message": "Phase 3: assessing whether more questions are needed..."})
 
     cred_block = credentials_to_block(session.credential_summary)
-
-    # Refresh Credential Summary once after Phase 2 critique - participants
-    # have revealed a lot more about themselves through critique.
-    transcript = _format_history(session.messages)
-    refreshed = await refresh_credential_summary(
-        orchestrator_model_id=_orchestrator_model_id(session),
-        question=session.question,
-        participants=_active_participants(session),
-        existing=session.credential_summary,
-        critique_transcript=transcript,
-        api_log=session.api_log,
-    )
-    _bump_orchestrator_count(session)
-    if refreshed != session.credential_summary:
-        session.credential_summary = refreshed
-        yield _sse("credentials_updated", {
-            "stage": "refreshed",
-            "credentials": session.credential_summary,
-        })
-    cred_block = credentials_to_block(session.credential_summary)
+    cred_refreshed = False
 
     for iteration in range(session.limits.status_assessment_max):
         session.status_assessment_iterations = iteration + 1
+        transcript = await compact_transcript_for_orchestrator(
+            session,
+            orchestrator_model_id=orchestrator_fast_model_id(session),
+        )
         prompt = STATUS_ASSESSMENT_PROMPT.format(
             question=session.question,
             credential_summary=cred_block,
-            transcript=_format_history(session.messages),
+            transcript=transcript,
         )
         _raw, parsed = await orchestrator_call(
             orchestrator_model_id=_orchestrator_model_id(session),
@@ -868,6 +899,27 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             )
             yield _sse("orchestrator", _msg_payload(msg))
             return
+
+        # Refresh credentials only when follow-ups are actually needed.
+        if not cred_refreshed:
+            cred_refreshed = True
+            full_transcript = _format_history(session.messages)
+            refreshed = await refresh_credential_summary(
+                orchestrator_model_id=_orchestrator_model_id(session),
+                question=session.question,
+                participants=_active_participants(session),
+                existing=session.credential_summary,
+                critique_transcript=full_transcript,
+                api_log=session.api_log,
+            )
+            _bump_orchestrator_count(session)
+            if refreshed != session.credential_summary:
+                session.credential_summary = refreshed
+                yield _sse("credentials_updated", {
+                    "stage": "refreshed",
+                    "credentials": session.credential_summary,
+                })
+            cred_block = credentials_to_block(session.credential_summary)
 
         # Otherwise run targeted follow-ups
         active_ids = {p.participant_id for p in _active_participants(session)}
@@ -928,25 +980,37 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
                     credential_summary=cred_block,
                     targeted_question=question_text,
                 )
-            text, elapsed, ok = await _call_participant(
+            stream_events: list[str] = []
+            stream_msg_id = str(uuid.uuid4())
+            turn = await run_resilient_turn(
                 session=session, participant=target,
                 user_prompt=prompt2,
                 label="targeted_followup",
                 max_tokens=600,
+                call_participant=_call_participant,
+                stream_events=stream_events,
+                stream_message_id=stream_msg_id,
             )
-            if not ok or not text.strip():
+            for ev in stream_events:
+                yield ev
+            for ev in turn.sse_events:
+                yield ev
+            if not turn.ok:
                 yield _sse("participant_error", {
                     "participant_id": target.participant_id, "name": target.name,
                     "phase": session.phase.value,
                 })
                 continue
+            speaker = turn.speaker
+            text, elapsed = turn.text, turn.elapsed
             # When the orchestrator is relaying a verbatim question from
             # another participant, mark this turn as replying to that
             # asker so the frontend can render the "Replying to X" pill.
             replying_to = [asker.participant_id] if asker is not None else []
             msg = _add_participant_message(
-                session, target, text, phase=session.phase, elapsed=elapsed,
+                session, speaker, text, phase=session.phase, elapsed=elapsed,
                 replying_to=replying_to,
+                message_id=stream_msg_id,
             )
             yield _sse("message", _msg_payload(msg))
 
@@ -971,49 +1035,56 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
 
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
-    for p in actives:
+    transcript_snapshot = _format_history(session.messages)
+    pending_snapshot = {
+        p.participant_id: _pending_addressed_for(session, p)
+        for p in actives
+        if p.kind != "human"
+    }
+
+    async def _human_final(p: Participant) -> AsyncIterator[str]:
+        async for chunk in _do_human_turn(
+            session, p, phase=session.phase, actives=actives,
+            track_final_opinion=True,
+            prompt_context=(
+                "Phase 4: state your final opinion on the question, "
+                "incorporating whatever you've learned in the discussion."
+            ),
+        ):
+            yield chunk
+
+    def _build_final_spec(p: Participant) -> _AiTurnSpec | None:
         if p.kind == "human":
-            async for chunk in _do_human_turn(
-                session, p, phase=session.phase, actives=actives,
-                track_final_opinion=True,
-                prompt_context=(
-                    "Phase 4: state your final opinion on the question, "
-                    "incorporating whatever you've learned in the discussion."
-                ),
-            ):
-                yield chunk
-            continue
-        transcript = _format_history(session.messages)
-        pending = _pending_addressed_for(session, p)
+            return None
+        pending = pending_snapshot.get(p.participant_id, [])
         pending_block = _format_pending_block(pending)
         prompt = FINALIZATION_PROMPT.format(
             question=session.question,
             credential_summary=cred_block,
-            transcript=transcript,
+            transcript=transcript_snapshot,
             pending_block=pending_block,
         )
-        text, elapsed, ok = await _call_participant(
-            session=session, participant=p,
+        return _AiTurnSpec(
+            participant=p,
             user_prompt=prompt,
             label="finalization",
             max_tokens=600,
         )
-        if not ok or not text.strip():
-            yield _sse("participant_error", {
-                "participant_id": p.participant_id, "name": p.name,
-                "phase": session.phase.value,
-            })
-            continue
-        session.final_opinions[p.participant_id] = text
-        msg = _add_participant_message(
-            session, p, text, phase=session.phase, elapsed=elapsed,
-            replying_to=_replying_to_ids(pending),
-        )
-        yield _sse("message", _msg_payload(msg))
 
-        if _participant_msg_cap_hit(session):
-            async for chunk in _wait_for_continue(session, "messages"):
-                yield chunk
+    async def _post_final(result: _AiTurnResult) -> dict[str, Any]:
+        session.final_opinions[result.participant.participant_id] = result.turn.text
+        return {"replying_to": _replying_to_ids(result.pending)}
+
+    async for chunk in run_roster_ai_turns_parallel(
+        session,
+        actives,
+        phase=session.phase,
+        build_spec=_build_final_spec,
+        call_participant=_call_participant,
+        on_human_turn=_human_final,
+        post_process=_post_final,
+    ):
+        yield chunk
 
 
 async def _phase_consensus(session: Session) -> AsyncIterator[str]:
@@ -1112,31 +1183,9 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
             # Replicated here because the LLM-path code below also does
             # it, and we need it on the human path too.
             if consensus_turns % max(1, len(actives)) == 0:
-                transcript = _format_history(session.messages)
-                status = await assess_consensus_status(
-                    orchestrator_model_id=_orchestrator_model_id(session),
-                    question=session.question,
-                    transcript=transcript,
-                    alliance_groups=session.alliance_groups,
-                    api_log=session.api_log,
-                )
-                _bump_orchestrator_count(session)
-                if status.get("status") == "majority":
-                    session.alliance_groups = await _refresh_alliance_groups(session, actives)
-                    msg = _add_orchestrator_message(
-                        session,
-                        f"Majority reached. {status.get('rationale', '')}".strip(),
-                        kind="status",
-                    )
-                    yield _sse("orchestrator", _msg_payload(msg))
-                    return
-                if status.get("status") == "unproductive":
-                    msg = _add_orchestrator_message(
-                        session,
-                        f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
-                        kind="status",
-                    )
-                    yield _sse("orchestrator", _msg_payload(msg))
+                terminal = await _consensus_status_terminal_sse(session, actives)
+                if terminal:
+                    yield terminal
                     return
             continue
 
@@ -1151,21 +1200,35 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         # message records who this turn was supposed to be replying to.
         pending = _pending_addressed_for(session, speaker)
 
-        text, elapsed, ok = await _call_participant(
+        stream_events: list[str] = []
+        stream_msg_id = str(uuid.uuid4())
+        turn = await run_resilient_turn(
             session=session, participant=speaker,
             user_prompt=prompt,
             label="consensus",
             max_tokens=700,
+            call_participant=_call_participant,
+            stream_events=stream_events,
+            stream_message_id=stream_msg_id,
         )
-        if not ok or not text.strip():
+        for ev in stream_events:
+            yield ev
+        for ev in turn.sse_events:
+            yield ev
+        if not turn.ok:
             yield _sse("participant_error", {
                 "participant_id": speaker.participant_id, "name": speaker.name,
                 "phase": session.phase.value,
             })
             continue
+        # Consensus phase doesn't swap participants, only LLMs behind
+        # them, so turn.speaker is the same instance as `speaker`. Use
+        # turn.speaker to stay consistent with other phases.
+        speaker = turn.speaker
+        text, elapsed = turn.text, turn.elapsed
 
         addressed = await classify_addressed_to(
-            orchestrator_model_id=_orchestrator_model_id(session),
+            orchestrator_model_id=orchestrator_fast_model_id(session),
             participants=actives,
             speaker_name=speaker.name,
             message=text,
@@ -1178,6 +1241,7 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
             session, speaker, text, phase=session.phase, elapsed=elapsed,
             addressed_to=addressed,
             replying_to=_replying_to_ids(pending),
+            message_id=stream_msg_id,
         )
         yield _sse("message", _msg_payload(msg))
 
@@ -1190,33 +1254,46 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
 
         # Status check every full round (every len(actives) turns)
         if consensus_turns % max(1, len(actives)) == 0:
-            transcript = _format_history(session.messages)
-            status = await assess_consensus_status(
-                orchestrator_model_id=_orchestrator_model_id(session),
-                question=session.question,
-                transcript=transcript,
-                alliance_groups=session.alliance_groups,
-                api_log=session.api_log,
-            )
-            _bump_orchestrator_count(session)
-            if status.get("status") == "majority":
-                session.alliance_groups = await _refresh_alliance_groups(session, actives)
-                msg = _add_orchestrator_message(
-                    session,
-                    f"Majority reached. {status.get('rationale', '')}".strip(),
-                    kind="status",
-                )
-                yield _sse("orchestrator", _msg_payload(msg))
+            terminal = await _consensus_status_terminal_sse(session, actives)
+            if terminal:
+                yield terminal
                 return
-            if status.get("status") == "unproductive":
-                msg = _add_orchestrator_message(
-                    session,
-                    f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
-                    kind="status",
-                )
-                yield _sse("orchestrator", _msg_payload(msg))
-                return
-            # else: productive - keep going
+
+
+async def _consensus_status_terminal_sse(
+    session: Session,
+    actives: list[Participant],
+) -> str | None:
+    """Run a consensus status check. Returns an SSE chunk when the phase
+    should end (majority or unproductive), else None."""
+    transcript = await compact_transcript_for_orchestrator(
+        session,
+        orchestrator_model_id=orchestrator_fast_model_id(session),
+    )
+    status = await assess_consensus_status(
+        orchestrator_model_id=orchestrator_fast_model_id(session),
+        question=session.question,
+        transcript=transcript,
+        alliance_groups=session.alliance_groups,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    if status.get("status") == "majority":
+        session.alliance_groups = await _refresh_alliance_groups(session, actives)
+        msg = _add_orchestrator_message(
+            session,
+            f"Majority reached. {status.get('rationale', '')}".strip(),
+            kind="status",
+        )
+        return _sse("orchestrator", _msg_payload(msg))
+    if status.get("status") == "unproductive":
+        msg = _add_orchestrator_message(
+            session,
+            f"Conversation no longer productive. {status.get('rationale', '')}".strip(),
+            kind="status",
+        )
+        return _sse("orchestrator", _msg_payload(msg))
+    return None
 
 
 async def _refresh_alliance_groups(
@@ -1320,10 +1397,13 @@ async def _phase_closure(session: Session) -> AsyncIterator[str]:
     yield _sse("status", {"message": "Phase 6: closure..."})
 
     cred_block = credentials_to_block(session.credential_summary)
-    transcript = _format_history(session.messages)
+    transcript = await compact_transcript_for_orchestrator(
+        session,
+        orchestrator_model_id=orchestrator_fast_model_id(session),
+    )
 
     status = await assess_consensus_status(
-        orchestrator_model_id=_orchestrator_model_id(session),
+        orchestrator_model_id=orchestrator_fast_model_id(session),
         question=session.question,
         transcript=transcript,
         alliance_groups=session.alliance_groups,
@@ -1449,7 +1529,19 @@ async def _phase_closure(session: Session) -> AsyncIterator[str]:
 # ---------------------------------------------------------------------------
 
 async def run_conversation(session: Session) -> AsyncIterator[str]:
-    """Drive the full six-phase conversation, yielding SSE chunks."""
+    """Drive the full conversation, yielding SSE chunks.
+
+    The flow is structure → decision: the chosen ConversationStructure
+    runs its phases, then hands a DecisionInput to the chosen
+    DecisionMethod which runs the decision phase(s). Both are
+    resolved from `session.conversation_structure_id` /
+    `session.decision_method_id` (defaults: collaborative + consensus,
+    which preserves the original CCAI behavior).
+    """
+    # Lazy import so the conversation package can import orchestrator
+    # helpers without a circular module load.
+    from app.services.conversation import get_structure, get_decision
+
     actives = _active_participants(session)
     if len(actives) < 2:
         yield _sse("error", {
@@ -1462,24 +1554,23 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
         for extra in actives[session.max_participants:]:
             extra.enabled = False
 
+    structure_cls = get_structure(session.conversation_structure_id)
+    decision_cls = get_decision(session.decision_method_id)
+    structure = structure_cls(session)
+
     try:
-        async for chunk in _phase_initial_opinions(session):
+        async for chunk in structure.run():
             yield chunk
 
-        for round_n in range(1, session.limits.critique_rounds + 1):
-            async for chunk in _phase_critique(session, round_n):
-                yield chunk
+        # Kick off contribution summaries in the background just before
+        # the decision phase. The Table View blocks on this task only if
+        # the user opens it before it finishes - usually it'll be done
+        # by then, so the table loads instantly.
+        _start_contribution_summary_task(session)
 
-        async for chunk in _phase_status_assessment(session):
-            yield chunk
-
-        async for chunk in _phase_finalization(session):
-            yield chunk
-
-        async for chunk in _phase_consensus(session):
-            yield chunk
-
-        async for chunk in _phase_closure(session):
+        decision_input = structure.build_decision_input()
+        decision = decision_cls(session, decision_input)
+        async for chunk in decision.run():
             yield chunk
     except Exception as exc:
         LOG.exception("Conversation crashed: %s", exc)
@@ -1491,14 +1582,57 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
         # doesn't outlive the session in the module-level registry.
         human_io.drop_session(session.session_id)
 
-    # Build per-participant contribution summaries for the table view.
-    try:
-        await _build_contribution_summaries(session)
-    except Exception as exc:
-        LOG.warning("Failed to build contribution summaries: %s", exc)
-
     yield _sse("system", {"text": "End of Chat", "phase": session.phase.value})
     yield _sse("done", {})
+
+
+def _start_contribution_summary_task(session: Session) -> None:
+    """Schedule the contribution-summary build as a background task.
+
+    Idempotent: if a task is already in flight (or completed) we don't
+    start another one. Errors in the background task are swallowed and
+    logged - the Table View endpoint will fall back to a synchronous
+    build if needed.
+    """
+    if session.contribution_summary_task is not None:
+        return
+    if any((session.contribution_summaries or {}).values()):
+        return
+
+    async def _runner() -> None:
+        try:
+            await _build_contribution_summaries(session)
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning(
+                "Background contribution_summaries failed for %s: %s",
+                session.session_id, exc,
+            )
+
+    try:
+        session.contribution_summary_task = asyncio.create_task(_runner())
+    except RuntimeError:
+        session.contribution_summary_task = None
+
+
+async def ensure_contribution_summaries(session: Session) -> None:
+    """Block on contribution summaries for the Table View.
+
+    Order of preference:
+      1. Cached - return immediately.
+      2. Background task in flight - await it.
+      3. Nothing started - build synchronously.
+    """
+    if any((session.contribution_summaries or {}).values()):
+        return
+    task = session.contribution_summary_task
+    if task is not None and not task.done():
+        try:
+            await task
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("contribution_summary_task await failed: %s", exc)
+    if any((session.contribution_summaries or {}).values()):
+        return
+    await _build_contribution_summaries(session)
 
 
 async def _build_contribution_summaries(session: Session) -> None:

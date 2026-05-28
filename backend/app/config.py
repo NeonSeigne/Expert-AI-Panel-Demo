@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
 
     orchestrator_model: str = "gpt-4o-mini"
+    # Lightweight model for addressed-to / status classifiers. Falls back
+    # to orchestrator_model when unset or unresolvable.
+    orchestrator_fast_model: str = "gemini-2.0-flash"
     speed_priority: bool = False
 
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"

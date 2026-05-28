@@ -117,6 +117,8 @@ function eventHandlerKey(eventType) {
   switch (eventType) {
     case 'session': return 'onSession';
     case 'message': return 'onMessage';
+    case 'message_stream_start': return 'onMessageStreamStart';
+    case 'message_delta': return 'onMessageDelta';
     case 'orchestrator': return 'onOrchestrator';
     case 'system': return 'onSystem';
     case 'status': return 'onStatus';
@@ -125,6 +127,10 @@ function eventHandlerKey(eventType) {
     case 'failsafe_pause': return 'onFailsafePause';
     case 'orchestrator_cap_pause': return 'onOrchestratorCapPause';
     case 'participant_error': return 'onParticipantError';
+    case 'participant_substituted': return 'onParticipantSubstituted';
+    case 'participant_replaced': return 'onParticipantReplaced';
+    case 'vote_cast': return 'onVoteCast';
+    case 'vote_tally': return 'onVoteTally';
     case 'credentials_updated': return 'onCredentialsUpdated';
     case 'human_turn_needed': return 'onHumanTurnNeeded';
     case 'human_turn_cleared': return 'onHumanTurnCleared';
@@ -170,6 +176,22 @@ export async function setSpeedPriority(enabled) {
     body: JSON.stringify({ enabled }),
   });
   if (!resp.ok) throw new Error('Failed to set speed priority');
+  return resp.json();
+}
+
+/**
+ * Fetch the catalog of available conversation structures and
+ * decision-making methods. The Settings menu's "Conversation format"
+ * accordion populates from this so adding a new plugin server-side
+ * doesn't require frontend code changes.
+ *
+ * Returns: { structures: [{id, name, description}, ...],
+ *            decisions: [{id, name, description}, ...],
+ *            default_structure_id, default_decision_id }
+ */
+export async function fetchConversationFormats() {
+  const resp = await fetch(`${API_BASE}/api/chat/conversation-formats`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error('Failed to fetch conversation formats');
   return resp.json();
 }
 

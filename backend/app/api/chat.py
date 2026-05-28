@@ -21,10 +21,12 @@ from app.middleware.rate_limit import (
 )
 from typing import Any
 
+from app.clients.hana_client import hana_client
 from app.services import human_io
 from app.services.credential import normalize_one_credential
-from app.services.extra_personas import get_extra_persona
+from app.services.extra_personas import EXTRA_PERSONAS, get_extra_persona
 from app.services.json_calls import orchestrator_call
+from app.services.resilience import build_substitution_chain
 from app.services.prompts import (
     CREDENTIAL_INTAKE_EMPTY_TRANSCRIPT,
     CREDENTIAL_INTAKE_TURN_PROMPT,
@@ -164,6 +166,13 @@ class StartChatRequest(BaseModel):
     # that has kind == "human". Capped at one human per session.
     human_credential: HumanCredentialPayload | None = None
 
+    # Conversation-format plugin selection. IDs come from
+    # app.services.conversation.STRUCTURE_REGISTRY /
+    # DECISION_REGISTRY. Missing or unknown IDs are silently coerced
+    # to the defaults (collaborative + consensus) at start time.
+    conversation_structure_id: str | None = None
+    decision_method_id: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Settings endpoints (orchestrator default + speed priority)
@@ -183,6 +192,29 @@ async def api_set_orchestrator(req: SetOrchestratorRequest):
 @router.get("/chat/speed-priority")
 async def api_get_speed_priority():
     return {"enabled": settings.speed_priority}
+
+
+@router.get("/chat/conversation-formats")
+async def api_conversation_formats():
+    """Catalog the available conversation structures + decision methods.
+
+    The frontend reads this once to populate the "Conversation format"
+    accordion in Settings. IDs returned here are the same values
+    accepted by /chat/start under `conversation_structure_id` and
+    `decision_method_id`.
+    """
+    from app.services.conversation import (
+        list_structures,
+        list_decisions,
+        DEFAULT_STRUCTURE_ID,
+        DEFAULT_DECISION_ID,
+    )
+    return {
+        "structures": list_structures(),
+        "decisions": list_decisions(),
+        "default_structure_id": DEFAULT_STRUCTURE_ID,
+        "default_decision_id": DEFAULT_DECISION_ID,
+    }
 
 
 @router.put("/chat/speed-priority")
@@ -488,6 +520,95 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     session.limits = clamp_conversation_limits(req.limits)
     session.participant_message_cap = session.limits.participant_message_pause_at
     session.orchestrator_call_cap = session.limits.orchestrator_call_pause_at
+
+    # Resilience: precompute the per-session alternate-participant pool
+    # and LLM substitution chain so the orchestrator doesn't have to
+    # walk the catalog at runtime when a participant fails. These are
+    # only *consulted* when settings.speed_priority is on; building
+    # them unconditionally keeps the start path simple and the work is
+    # cheap (one cached HANA fetch + a few synchronous list builds).
+    selected_ids = {p.participant_id for p in participants}
+    candidate_pool: list[Participant] = []
+    # Extra personas first (general-purpose lenses; resolvable as
+    # long as the matching API key is configured).
+    for spec in EXTRA_PERSONAS:
+        if spec.participant_id in selected_ids:
+            continue
+        resolved = settings.resolve_model(spec.default_model_id)
+        if not resolved:
+            continue
+        candidate_pool.append(Participant(
+            participant_id=spec.participant_id,
+            name=spec.name,
+            role_prompt=spec.role_prompt,
+            model_id=resolved["model_id"],
+            kind="extra",
+            base_url=resolved.get("base_url", ""),
+            api_key=resolved.get("api_key", ""),
+            display_name=resolved.get("display_name", spec.default_model_id),
+        ))
+    # Neon personas next, from whatever HANA returns. HANA being
+    # unreachable just yields an empty list — fine, the pool's already
+    # got the extras.
+    neon_hana_model_ids: list[str] = []
+    try:
+        neon_models = await hana_client.get_models()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("HANA models unavailable while building candidate pool: %s", exc)
+        neon_models = []
+    for nm in neon_models or []:
+        hana_mid = nm.get("model_id")
+        if hana_mid:
+            neon_hana_model_ids.append(hana_mid)
+        for persona in nm.get("personas", []) or []:
+            if persona.get("enabled") is False:
+                continue
+            persona_name = persona.get("persona_name") or ""
+            pn_lower = persona_name.lower()
+            if "vanilla" in pn_lower or "rag" in pn_lower:
+                continue
+            pid = f"neon:{hana_mid}:{persona_name}"
+            if pid in selected_ids:
+                continue
+            resolved = settings.resolve_model(pid)
+            if not resolved:
+                continue
+            candidate_pool.append(Participant(
+                participant_id=pid,
+                name=persona_name or hana_mid.split("/")[-1],
+                role_prompt=(
+                    f"You are {persona_name}, a Neon.ai persona. Speak "
+                    "naturally in your own voice and bring the perspective "
+                    "your background suggests."
+                ),
+                model_id=resolved["model_id"],
+                kind="neon",
+                base_url=resolved.get("base_url", ""),
+                api_key=resolved.get("api_key", ""),
+                display_name=resolved.get("display_name", pid),
+                is_neon=True,
+                hana_model_id=resolved.get("hana_model_id", ""),
+                persona_name=resolved.get("persona_name", ""),
+                neon_direct_vllm=resolved.get("neon_direct_vllm", False),
+                vllm_base_url=resolved.get("vllm_base_url", ""),
+                vllm_api_key=resolved.get("vllm_api_key", ""),
+            ))
+    session.candidate_pool = candidate_pool
+    session.substitution_chain = build_substitution_chain(neon_hana_model_ids)
+
+    # Conversation-format plugin selection. Coerce unknown IDs to the
+    # defaults via the get_structure/get_decision resolvers.
+    from app.services.conversation import (
+        get_structure as _get_structure_cls,
+        get_decision as _get_decision_cls,
+        STRUCTURE_REGISTRY as _STRUCT_REG,
+        DECISION_REGISTRY as _DEC_REG,
+    )
+    if req.conversation_structure_id and req.conversation_structure_id in _STRUCT_REG:
+        session.conversation_structure_id = req.conversation_structure_id
+    if req.decision_method_id and req.decision_method_id in _DEC_REG:
+        session.decision_method_id = req.decision_method_id
+
     if humans and req.human_credential is not None:
         session.human_credential = normalize_one_credential({
             "participant_id": req.human_credential.participant_id,
@@ -863,6 +984,13 @@ async def api_table_view(session_id: str):
     session = get_session(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+
+    from app.services.orchestrator import ensure_contribution_summaries
+
+    try:
+        await ensure_contribution_summaries(session)
+    except Exception as exc:
+        LOG.warning("Failed to build contribution summaries: %s", exc)
 
     rows = []
     for p in session.participants:

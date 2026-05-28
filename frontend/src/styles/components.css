@@ -590,6 +590,21 @@
   max-width: 400px;
 }
 
+/* Download strip rendered below the "End of Chat" marker. Mirrors the
+   items in the header DownloadMenu so the user doesn't have to scroll
+   back up to the top of a finished conversation to export it. */
+.chat-end-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.chat-end-download-btn {
+  white-space: nowrap;
+}
+
 /* ── Chat Controls ─────────────────────────────────────────────── */
 
 .chat-controls {
@@ -814,6 +829,38 @@
   /* Bumped from --text-muted to --text-secondary for the same reason. */
   color: var(--text-secondary);
   padding: 4px 10px 2px;
+}
+
+/* Clickable section header used for multi-item accordion categories
+   inside the settings panel. Matches the .dev-panel-label visual style
+   (same uppercase / size / color) so collapsed sections read as plain
+   labels at rest; the chevron makes the click affordance discoverable
+   and the hover background tells the user it's interactive. */
+.dev-panel-section-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 10px 2px !important;
+  border: none;
+  background: transparent;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary) !important;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dev-panel-section-header:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary) !important;
+}
+
+.dev-panel-section-chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
 /* Indented row used for every actionable item inside a category, so
@@ -1280,6 +1327,16 @@
   .system-message.end-of-chat {
     font-size: 14px;
     padding: 14px;
+  }
+  /* On phones the download strip stacks so each label is fully
+     readable; on wider viewports it stays inline-wrap. */
+  .chat-end-downloads {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .chat-end-download-btn {
+    justify-content: center;
   }
   .btn-sm {
     padding: 5px 8px;

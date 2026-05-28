@@ -12,9 +12,11 @@ import HumanParticipantModal from './components/HumanParticipantModal';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
+  getSpeedPriority, setSpeedPriority,
   getAuthStatus,
   exportChat, exportApiLog, fetchTableView,   fetchCredentials,
   fetchConversationLimitsDefaults,
+  fetchConversationFormats,
   autoSelectParticipants,
   fetchPromptCatalog,
   getRateLimitStatus,
@@ -44,6 +46,36 @@ export default function App() {
   const [orchestratorModel, setOrchestratorModelState] = useState(persisted.orchestrator_model_id);
   const [summarizerModel, setSummarizerModelState] = useState(persisted.summarizer_model_id);
   const [maxParticipants, setMaxParticipants] = useState(persisted.max_participants || 5);
+  // Response-priority toggle. The backend is the source of truth (so
+  // it stays consistent across browsers), but we mirror the value
+  // here so the UI doesn't flicker after a settings change.
+  // Default false matches the backend default ("Prioritize model choice").
+  const [speedPriority, setSpeedPriorityState] = useState(false);
+
+  // Conversation-format plugin catalog + current selection. The
+  // catalog is fetched once on mount from /api/chat/conversation-formats
+  // so adding a new structure / decision plugin server-side doesn't
+  // require a frontend change. Selections fall back to whatever the
+  // backend reports as its default until the user picks otherwise.
+  const [conversationFormats, setConversationFormats] = useState({
+    structures: [], decisions: [],
+    default_structure_id: 'collaborative',
+    default_decision_id: 'consensus',
+  });
+  const [conversationStructureId, setConversationStructureIdState] = useState(
+    persisted.conversation_structure_id || null,
+  );
+  const [decisionMethodId, setDecisionMethodIdState] = useState(
+    persisted.decision_method_id || null,
+  );
+  const handleConversationStructureChange = useCallback((id) => {
+    setConversationStructureIdState(id || null);
+    storage.setConversationStructureId(id || null);
+  }, []);
+  const handleDecisionMethodChange = useCallback((id) => {
+    setDecisionMethodIdState(id || null);
+    storage.setDecisionMethodId(id || null);
+  }, []);
 
   // Backend catalog
   const [providers, setProviders] = useState([]);
@@ -139,6 +171,15 @@ export default function App() {
         setOrchestratorModelState(d.model_id);
       }
     }).catch(() => {});
+    // Hydrate the Response-priority toggle from the backend so the
+    // initial render of the Settings menu shows the real server state.
+    getSpeedPriority().then(d => {
+      if (typeof d?.enabled === 'boolean') setSpeedPriorityState(d.enabled);
+    }).catch(() => {});
+    fetchConversationFormats().then(catalog => {
+      if (!catalog || !Array.isArray(catalog.structures)) return;
+      setConversationFormats(catalog);
+    }).catch(() => {});
     getAuthStatus().then(setAuth).catch(() => {});
     getRateLimitStatus().then(d => {
       if (d?.daily_limit) setDailyLimit(d.daily_limit);
@@ -225,6 +266,18 @@ export default function App() {
   }, []);
   const handleSummarizerChange = useCallback((modelId) => {
     setSummarizerModelState(modelId || null);
+  }, []);
+  const handleSpeedPriorityChange = useCallback(async (enabled) => {
+    // Optimistic update; revert on backend error so the UI never
+    // claims a setting the server didn't actually accept.
+    setSpeedPriorityState(enabled);
+    try {
+      const d = await setSpeedPriority(enabled);
+      if (typeof d?.enabled === 'boolean') setSpeedPriorityState(d.enabled);
+    } catch (err) {
+      console.error('Failed to set speed priority:', err);
+      setSpeedPriorityState(!enabled);
+    }
   }, []);
   const handleMaxParticipantsChange = useCallback((n) => {
     const clamped = Math.max(3, Math.min(9, n));
@@ -510,8 +563,13 @@ export default function App() {
   // selectedParticipants-derived list (used by the auto-select flow
   // because the freshly-chosen list isn't in state yet when we need it).
   const buildStartPayload = useCallback((theQuestion, participantsOverride) => {
-    const baseList = participantsOverride
-      ?? selectedParticipants.filter(p => enabledMap[p.participant_id] !== false);
+    // Always honor the sidebar enabled toggles, including when
+    // auto-select supplies a participantsOverride list (which used to
+    // bypass enabledMap and always prepend a disabled human).
+    const sourceList = participantsOverride ?? selectedParticipants;
+    const baseList = sourceList.filter(
+      p => enabledMap[p.participant_id] !== false,
+    );
     const participants = baseList.map(p => ({
       participant_id: p.participant_id,
       kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
@@ -560,8 +618,17 @@ export default function App() {
       // Sparse override map; backend clamps and falls back per-field.
       limits: limitsOverrides,
       human_credential,
+      // Conversation format selection. null fields make the backend
+      // fall back to its built-in defaults (collaborative + consensus).
+      conversation_structure_id: conversationStructureId,
+      decision_method_id: decisionMethodId,
     };
-  }, [selectedParticipants, enabledMap, modelAssignments, orchestratorModel, summarizerModel, maxParticipants, limitsOverrides, humanParticipant]);
+  }, [
+    selectedParticipants, enabledMap, modelAssignments,
+    orchestratorModel, summarizerModel, maxParticipants,
+    limitsOverrides, humanParticipant,
+    conversationStructureId, decisionMethodId,
+  ]);
 
   // ─── Stop / continue ────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -625,9 +692,11 @@ export default function App() {
           || p.model_id || p.default_model_id || '',
       }));
       try {
-        // The human, if any, always gets a seat; ask the orchestrator
-        // for one fewer LLM pick so the total stays at maxParticipants.
-        const humanReserved = humanParticipant ? 1 : 0;
+        // Reserve a seat for the human only when they are enabled in
+        // the sidebar; a disabled human should not be auto-included.
+        const humanEnabled = humanParticipant
+          && enabledMap[humanParticipant.participant_id] !== false;
+        const humanReserved = humanEnabled ? 1 : 0;
         const llmTarget = Math.max(2, maxParticipants - humanReserved);
         const result = await autoSelectParticipants({
           question: theQuestion.trim(),
@@ -639,7 +708,7 @@ export default function App() {
         const chosenLlms = chosenIds
           .map(id => allCatalogParticipants[id])
           .filter(Boolean);
-        resolvedParticipants = humanCatalogEntry
+        resolvedParticipants = humanEnabled && humanCatalogEntry
           ? [humanCatalogEntry, ...chosenLlms]
           : chosenLlms;
         if (resolvedParticipants.length < 2) {
@@ -684,8 +753,37 @@ export default function App() {
             setSessionParticipants(data.participants || []);
           },
           onMessage: (data) => {
-            setMessages(prev => [...prev, data]);
+            setMessages(prev => {
+              const mid = data?.message_id;
+              if (!mid) return [...prev, data];
+              const idx = prev.findIndex(m => m.message_id === mid);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = { ...next[idx], ...data, streaming: false };
+                return next;
+              }
+              return [...prev, data];
+            });
             setStatusText('Conversation in progress...');
+          },
+          onMessageStreamStart: (data) => {
+            setMessages(prev => [...prev, {
+              ...data,
+              role: 'participant',
+              text: '',
+              streaming: true,
+              timestamp: Date.now() / 1000,
+            }]);
+          },
+          onMessageDelta: (data) => {
+            const mid = data?.message_id;
+            const delta = data?.delta || '';
+            if (!mid || !delta) return;
+            setMessages(prev => prev.map(m => (
+              m.message_id === mid
+                ? { ...m, text: `${m.text || ''}${delta}` }
+                : m
+            )));
           },
           onOrchestrator: (data) => {
             // Orchestrator events with kind == "status" but no text are
@@ -711,6 +809,57 @@ export default function App() {
           onParticipantError: (data) => {
             setSystemMessages(prev => [...prev, {
               text: `${data.name || 'A participant'} couldn't respond this turn.`,
+            }]);
+          },
+          onParticipantSubstituted: (data) => {
+            // Resilience layer swapped the backing LLM behind a
+            // persona's prompt+name. Surface it as a system note so
+            // the user can reconcile any change in voice / latency
+            // with the chat metadata.
+            const name = data.name || 'A participant';
+            const toDisplay = data.to_model_display || data.to_model_id || 'a substitute model';
+            setSystemMessages(prev => [...prev, {
+              text: `${name}'s primary model didn't respond; continuing with ${toDisplay}.`,
+            }]);
+          },
+          onParticipantReplaced: (data) => {
+            // Phase 1 alternate kicked in. Replace the session
+            // roster snapshot so the sidebar re-renders with the
+            // new participant; also note the change in chat.
+            if (Array.isArray(data?.roster)) {
+              setSessionParticipants(data.roster);
+            }
+            const origName = data.original_name || 'A participant';
+            const altName = data.new_name || 'an alternate';
+            setSystemMessages(prev => [...prev, {
+              text: `${origName} couldn't give an initial opinion; ${altName} is taking their place.`,
+            }]);
+          },
+          onVoteCast: (data) => {
+            // One per-ballot from a vote-based decision method. We
+            // surface these as system notes so the user can follow
+            // the tally as it happens; the final report message will
+            // contain the canonical summary.
+            const voter = data?.voter_name || 'A voter';
+            let line;
+            if (data?.vote) {
+              line = `${voter} votes ${data.vote}.`;
+            } else if (Array.isArray(data?.ranking) && data.ranking.length > 0) {
+              line = `${voter} submitted ranking: ${data.ranking.join(' > ')}.`;
+            } else if (typeof data?.choice === 'number' && data.choice > 0) {
+              line = `${voter} votes for option ${data.choice}.`;
+            } else {
+              line = `${voter} abstained or returned an invalid ballot.`;
+            }
+            setSystemMessages(prev => [...prev, { text: line }]);
+          },
+          onVoteTally: (data) => {
+            // Final tally summary. The orchestrator message that
+            // follows contains the rendered report, so we just log
+            // a one-liner here for the system feed.
+            const kind = data?.kind || 'vote';
+            setSystemMessages(prev => [...prev, {
+              text: `Vote complete (${kind}); see report below.`,
             }]);
           },
           onFailsafePause: (data) => {
@@ -766,7 +915,7 @@ export default function App() {
   }, [
     buildStartPayload, enabledSelectedCount, dailyLimit,
     autoSelectMode, allCatalogParticipants, modelAssignments,
-    maxParticipants, orchestratorModel,
+    maxParticipants, orchestratorModel, enabledMap,
     humanParticipant, humanCatalogEntry,
   ]);
 
@@ -816,6 +965,13 @@ export default function App() {
         onOrchestratorChange={handleOrchestratorChange}
         summarizerModel={summarizerModel}
         onSummarizerChange={handleSummarizerChange}
+        speedPriority={speedPriority}
+        onSpeedPriorityChange={handleSpeedPriorityChange}
+        conversationFormats={conversationFormats}
+        conversationStructureId={conversationStructureId}
+        onConversationStructureChange={handleConversationStructureChange}
+        decisionMethodId={decisionMethodId}
+        onDecisionMethodChange={handleDecisionMethodChange}
         showResponseTime={showResponseTime}
         onShowResponseTimeChange={setShowResponseTime}
         showChatStats={showChatStats}
@@ -872,6 +1028,12 @@ export default function App() {
             humanSubmitting={humanSubmitting}
             onHumanSubmit={handleHumanSubmit}
             onHumanSkip={handleHumanSkip}
+            onShowTableView={handleShowTableView}
+            onDownloadChatTxt={handleDownloadTxt}
+            onDownloadChatMd={handleDownloadMd}
+            onDownloadCsvTable={handleDownloadCsvTable}
+            onDownloadApiLog={handleDownloadApiLog}
+            hasApiLog={!!sessionId}
           />
         </div>
       </main>

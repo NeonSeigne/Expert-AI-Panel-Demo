@@ -1306,6 +1306,16 @@
   white-space: nowrap;
 }
 
+/* Header "Table View" button — links to the same Summary Table modal
+   the Settings menu opens, so users don't have to dig through a menu
+   to view it during/after a chat. */
+.ccai-table-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 .ccai-human-add-btn-active {
   border-color: #16A34A;
   color: #16A34A;
