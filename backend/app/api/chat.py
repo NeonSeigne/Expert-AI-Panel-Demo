@@ -354,6 +354,17 @@ async def api_demo_questions():
 # Start chat
 # ---------------------------------------------------------------------------
 
+def _neon_role_prompt_from_model_id(model_id: str) -> str:
+    """Look up a Neon persona's HANA system_prompt from the client cache."""
+    if not model_id.startswith("neon:"):
+        return ""
+    parts = model_id.split(":", 2)
+    if len(parts) != 3:
+        return ""
+    sp = hana_client.get_persona_system_prompt(parts[1], parts[2])
+    return (sp or "").strip()
+
+
 def _build_participant(
     sel: ParticipantSelectionPayload,
     expert_lookup: dict[str, ExpertPersonaPayload],
@@ -411,6 +422,8 @@ def _build_participant(
         if not model_id:
             model_id = pid
         if not role_prompt:
+            role_prompt = _neon_role_prompt_from_model_id(model_id)
+        if not role_prompt:
             role_prompt = (
                 f"You are {name}, a Neon.ai persona. Speak naturally in your "
                 "own voice and bring the perspective your background suggests."
@@ -434,6 +447,11 @@ def _build_participant(
         )
     else:
         raise HTTPException(400, f"Unknown participant kind: {kind}")
+
+    # When the user assigns a Neon model to a non-Neon persona, surface
+    # that model's HANA persona prompt for inference context.
+    if not role_prompt and model_id.startswith("neon:"):
+        role_prompt = _neon_role_prompt_from_model_id(model_id)
 
     resolved = settings.resolve_model(model_id)
     if not resolved:
@@ -479,6 +497,13 @@ async def api_start_chat(req: StartChatRequest, request: Request):
         )
 
     expert_lookup = {ep.participant_id: ep for ep in req.expert_personas}
+
+    # Populate the HANA persona prompt cache so Neon role_prompt
+    # resolution works even if /api/models hasn't been called yet.
+    try:
+        await hana_client.get_models()
+    except Exception as exc:
+        LOG.warning("HANA get_models during chat start failed: %s", exc)
 
     max_p = max(MIN_MAX_PARTICIPANTS, min(MAX_MAX_PARTICIPANTS, req.max_participants))
     if len(req.participants) < 2:

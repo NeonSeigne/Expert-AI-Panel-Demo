@@ -12,6 +12,7 @@ export default function ParticipantSidebar({
   participants,
   enabledMap,
   modelAssignments,
+  neonPromptByModelId = {},
   onToggleEnabled,
   onRemove,
   autoSelectMode,
@@ -56,6 +57,7 @@ export default function ParticipantSidebar({
             participant={p}
             enabled={enabled}
             modelOverride={modelOverride}
+            neonPromptByModelId={neonPromptByModelId}
             onToggleEnabled={() => onToggleEnabled(p.participant_id, !enabled)}
             onRemove={() => onRemove(p.participant_id)}
           />
@@ -65,9 +67,17 @@ export default function ParticipantSidebar({
   );
 }
 
-function ParticipantCard({ participant, enabled, modelOverride, onToggleEnabled, onRemove }) {
+function ParticipantCard({ participant, enabled, modelOverride, neonPromptByModelId, onToggleEnabled, onRemove }) {
   const [open, setOpen] = useState(false);
   const isHuman = participant.kind === 'human';
+
+  const effectiveModelId = modelOverride
+    || participant.default_model_id
+    || (participant.kind === 'neon' ? participant.participant_id : '');
+  const personaPrompt = (effectiveModelId.startsWith('neon:')
+    && neonPromptByModelId[effectiveModelId])
+    || participant.role_prompt
+    || '';
 
   return (
     <div
@@ -152,7 +162,7 @@ function ParticipantCard({ participant, enabled, modelOverride, onToggleEnabled,
               <div className="ccai-participant-field">
                 <div className="ccai-participant-field-label">Persona prompt</div>
                 <pre className="ccai-participant-prompt">
-                  {participant.role_prompt || '(no prompt set)'}
+                  {personaPrompt || '(no prompt set)'}
                 </pre>
               </div>
             </>

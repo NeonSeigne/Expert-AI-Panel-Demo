@@ -207,6 +207,20 @@ export default function App() {
     return list;
   }, [providers, neonModels]);
 
+  // Map neon:model@ver:persona ids -> HANA system_prompt (from /api/models).
+  const neonPromptByModelId = useMemo(() => {
+    const map = {};
+    for (const nm of neonModels) {
+      for (const p of (nm.personas || [])) {
+        if (p.enabled === false) continue;
+        const id = `neon:${nm.model_id}:${p.persona_name}`;
+        const sp = (p.system_prompt || '').trim();
+        if (sp) map[id] = sp;
+      }
+    }
+    return map;
+  }, [neonModels]);
+
   // ─── Active participants resolved from selectedIds ──────────────
   const allCatalogParticipants = useMemo(() => {
     const map = {};
@@ -999,6 +1013,7 @@ export default function App() {
           participants={selectedParticipants}
           enabledMap={enabledMap}
           modelAssignments={modelAssignments}
+          neonPromptByModelId={neonPromptByModelId}
           onToggleEnabled={handleSidebarToggleEnabled}
           onRemove={handleSidebarRemove}
           autoSelectMode={autoSelectMode}
