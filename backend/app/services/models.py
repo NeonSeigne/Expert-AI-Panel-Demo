@@ -310,6 +310,15 @@ class Session:
     # Phase 1 outputs
     initial_opinions: dict[str, str] = field(default_factory=dict)
     credential_summary: list[dict[str, Any]] = field(default_factory=list)
+    # Per-participant credential builds kicked off as each initial
+    # opinion completes during Phase 1 (concurrent with remaining turns).
+    credential_build_tasks: dict[str, Any] = field(default_factory=dict)
+    credential_entries_by_pid: dict[str, dict[str, Any]] = field(
+        default_factory=dict,
+    )
+    # model_id each credential row was built for; used to rebuild only
+    # when the backing LLM behind a participant changes.
+    credential_model_by_pid: dict[str, str] = field(default_factory=dict)
 
     # Phase 2 / 3 / 4 / 5 message store. Each entry:
     #   { speaker_id, speaker_name, role: "participant"|"orchestrator",

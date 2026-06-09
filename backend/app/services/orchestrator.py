@@ -4,7 +4,7 @@ group discussion to a consensus (or to a documented failure-to-consense).
 Phase outline (matches the build plan):
 
     1. Initial Opinions (independent, no peeking)
-    1.5. Build Credential Summary
+    1.5. Credential Summary (built concurrently during Phase 1)
     2. Critique x 2 rounds (full history visible)
     3. Status Assessment (max 3 iterations of targeted follow-ups)
     4. Opinion Finalization
@@ -53,9 +53,9 @@ from app.services.context_budget import (
     should_summarize,
 )
 from app.services.credential import (
-    build_credential_summary,
+    assemble_credential_summary_list,
+    build_credential_for_participant,
     credentials_to_block,
-    refresh_credential_summary,
 )
 from app.services.json_calls import orchestrator_call
 from app.services.orchestrator_speed import (
@@ -766,6 +766,107 @@ def _participant_turn_failure_sse(
 
 
 # ---------------------------------------------------------------------------
+# Credential summary (concurrent with Phase 1)
+# ---------------------------------------------------------------------------
+
+async def _credential_build_runner(
+    session: Session,
+    participant: Participant,
+    initial_opinion: str,
+) -> None:
+    """Background task: one participant's credential row."""
+    try:
+        cred = await build_credential_for_participant(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            question=session.question,
+            participant=participant,
+            initial_opinion=initial_opinion,
+            api_log=session.api_log,
+        )
+        session.credential_entries_by_pid[participant.participant_id] = cred
+        session.credential_model_by_pid[participant.participant_id] = (
+            participant.model_id
+        )
+        _bump_orchestrator_count(session)
+    except Exception as exc:
+        LOG.exception(
+            "Credential build failed for %s: %s",
+            participant.participant_id,
+            exc,
+        )
+
+
+def _schedule_phase1_credential_build(
+    session: Session,
+    participant: Participant,
+    initial_opinion: str,
+) -> None:
+    """Start (or restart) a background credential build for one AI participant."""
+    if participant.kind == "human":
+        return
+    if not (initial_opinion or "").strip():
+        return
+
+    pid = participant.participant_id
+    existing = session.credential_build_tasks.get(pid)
+    if existing is not None and not existing.done():
+        existing.cancel()
+
+    session.credential_build_tasks[pid] = asyncio.create_task(
+        _credential_build_runner(session, participant, initial_opinion),
+        name=f"credential:{pid}",
+    )
+
+
+def _sync_credential_summary_from_entries(session: Session) -> None:
+    session.credential_summary = assemble_credential_summary_list(
+        participants=_active_participants(session),
+        credential_entries_by_pid=session.credential_entries_by_pid,
+        human_credential=session.human_credential,
+    )
+
+
+async def _await_phase1_credential_tasks(session: Session) -> None:
+    """Wait for any in-flight per-participant credential builds."""
+    tasks = [
+        t for t in session.credential_build_tasks.values()
+        if t is not None and not t.done()
+    ]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _sync_credential_summary_from_entries(session)
+
+
+async def _rebuild_participant_credential_on_model_change(
+    session: Session,
+    participant: Participant,
+) -> bool:
+    """Rebuild one credential row when the backing LLM model changes."""
+    if participant.kind == "human":
+        return False
+    pid = participant.participant_id
+    opinion = (session.initial_opinions or {}).get(pid, "")
+    if not opinion.strip():
+        return False
+    prior_model = session.credential_model_by_pid.get(pid)
+    if not prior_model or prior_model == participant.model_id:
+        return False
+
+    cred = await build_credential_for_participant(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participant=participant,
+        initial_opinion=opinion,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    session.credential_entries_by_pid[pid] = cred
+    session.credential_model_by_pid[pid] = participant.model_id
+    _sync_credential_summary_from_entries(session)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Phase implementations
 # ---------------------------------------------------------------------------
 
@@ -790,7 +891,11 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
             yield chunk
 
     async def _post_initial(result: _AiTurnResult) -> dict[str, Any]:
-        session.initial_opinions[result.participant.participant_id] = result.turn.text
+        speaker = result.turn.speaker
+        session.initial_opinions[speaker.participant_id] = result.turn.text
+        _schedule_phase1_credential_build(
+            session, speaker, result.turn.text,
+        )
         return {}
 
     def _build_initial_spec(p: Participant) -> _AiTurnSpec | None:
@@ -813,21 +918,9 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     ):
         yield chunk
 
-    for chunk in _orchestrator_banner_sse(session, "Building Credential Summary..."):
-        yield chunk
-    creds = await build_credential_summary(
-        orchestrator_model_id=_orchestrator_model_id(session),
-        question=session.question,
-        participants=_active_participants(session),
-        initial_opinions=session.initial_opinions,
-        api_log=session.api_log,
-        human_credential=session.human_credential,
-    )
-    _bump_orchestrator_count(session)
-    session.credential_summary = creds
-    # Surface the freshly-built summary so the frontend can enable the
-    # "View Credential Summary" menu item and cache its snapshot. The
-    # full list also stays available via GET /api/chat/{id}/credentials.
+    # Credential rows were built in parallel as each opinion landed;
+    # only wait here if any background task is still finishing.
+    await _await_phase1_credential_tasks(session)
     yield _sse("credentials_updated", {
         "stage": "built",
         "credentials": session.credential_summary,
@@ -936,7 +1029,6 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
         yield chunk
 
     cred_block = credentials_to_block(session.credential_summary)
-    cred_refreshed = False
 
     for iteration in range(session.limits.status_assessment_max):
         session.status_assessment_iterations = iteration + 1
@@ -973,27 +1065,6 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             )
             yield _sse("orchestrator", _msg_payload(msg))
             return
-
-        # Refresh credentials only when follow-ups are actually needed.
-        if not cred_refreshed:
-            cred_refreshed = True
-            full_transcript = _format_history(session.messages)
-            refreshed = await refresh_credential_summary(
-                orchestrator_model_id=_orchestrator_model_id(session),
-                question=session.question,
-                participants=_active_participants(session),
-                existing=session.credential_summary,
-                critique_transcript=full_transcript,
-                api_log=session.api_log,
-            )
-            _bump_orchestrator_count(session)
-            if refreshed != session.credential_summary:
-                session.credential_summary = refreshed
-                yield _sse("credentials_updated", {
-                    "stage": "refreshed",
-                    "credentials": session.credential_summary,
-                })
-            cred_block = credentials_to_block(session.credential_summary)
 
         # Otherwise run targeted follow-ups
         active_ids = {p.participant_id for p in _active_participants(session)}

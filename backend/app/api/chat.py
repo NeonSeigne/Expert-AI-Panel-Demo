@@ -23,7 +23,10 @@ from typing import Any
 
 from app.clients.hana_client import hana_client
 from app.services import human_io
-from app.services.credential import normalize_one_credential
+from app.services.credential import (
+    build_human_credential_from_profile,
+    normalize_one_credential,
+)
 from app.services.extra_personas import EXTRA_PERSONAS, get_extra_persona
 from app.services.json_calls import orchestrator_call
 from app.services.resilience import build_substitution_chain
@@ -132,8 +135,9 @@ class AutoSelectRequest(BaseModel):
 
 
 class HumanCredentialPayload(BaseModel):
-    """User-authored credential summary for the in-the-loop human.
+    """Structured credential summary for the in-the-loop human.
 
+    Generated from the user's profile text via /credentials/from-profile.
     The orchestrator prepends this entry to the LLM-built credential
     summary so the human always appears first in the modal / exports.
     """
@@ -768,6 +772,40 @@ async def api_edit_human_credential(
             break
 
     return {"ok": True, "credential": updated}
+
+
+class HumanCredentialFromProfileRequest(BaseModel):
+    """Body for POST /api/chat/credentials/from-profile."""
+
+    name: str
+    question: str = ""
+    profile_text: str
+    participant_id: str = ""
+    orchestrator_model_id: str | None = None
+
+
+@router.post("/chat/credentials/from-profile")
+async def api_human_credential_from_profile(req: HumanCredentialFromProfileRequest):
+    """Generate a structured credential summary from a human's profile text.
+
+    The orchestrator assesses the self-description the same way it would
+    a participant role prompt when building the Phase-1 Credential
+    Summary (expertise, style, credibility on this question, biases).
+    """
+    if not req.name.strip():
+        raise HTTPException(400, "name is required")
+    if not req.profile_text.strip():
+        raise HTTPException(400, "profile_text is required")
+
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
+    credential = await build_human_credential_from_profile(
+        orchestrator_model_id=orchestrator_id,
+        question=(req.question or "").strip(),
+        name=req.name.strip(),
+        profile_text=req.profile_text.strip(),
+        participant_id=req.participant_id.strip(),
+    )
+    return {"credential": credential}
 
 
 # Module-level registry of in-flight credential drafts. Each draft is a

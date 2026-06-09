@@ -356,7 +356,10 @@ async def _emit_ai_turn_result(
 
     p = result.participant
     turn = result.turn
+    substituted = False
     for ev in turn.sse_events:
+        if "participant_substituted" in ev:
+            substituted = True
         yield ev
     if not turn.ok:
         for chunk in _participant_turn_failure_sse(session, p):
@@ -379,6 +382,18 @@ async def _emit_ai_turn_result(
         message_id=meta.get("message_id"),
     )
     yield _sse("message", _msg_payload(msg))
+
+    if substituted:
+        from app.services.orchestrator import (
+            _rebuild_participant_credential_on_model_change,
+        )
+        if await _rebuild_participant_credential_on_model_change(
+            session, speaker,
+        ):
+            yield _sse("credentials_updated", {
+                "stage": "model_changed",
+                "credentials": session.credential_summary,
+            })
 
     if _orchestrator_cap_hit(session):
         async for chunk in _wait_for_continue(session, "orchestrator"):

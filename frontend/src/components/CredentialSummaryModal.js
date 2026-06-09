@@ -6,8 +6,9 @@ import { Download, Edit2, Check, X, User } from 'lucide-react';
  * Summary - the per-participant assessment of expertise, debating
  * style, credibility on this question, and biases to watch.
  *
- * Built once after Phase 1 (initial opinions) and refreshed once after
- * Phase 2 (critique). The modal pulls a fresh snapshot via GET
+ * Built concurrently during Phase 1 (as each initial opinion lands).
+ * Rebuilt only if a participant's backing LLM model changes. The modal
+ * pulls a fresh snapshot via GET
  * /api/chat/{id}/credentials each time it's opened, so the user sees
  * the latest version regardless of when they peek.
  *
@@ -62,7 +63,7 @@ export default function CredentialSummaryModal({
             <h2>Credential Summary</h2>
             <div className="ccai-credentials-subtitle">
               The orchestrator's neutral assessment of each participant.
-              Built after Phase 1 and refreshed once after Phase 2 critique.
+              Built during Phase 1; updated only if a participant&apos;s model changes.
             </div>
           </div>
           <div className="ccai-tab-spacer" />

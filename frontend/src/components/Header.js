@@ -23,7 +23,6 @@ export default function Header({
   theme,
   onToggleTheme,
   auth,
-  dailyLimit,
 
   catalog,
   expertPersonas,
@@ -88,7 +87,6 @@ export default function Header({
         </h1>
       </div>
       <div className="header-right">
-        <AuthBadge auth={auth} dailyLimit={dailyLimit} />
         <ParticipantDropdown
           catalog={catalog}
           expertPersonas={expertPersonas}
@@ -174,6 +172,7 @@ export default function Header({
           onShowConversationLimits={onShowConversationLimits}
           conversationLimitsOverridden={conversationLimitsOverridden}
         />
+        <AuthBadge auth={auth} />
       </div>
     </header>
   );

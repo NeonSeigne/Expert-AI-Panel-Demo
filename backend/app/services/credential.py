@@ -1,8 +1,9 @@
 """Credential Summary builder + refresher.
 
 The Credential Summary is a JSON dict (participant_id -> assessment)
-threaded into every later participant turn. It is built once after Phase
-1 and refreshed once after Phase 2 critique.
+threaded into every later participant turn. Each LLM participant's entry
+is built concurrently during Phase 1 (as their initial opinion lands)
+and is only rebuilt later if their backing model changes.
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ from app.services.json_calls import orchestrator_call
 from app.services.prompts import (
     CREDENTIAL_BUILD_PROMPT,
     CREDENTIAL_REFRESH_PROMPT,
+    HUMAN_CREDENTIAL_FROM_PROFILE_PROMPT,
+    SINGLE_PARTICIPANT_CREDENTIAL_BUILD_PROMPT,
 )
 from app.utils.sanitize import strip_thinking
 
@@ -68,8 +71,8 @@ async def build_credential_summary(
 ) -> list[dict[str, Any]]:
     """Build the Credential Summary list. Returns an empty list on parse failure.
 
-    Human participants (kind == "human") are NOT sent to the LLM - the
-    user already authored their own credential summary in the
+    Human participants (kind == "human") are NOT sent to the LLM -
+    their credential was generated from the user's profile text in the
     HumanParticipantModal. We prepend that entry to the front of the
     returned list so the human always appears first in the modal /
     export, and we exclude them from the LLM input so the orchestrator
@@ -99,6 +102,139 @@ async def build_credential_summary(
     if human_credential:
         creds = [normalize_one_credential(human_credential)] + creds
     return creds
+
+
+async def build_credential_for_participant(
+    *,
+    orchestrator_model_id: str,
+    question: str,
+    participant: Any,
+    initial_opinion: str,
+    api_log: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build one credential entry from a role prompt + Phase-1 opinion."""
+    opinion = strip_thinking(initial_opinion or "")
+    prompt = SINGLE_PARTICIPANT_CREDENTIAL_BUILD_PROMPT.format(
+        question=question,
+        participant_id=participant.participant_id,
+        name=participant.name,
+        role_prompt=(participant.role_prompt or "").strip() or "(none)",
+        first_opinion=opinion or "(no opinion recorded)",
+    )
+    _raw, parsed = await orchestrator_call(
+        orchestrator_model_id=orchestrator_model_id,
+        user_prompt=prompt,
+        label=f"build_credential:{participant.participant_id}",
+        api_log=api_log,
+        max_tokens=512,
+    )
+    cred: dict[str, Any] = {}
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("credential"), dict):
+            cred = parsed["credential"]
+        elif isinstance(parsed.get("credentials"), list) and parsed["credentials"]:
+            cred = parsed["credentials"][0]
+
+    merged = {
+        "participant_id": participant.participant_id,
+        "name": participant.name,
+        "expertise": cred.get("expertise", ""),
+        "personality": cred.get("personality", ""),
+        "credibility_for_question": cred.get("credibility_for_question", 0.5),
+        "bias_to_watch": cred.get("bias_to_watch", ""),
+        "is_human": False,
+    }
+    if not merged["expertise"]:
+        merged["expertise"] = "(no credential available)"
+    return normalize_one_credential(merged)
+
+
+def assemble_credential_summary_list(
+    *,
+    participants: list[Any],
+    credential_entries_by_pid: dict[str, dict[str, Any]],
+    human_credential: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Merge per-participant credential rows in roster order (human first)."""
+    creds: list[dict[str, Any]] = []
+    if human_credential:
+        creds.append(normalize_one_credential(human_credential))
+
+    for p in participants:
+        if getattr(p, "kind", "") == "human":
+            continue
+        row = credential_entries_by_pid.get(p.participant_id)
+        if row:
+            creds.append(row)
+        else:
+            creds.append(normalize_one_credential({
+                "participant_id": p.participant_id,
+                "name": p.name,
+                "expertise": "(no credential available)",
+                "personality": "",
+                "credibility_for_question": 0.5,
+                "bias_to_watch": "",
+                "is_human": False,
+            }))
+    return creds
+
+
+async def build_human_credential_from_profile(
+    *,
+    orchestrator_model_id: str,
+    question: str,
+    name: str,
+    profile_text: str,
+    participant_id: str = "",
+    api_log: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Turn a human's freeform self-description into a structured credential.
+
+    Uses the same assessment rubric as Phase-1 credential building for
+    LLM participants (expertise, style, credibility, bias) but sources
+    only the profile text — equivalent to a persona role prompt.
+    """
+    q = (question or "").strip()
+    if q:
+        question_block = f"Question:\n<<<\n{q}\n>>>\n\n"
+    else:
+        question_block = (
+            "Discussion question: (not specified yet). Assess the "
+            "participant in general terms; credibility_for_question "
+            "should reflect their likely relevance once a topic is "
+            "chosen.\n\n"
+        )
+    prompt = HUMAN_CREDENTIAL_FROM_PROFILE_PROMPT.format(
+        question_block=question_block,
+        name=name.strip(),
+        profile_text=profile_text.strip(),
+    )
+    _raw, parsed = await orchestrator_call(
+        orchestrator_model_id=orchestrator_model_id,
+        user_prompt=prompt,
+        label="human_credential_from_profile",
+        api_log=api_log,
+        max_tokens=768,
+    )
+    cred: dict[str, Any] = {}
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("credential"), dict):
+            cred = parsed["credential"]
+        elif isinstance(parsed.get("credentials"), list) and parsed["credentials"]:
+            cred = parsed["credentials"][0]
+
+    merged = {
+        "participant_id": participant_id,
+        "name": name.strip(),
+        "expertise": cred.get("expertise", ""),
+        "personality": cred.get("personality", ""),
+        "credibility_for_question": cred.get("credibility_for_question", 0.55),
+        "bias_to_watch": cred.get("bias_to_watch", ""),
+        "is_human": True,
+    }
+    if not merged["expertise"] and profile_text.strip():
+        merged["expertise"] = profile_text.strip()[:500]
+    return normalize_one_credential(merged)
 
 
 async def refresh_credential_summary(
@@ -160,7 +296,7 @@ def normalize_one_credential(c: dict[str, Any]) -> dict[str, Any]:
         "personality": c.get("personality", ""),
         "credibility_for_question": max(0.0, min(1.0, score)),
         "bias_to_watch": c.get("bias_to_watch", ""),
-        "is_human": bool(c.get("is_human", True)),
+        "is_human": bool(c.get("is_human", False)),
     }
 
 

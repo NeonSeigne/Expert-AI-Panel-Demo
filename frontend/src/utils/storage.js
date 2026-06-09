@@ -30,7 +30,8 @@ const DEFAULTS = {
   auto_select_mode: false,
   // In-the-loop human participant. null when no human is configured.
   // Shape when set:
-  //   { participant_id, name, credential_summary: {
+  //   { participant_id, name, profile_text,
+  //     credential_summary: {
   //       name, expertise, personality,
   //       credibility_for_question, bias_to_watch
   //     } }

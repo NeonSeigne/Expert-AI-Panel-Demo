@@ -9,6 +9,7 @@ import CredentialSummaryModal from './components/CredentialSummaryModal';
 import ConversationLimitsModal from './components/ConversationLimitsModal';
 import PromptCatalogModal from './components/PromptCatalogModal';
 import HumanParticipantModal from './components/HumanParticipantModal';
+import RateLimitNotice from './components/RateLimitNotice';
 import {
   fetchModels, fetchPersonas, fetchDemoQuestions,
   startChat, continueChat, getOrchestrator, setOrchestrator,
@@ -21,6 +22,7 @@ import {
   fetchPromptCatalog,
   getRateLimitStatus,
   submitHumanResponse, patchHumanCredential,
+  generateHumanCredentialFromProfile,
 } from './utils/api';
 import * as storage from './utils/storage';
 import './styles/variables.css';
@@ -28,9 +30,9 @@ import './styles/layout.css';
 import './styles/components.css';
 import './styles/ccai.css';
 
-function pickRandom(list) {
-  if (!list || list.length === 0) return null;
-  return list[Math.floor(Math.random() * list.length)];
+/** True when the user is subject to the per-IP daily chat cap. */
+function isRateLimitedUser(auth) {
+  return auth && !auth.is_org_member && auth.remaining_conversations >= 0;
 }
 
 /** Append a system note at the current point in the chat timeline (not end-of-feed). */
@@ -159,6 +161,10 @@ export default function App() {
   const [humanSubmitting, setHumanSubmitting] = useState(false);
 
   const abortRef = useRef(null);
+  const chatControlsRef = useRef(null);
+  const humanCredentialGenRef = useRef(null);
+  const oneLeftNoticeShownRef = useRef(false);
+  const [rateLimitNotice, setRateLimitNotice] = useState(null);
 
   // ─── Apply theme ────────────────────────────────────────────────
   useEffect(() => {
@@ -195,6 +201,15 @@ export default function App() {
       if (d?.daily_limit) setDailyLimit(d.daily_limit);
     }).catch(() => {});
   }, [persisted.orchestrator_model_id]);
+
+  // Pop up once per session when the daily cap leaves exactly one chat.
+  useEffect(() => {
+    if (!isRateLimitedUser(auth)) return;
+    if (auth.remaining_conversations === 1 && !oneLeftNoticeShownRef.current) {
+      oneLeftNoticeShownRef.current = true;
+      setRateLimitNotice('one_left');
+    }
+  }, [auth]);
 
   // ─── Build a flat list of all models for pickers ────────────────
   const allModelsFlat = useMemo(() => {
@@ -364,13 +379,67 @@ export default function App() {
     setHumanModalOpen(true);
   }, [humanParticipant]);
 
+  const runHumanCredentialGeneration = useCallback(async (spec, question) => {
+    const result = await generateHumanCredentialFromProfile({
+      name: spec.name,
+      question: (question || '').trim(),
+      profile_text: spec.profile_text,
+      participant_id: spec.participant_id,
+      orchestrator_model_id: orchestratorModel || null,
+    });
+    const cred = result.credential || {};
+    return {
+      ...spec,
+      credential_pending: false,
+      credential_built_for_question: (question || '').trim(),
+      credential_summary: {
+        name: cred.name || spec.name,
+        expertise: cred.expertise || '',
+        personality: cred.personality || '',
+        credibility_for_question: typeof cred.credibility_for_question === 'number'
+          ? cred.credibility_for_question
+          : 0.55,
+        bias_to_watch: cred.bias_to_watch || '',
+      },
+    };
+  }, [orchestratorModel]);
+
+  const startHumanCredentialGeneration = useCallback((spec, question) => {
+    const promise = runHumanCredentialGeneration(spec, question)
+      .then((updated) => {
+        setHumanParticipant(prev => (
+          prev && prev.participant_id === spec.participant_id ? updated : prev
+        ));
+        return updated;
+      })
+      .catch((err) => {
+        console.error('Human credential generation failed:', err);
+        setHumanParticipant(prev => (
+          prev && prev.participant_id === spec.participant_id
+            ? { ...prev, credential_pending: false, credential_error: err.message }
+            : prev
+        ));
+        throw err;
+      });
+    humanCredentialGenRef.current = promise;
+    return promise;
+  }, [runHumanCredentialGeneration]);
+
   const handleSaveHuman = useCallback((spec) => {
-    setHumanParticipant(spec);
+    const pending = {
+      ...spec,
+      credential_pending: true,
+      credential_summary: null,
+    };
+    setHumanParticipant(pending);
     setHumanModalOpen(false);
     setHumanEditing(null);
-  }, []);
+    const question = chatControlsRef.current?.getDraftQuestion?.() || '';
+    startHumanCredentialGeneration(pending, question);
+  }, [startHumanCredentialGeneration]);
 
   const handleRemoveHuman = useCallback(() => {
+    humanCredentialGenRef.current = null;
     setHumanParticipant(null);
     setHumanModalOpen(false);
     setHumanEditing(null);
@@ -421,6 +490,7 @@ export default function App() {
             credibility_for_question: updated.credibility_for_question ?? 0.55,
             bias_to_watch: updated.bias_to_watch || '',
           },
+          // profile_text unchanged — edits in the modal only adjust the summary.
         } : prev);
         // Refresh the credentials cache so the modal reflects the edit.
         const data = await fetchCredentials(sessionId);
@@ -586,7 +656,7 @@ export default function App() {
   // `participantsOverride`, if provided, replaces the
   // selectedParticipants-derived list (used by the auto-select flow
   // because the freshly-chosen list isn't in state yet when we need it).
-  const buildStartPayload = useCallback((theQuestion, participantsOverride) => {
+  const buildStartPayload = useCallback((theQuestion, participantsOverride, humanOverride) => {
     // Always honor the sidebar enabled toggles, including when
     // auto-select supplies a participantsOverride list (which used to
     // bypass enabledMap and always prepend a disabled human).
@@ -616,14 +686,15 @@ export default function App() {
     // participants array. Backend rejects start if it sees a human in
     // participants but no human_credential, so this MUST be present
     // whenever the human is enabled.
+    const hp = humanOverride ?? humanParticipant;
     const humanInList = baseList.find(p => p.kind === 'human');
     let human_credential = null;
-    if (humanInList && humanParticipant) {
-      const cs = humanParticipant.credential_summary || {};
+    if (humanInList && hp) {
+      const cs = hp.credential_summary || {};
       human_credential = {
         participant_id: humanInList.participant_id,
         name: humanInList.name,
-        expertise: cs.expertise || '',
+        expertise: cs.expertise || hp.profile_text?.slice(0, 500) || '',
         personality: cs.personality || '',
         credibility_for_question: typeof cs.credibility_for_question === 'number'
           ? cs.credibility_for_question
@@ -673,6 +744,10 @@ export default function App() {
   // ─── Start chat ─────────────────────────────────────────────────
   const handleStart = useCallback(async (theQuestion) => {
     if (!theQuestion || !theQuestion.trim()) return;
+    if (isRateLimitedUser(auth) && auth.remaining_conversations === 0) {
+      setRateLimitNotice('exhausted');
+      return;
+    }
     // In auto-select mode the dropdown has no manual picks - skip the
     // pre-flight count check and validate the chosen pool below instead.
     if (!autoSelectMode && enabledSelectedCount < 2) return;
@@ -768,9 +843,41 @@ export default function App() {
       }
     }
 
+    let humanForStart = humanParticipant;
+    const humanEnabledForStart = humanParticipant
+      && enabledMap[humanParticipant.participant_id] !== false;
+    if (humanEnabledForStart) {
+      const q = theQuestion.trim();
+      const needsQuestionRefresh = q
+        && humanParticipant.credential_built_for_question !== q;
+      if (humanParticipant.credential_pending && humanCredentialGenRef.current) {
+        setStatusText('Finishing credential summary...');
+        try {
+          humanForStart = await humanCredentialGenRef.current;
+        } catch {
+          humanForStart = humanParticipant;
+        }
+      }
+      if (!humanForStart?.credential_summary?.expertise || needsQuestionRefresh) {
+        setStatusText('Preparing credential summary...');
+        try {
+          humanForStart = await runHumanCredentialGeneration(humanParticipant, q);
+          setHumanParticipant(humanForStart);
+          humanCredentialGenRef.current = Promise.resolve(humanForStart);
+        } catch (err) {
+          setIsRunning(false);
+          setStatusText('');
+          setSystemMessages(prev => [...prev, {
+            text: `Could not generate human credential: ${err.message}`,
+          }]);
+          return;
+        }
+      }
+    }
+
     try {
       await startChat(
-        buildStartPayload(theQuestion, resolvedParticipants),
+        buildStartPayload(theQuestion, resolvedParticipants, humanForStart),
         {
           onSession: (data) => {
             setSessionId(data.session_id);
@@ -929,20 +1036,11 @@ export default function App() {
       getAuthStatus().then(setAuth).catch(() => {});
     }
   }, [
-    buildStartPayload, enabledSelectedCount, dailyLimit,
+    buildStartPayload, enabledSelectedCount, dailyLimit, auth,
     autoSelectMode, allCatalogParticipants, modelAssignments,
     maxParticipants, orchestratorModel, enabledMap,
-    humanParticipant, humanCatalogEntry,
+    humanParticipant, humanCatalogEntry, runHumanCredentialGeneration,
   ]);
-
-  const handleStartRandom = useCallback(() => {
-    if (demoQuestions.length === 0) {
-      setSystemMessages(prev => [...prev, { text: 'No demo questions available.' }]);
-      return;
-    }
-    const q = pickRandom(demoQuestions);
-    handleStart(q.text);
-  }, [demoQuestions, handleStart]);
 
   // In auto-select mode we don't require manual picks - the orchestrator
   // will choose them at /chat/start time, so just need 2+ candidates
@@ -964,7 +1062,6 @@ export default function App() {
         theme={theme}
         onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
         auth={auth}
-        dailyLimit={dailyLimit}
         catalog={catalog}
         expertPersonas={expertPersonas}
         selectedIds={selectedIds}
@@ -1023,8 +1120,9 @@ export default function App() {
         />
         <div className="content">
           <ChatControls
-            onStartRandom={handleStartRandom}
-            onStartTyped={handleStart}
+            ref={chatControlsRef}
+            demoQuestions={demoQuestions}
+            onStart={handleStart}
             onStop={handleStop}
             disabled={startDisabled}
             isRunning={isRunning}
@@ -1086,8 +1184,6 @@ export default function App() {
       <HumanParticipantModal
         isOpen={humanModalOpen}
         initial={humanEditing}
-        question={activeQuestion}
-        orchestratorModel={orchestratorModel}
         onClose={() => { setHumanModalOpen(false); setHumanEditing(null); }}
         onSave={handleSaveHuman}
         onRemove={humanEditing ? handleRemoveHuman : null}
@@ -1104,6 +1200,10 @@ export default function App() {
         isOpen={promptCatalogOpen}
         catalog={promptCatalog}
         onClose={() => setPromptCatalogOpen(false)}
+      />
+      <RateLimitNotice
+        kind={rateLimitNotice}
+        onClose={() => setRateLimitNotice(null)}
       />
     </div>
   );
