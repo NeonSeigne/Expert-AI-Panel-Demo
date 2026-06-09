@@ -177,6 +177,7 @@ async def run_roster_ai_turns_parallel(
     from app.services.orchestrator import (
         _msg_payload,
         _participant_msg_cap_hit,
+        _participant_turn_failure_sse,
         _sse,
         _wait_for_continue,
     )
@@ -237,6 +238,104 @@ async def run_roster_ai_turns_parallel(
         yield chunk
 
 
+async def run_initial_opinions_roster(
+    session: "Session",
+    actives: list["Participant"],
+    *,
+    build_spec: Callable[["Participant"], _AiTurnSpec | None],
+    call_participant: CallParticipantFn,
+    on_human_turn: Callable[
+        ["Participant"],
+        AsyncIterator[str],
+    ],
+    post_process: PostProcessFn | None = None,
+) -> AsyncIterator[str]:
+    """Phase-1 roster walk with human-aware AI prefetch.
+
+    When a human is in the roster, every AI participant's initial-
+    opinion call is fired immediately (in parallel) so answers are ready
+    while the human types. SSE ``message`` events are still emitted in
+    roster order: any LLMs listed before the human appear as soon as
+    their prefetch completes, and LLMs after the human stay hidden until
+    the human submits (or skips).
+    """
+    from app.services.models import Phase
+    from app.services.orchestrator import (
+        _participant_msg_cap_hit,
+        _sse,
+        _wait_for_continue,
+    )
+
+    phase = Phase.INITIAL_OPINIONS
+    has_human = any(p.kind == "human" for p in actives)
+    if not has_human:
+        async for chunk in run_roster_ai_turns_parallel(
+            session,
+            actives,
+            phase=phase,
+            build_spec=build_spec,
+            call_participant=call_participant,
+            on_human_turn=on_human_turn,
+            post_process=post_process,
+        ):
+            yield chunk
+        return
+
+    pending: dict[str, asyncio.Task[_AiTurnResult]] = {}
+    for p in actives:
+        if p.kind == "human":
+            continue
+        spec = build_spec(p)
+        if spec is None:
+            continue
+        pending[p.participant_id] = asyncio.create_task(
+            _execute_ai_turn(session, spec, call_participant),
+            name=f"prefetch_initial:{p.participant_id}",
+        )
+
+    for p in actives:
+        if p.kind == "human":
+            async for chunk in on_human_turn(p):
+                yield chunk
+            if _participant_msg_cap_hit(session):
+                async for chunk in _wait_for_continue(session, "messages"):
+                    yield chunk
+            continue
+
+        task = pending.pop(p.participant_id, None)
+        if task is None:
+            continue
+        try:
+            result = await task
+        except BaseException as exc:
+            LOG.exception(
+                "Prefetched initial opinion failed for %s: %s",
+                p.participant_id,
+                exc,
+            )
+            yield _sse("participant_error", {
+                "participant_id": p.participant_id,
+                "name": p.name,
+                "phase": phase.value,
+            })
+            continue
+
+        extra: dict[str, Any] | None = None
+        if post_process is not None:
+            extra = await post_process(result) or {}
+        async for chunk in _emit_ai_turn_result(
+            session, result, phase=phase, extra=extra,
+        ):
+            yield chunk
+        if _participant_msg_cap_hit(session):
+            async for chunk in _wait_for_continue(session, "messages"):
+                yield chunk
+
+    for pid, task in pending.items():
+        if not task.done():
+            task.cancel()
+
+
 async def _emit_ai_turn_result(
     session: "Session",
     result: _AiTurnResult,
@@ -249,6 +348,7 @@ async def _emit_ai_turn_result(
         _add_participant_message,
         _msg_payload,
         _orchestrator_cap_hit,
+        _participant_turn_failure_sse,
         _replying_to_ids,
         _sse,
         _wait_for_continue,
@@ -259,19 +359,8 @@ async def _emit_ai_turn_result(
     for ev in turn.sse_events:
         yield ev
     if not turn.ok:
-        yield _sse("participant_error", {
-            "participant_id": p.participant_id,
-            "name": p.name,
-            "phase": phase.value,
-        })
-        if p.consecutive_failures >= session.limits.auto_disable_failures:
-            p.enabled = False
-            yield _sse("status", {
-                "message": (
-                    f"{p.name} auto-disabled after "
-                    f"{session.limits.auto_disable_failures} failures."
-                ),
-            })
+        for chunk in _participant_turn_failure_sse(session, p):
+            yield chunk
         return
 
     speaker = turn.speaker

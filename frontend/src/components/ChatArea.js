@@ -74,8 +74,15 @@ export default function ChatArea({
         </div>
       )}
       {(messages || []).map((msg, i) => {
+        if (msg.role === 'system') {
+          return (
+            <div key={msg.message_id || `sys-inline-${i}`} className="system-message">
+              {msg.text}
+            </div>
+          );
+        }
         if (msg.role === 'orchestrator') {
-          return <OrchestratorMessage key={i} message={msg} messageIdx={i} />;
+          return <OrchestratorMessage key={msg.message_id || i} message={msg} messageIdx={i} />;
         }
         const idx = speakerIdxFor[msg.speaker_id] ?? i;
         const prev = i > 0 ? messages[i - 1] : null;

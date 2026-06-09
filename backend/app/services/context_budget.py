@@ -176,6 +176,87 @@ def build_compressed_messages(
 
 
 # ---------------------------------------------------------------------------
+# Compress transcript embedded inside a single user prompt (CCAI pattern)
+# ---------------------------------------------------------------------------
+#
+# Phase prompts bake the full transcript into one user message, e.g.
+# "Conversation so far:\n{transcript}\n\nIn 4-8 sentences:…". The AskJerry
+# multi-message trim path never fires because api_messages only has
+# [system, user]. These helpers swap the transcript body for summary+tail.
+
+_TRANSCRIPT_HEADERS: tuple[str, ...] = (
+    "Conversation so far:\n",
+    "Full conversation so far:\n",
+    "Full transcript:\n",
+    "Full conversation:\n",
+)
+
+# Section headers that typically follow the transcript block in phase prompts.
+_TRANSCRIPT_FOOTERS: tuple[str, ...] = (
+    "\n\nOpen threads",
+    "\n\nIn ",
+    "\n\nFIRST",
+    "\n\nThe orchestrator",
+    "\n\nRight now",
+    "\n\nPhase ",
+    "\n\nQuestion:\n",
+    "\n\nCredential Summary:\n",
+    "\n\nBelow is",
+    "\n\nTargeted question:\n",
+)
+
+
+def replace_embedded_transcript(user_prompt: str, new_transcript: str) -> str:
+    """Replace the transcript body inside a phase prompt, if a known header exists."""
+    for header in _TRANSCRIPT_HEADERS:
+        idx = user_prompt.find(header)
+        if idx < 0:
+            continue
+        start = idx + len(header)
+        rest = user_prompt[start:]
+        end = len(rest)
+        for footer in _TRANSCRIPT_FOOTERS:
+            pos = rest.find(footer)
+            if pos >= 0:
+                end = min(end, pos)
+        return user_prompt[:start] + new_transcript + rest[end:]
+    return user_prompt
+
+
+def build_compressed_transcript_block(
+    summary: ContextSummary,
+    recent_transcript: str,
+) -> str:
+    """AskJerry-style block: running summary + recent tail."""
+    recent = (recent_transcript or "").strip()
+    if summary.is_active():
+        body = (
+            "[Earlier discussion summary]\n"
+            + summary.summary_text.strip()
+        )
+        if recent:
+            body += "\n\n[Recent messages]\n" + recent
+        return body
+    if recent:
+        return "[Recent messages — auto-trimmed for context]\n" + recent
+    return ""
+
+
+def cap_max_tokens_for_window(
+    model_id: str,
+    api_messages: list[dict[str, Any]],
+    requested_max_tokens: int,
+) -> int:
+    """Shrink reply budget so input + output fits the model window (AskJerry)."""
+    window = context_window_for(model_id)
+    est = estimate_messages_tokens(api_messages)
+    headroom = window - est - 64
+    if headroom < 256:
+        return max(64, min(requested_max_tokens, headroom))
+    return min(requested_max_tokens, headroom)
+
+
+# ---------------------------------------------------------------------------
 # Run a summarize call against the configured summarizer model
 # ---------------------------------------------------------------------------
 

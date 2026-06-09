@@ -33,6 +33,16 @@ function pickRandom(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+/** Append a system note at the current point in the chat timeline (not end-of-feed). */
+function appendInlineChatNote(setMessages, text, extra = {}) {
+  setMessages(prev => [...prev, {
+    role: 'system',
+    text,
+    timestamp: Date.now() / 1000,
+    ...extra,
+  }]);
+}
+
 export default function App() {
   // Persistent state
   const persisted = useMemo(() => storage.loadState(), []);
@@ -800,9 +810,6 @@ export default function App() {
             )));
           },
           onOrchestrator: (data) => {
-            // Orchestrator events with kind == "status" but no text are
-            // status banners; bubble them into a message-style entry so
-            // they render with the orchestrator pill.
             if (data && data.text) {
               setMessages(prev => [...prev, { ...data, role: 'orchestrator' }]);
             } else if (data?.message) {
@@ -821,39 +828,35 @@ export default function App() {
             setSystemMessages(prev => [...prev, { text: `Error: ${data.message}` }]);
           },
           onParticipantError: (data) => {
-            setSystemMessages(prev => [...prev, {
-              text: `${data.name || 'A participant'} couldn't respond this turn.`,
-            }]);
+            const text = `${data.name || 'A participant'} couldn't respond this turn.`;
+            appendInlineChatNote(setMessages, text, {
+              kind: 'participant_error',
+              phase: data.phase,
+              participant_id: data.participant_id,
+            });
           },
           onParticipantSubstituted: (data) => {
-            // Resilience layer swapped the backing LLM behind a
-            // persona's prompt+name. Surface it as a system note so
-            // the user can reconcile any change in voice / latency
-            // with the chat metadata.
             const name = data.name || 'A participant';
             const toDisplay = data.to_model_display || data.to_model_id || 'a substitute model';
-            setSystemMessages(prev => [...prev, {
-              text: `${name}'s primary model didn't respond; continuing with ${toDisplay}.`,
-            }]);
+            appendInlineChatNote(
+              setMessages,
+              `${name}'s primary model didn't respond; continuing with ${toDisplay}.`,
+              { kind: 'participant_substituted', phase: data.phase },
+            );
           },
           onParticipantReplaced: (data) => {
-            // Phase 1 alternate kicked in. Replace the session
-            // roster snapshot so the sidebar re-renders with the
-            // new participant; also note the change in chat.
             if (Array.isArray(data?.roster)) {
               setSessionParticipants(data.roster);
             }
             const origName = data.original_name || 'A participant';
             const altName = data.new_name || 'an alternate';
-            setSystemMessages(prev => [...prev, {
-              text: `${origName} couldn't give an initial opinion; ${altName} is taking their place.`,
-            }]);
+            appendInlineChatNote(
+              setMessages,
+              `${origName} couldn't give an initial opinion; ${altName} is taking their place.`,
+              { kind: 'participant_replaced', phase: data.phase },
+            );
           },
           onVoteCast: (data) => {
-            // One per-ballot from a vote-based decision method. We
-            // surface these as system notes so the user can follow
-            // the tally as it happens; the final report message will
-            // contain the canonical summary.
             const voter = data?.voter_name || 'A voter';
             let line;
             if (data?.vote) {
@@ -865,16 +868,15 @@ export default function App() {
             } else {
               line = `${voter} abstained or returned an invalid ballot.`;
             }
-            setSystemMessages(prev => [...prev, { text: line }]);
+            appendInlineChatNote(setMessages, line, { kind: 'vote_cast' });
           },
           onVoteTally: (data) => {
-            // Final tally summary. The orchestrator message that
-            // follows contains the rendered report, so we just log
-            // a one-liner here for the system feed.
             const kind = data?.kind || 'vote';
-            setSystemMessages(prev => [...prev, {
-              text: `Vote complete (${kind}); see report below.`,
-            }]);
+            appendInlineChatNote(
+              setMessages,
+              `Vote complete (${kind}); see report below.`,
+              { kind: 'vote_tally' },
+            );
           },
           onFailsafePause: (data) => {
             setPause({ reason: 'messages', ...data });
