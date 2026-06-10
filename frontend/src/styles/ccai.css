@@ -533,6 +533,7 @@
   border-collapse: collapse;
   font-size: 12px;
   color: var(--text-primary);
+  table-layout: fixed;
 }
 
 .ccai-table th,
@@ -552,6 +553,18 @@
   color: var(--text-tertiary);
   position: sticky;
   top: 0;
+}
+
+.ccai-table th:first-child,
+.ccai-table td:first-child {
+  width: 15%;
+}
+
+.ccai-table th:nth-child(n + 2),
+.ccai-table td:nth-child(n + 2) {
+  width: 21.25%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .ccai-table-name {
