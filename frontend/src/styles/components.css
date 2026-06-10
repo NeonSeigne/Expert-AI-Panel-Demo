@@ -1144,6 +1144,10 @@
   color: var(--text-primary);
 }
 
+.auth-badge-end {
+  margin-left: 4px;
+}
+
 /* ── Footer ─────────────────────────────────────────────────────── */
 
 .app-footer {

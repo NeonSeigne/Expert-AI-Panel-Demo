@@ -180,6 +180,9 @@ async def _call_neon_direct_vllm(
         "response": strip_thinking(result.get("response", "")),
         "elapsed_seconds": result.get("elapsed_seconds", 0),
         "model": resolved["model_id"],
+        "error": result.get("error", False),
+        "error_kind": result.get("error_kind", ""),
+        "error_status": result.get("error_status"),
     }
 
 

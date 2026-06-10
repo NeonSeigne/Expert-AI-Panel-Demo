@@ -14,6 +14,8 @@ from app.services.prompts.initial_opinions import INITIAL_OPINION_PROMPT
 from app.services.prompts.credential_summary import (
     CREDENTIAL_BUILD_PROMPT,
     CREDENTIAL_REFRESH_PROMPT,
+    HUMAN_CREDENTIAL_FROM_PROFILE_PROMPT,
+    SINGLE_PARTICIPANT_CREDENTIAL_BUILD_PROMPT,
 )
 from app.services.prompts.critique import CRITIQUE_PROMPT
 from app.services.prompts.status_assessment import (
@@ -48,6 +50,8 @@ __all__ = [
     "INITIAL_OPINION_PROMPT",
     "CREDENTIAL_BUILD_PROMPT",
     "CREDENTIAL_REFRESH_PROMPT",
+    "HUMAN_CREDENTIAL_FROM_PROFILE_PROMPT",
+    "SINGLE_PARTICIPANT_CREDENTIAL_BUILD_PROMPT",
     "CRITIQUE_PROMPT",
     "STATUS_ASSESSMENT_PROMPT",
     "TARGETED_FOLLOWUP_PROMPT",

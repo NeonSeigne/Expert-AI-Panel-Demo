@@ -23,7 +23,10 @@ from typing import Any
 
 from app.clients.hana_client import hana_client
 from app.services import human_io
-from app.services.credential import normalize_one_credential
+from app.services.credential import (
+    build_human_credential_from_profile,
+    normalize_one_credential,
+)
 from app.services.extra_personas import EXTRA_PERSONAS, get_extra_persona
 from app.services.json_calls import orchestrator_call
 from app.services.resilience import build_substitution_chain
@@ -132,8 +135,9 @@ class AutoSelectRequest(BaseModel):
 
 
 class HumanCredentialPayload(BaseModel):
-    """User-authored credential summary for the in-the-loop human.
+    """Structured credential summary for the in-the-loop human.
 
+    Generated from the user's profile text via /credentials/from-profile.
     The orchestrator prepends this entry to the LLM-built credential
     summary so the human always appears first in the modal / exports.
     """
@@ -354,6 +358,17 @@ async def api_demo_questions():
 # Start chat
 # ---------------------------------------------------------------------------
 
+def _neon_role_prompt_from_model_id(model_id: str) -> str:
+    """Look up a Neon persona's HANA system_prompt from the client cache."""
+    if not model_id.startswith("neon:"):
+        return ""
+    parts = model_id.split(":", 2)
+    if len(parts) != 3:
+        return ""
+    sp = hana_client.get_persona_system_prompt(parts[1], parts[2])
+    return (sp or "").strip()
+
+
 def _build_participant(
     sel: ParticipantSelectionPayload,
     expert_lookup: dict[str, ExpertPersonaPayload],
@@ -411,6 +426,8 @@ def _build_participant(
         if not model_id:
             model_id = pid
         if not role_prompt:
+            role_prompt = _neon_role_prompt_from_model_id(model_id)
+        if not role_prompt:
             role_prompt = (
                 f"You are {name}, a Neon.ai persona. Speak naturally in your "
                 "own voice and bring the perspective your background suggests."
@@ -434,6 +451,11 @@ def _build_participant(
         )
     else:
         raise HTTPException(400, f"Unknown participant kind: {kind}")
+
+    # When the user assigns a Neon model to a non-Neon persona, surface
+    # that model's HANA persona prompt for inference context.
+    if not role_prompt and model_id.startswith("neon:"):
+        role_prompt = _neon_role_prompt_from_model_id(model_id)
 
     resolved = settings.resolve_model(model_id)
     if not resolved:
@@ -479,6 +501,13 @@ async def api_start_chat(req: StartChatRequest, request: Request):
         )
 
     expert_lookup = {ep.participant_id: ep for ep in req.expert_personas}
+
+    # Populate the HANA persona prompt cache so Neon role_prompt
+    # resolution works even if /api/models hasn't been called yet.
+    try:
+        await hana_client.get_models()
+    except Exception as exc:
+        LOG.warning("HANA get_models during chat start failed: %s", exc)
 
     max_p = max(MIN_MAX_PARTICIPANTS, min(MAX_MAX_PARTICIPANTS, req.max_participants))
     if len(req.participants) < 2:
@@ -743,6 +772,40 @@ async def api_edit_human_credential(
             break
 
     return {"ok": True, "credential": updated}
+
+
+class HumanCredentialFromProfileRequest(BaseModel):
+    """Body for POST /api/chat/credentials/from-profile."""
+
+    name: str
+    question: str = ""
+    profile_text: str
+    participant_id: str = ""
+    orchestrator_model_id: str | None = None
+
+
+@router.post("/chat/credentials/from-profile")
+async def api_human_credential_from_profile(req: HumanCredentialFromProfileRequest):
+    """Generate a structured credential summary from a human's profile text.
+
+    The orchestrator assesses the self-description the same way it would
+    a participant role prompt when building the Phase-1 Credential
+    Summary (expertise, style, credibility on this question, biases).
+    """
+    if not req.name.strip():
+        raise HTTPException(400, "name is required")
+    if not req.profile_text.strip():
+        raise HTTPException(400, "profile_text is required")
+
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
+    credential = await build_human_credential_from_profile(
+        orchestrator_model_id=orchestrator_id,
+        question=(req.question or "").strip(),
+        name=req.name.strip(),
+        profile_text=req.profile_text.strip(),
+        participant_id=req.participant_id.strip(),
+    )
+    return {"credential": credential}
 
 
 # Module-level registry of in-flight credential drafts. Each draft is a

@@ -46,11 +46,13 @@ async def get_personas():
             persona_name = p.get("persona_name") or ""
             if _is_vanilla_or_rag(persona_name):
                 continue
+            system_prompt = (p.get("system_prompt") or "").strip()
             raw_neon.append({
                 "model_id": nm["model_id"],
                 "model_short": model_short,
                 "persona_name": persona_name,
                 "description": p.get("description") or "",
+                "role_prompt": system_prompt,
             })
 
     # Pass 2: batch-reformat display names via the orchestrator LLM
@@ -72,6 +74,7 @@ async def get_personas():
             "model_display": r["model_short"],
             "default_model_id": participant_id,
             "description": r["description"],
+            "role_prompt": r.get("role_prompt") or "",
         })
 
     extras = list_extra_personas()

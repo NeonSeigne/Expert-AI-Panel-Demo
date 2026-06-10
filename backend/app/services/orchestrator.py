@@ -4,7 +4,7 @@ group discussion to a consensus (or to a documented failure-to-consense).
 Phase outline (matches the build plan):
 
     1. Initial Opinions (independent, no peeking)
-    1.5. Build Credential Summary
+    1.5. Credential Summary (built concurrently during Phase 1)
     2. Critique x 2 rounds (full history visible)
     3. Status Assessment (max 3 iterations of targeted follow-ups)
     4. Opinion Finalization
@@ -43,17 +43,19 @@ from app.services.context_budget import (
     ContextSummary,
     DEFAULT_REPLY_BUDGET,
     KEEP_RECENT_MESSAGES,
-    build_compressed_messages,
+    build_compressed_transcript_block,
+    cap_max_tokens_for_window,
     context_window_for,
     estimate_messages_tokens,
+    replace_embedded_transcript,
     run_summarize,
     select_summarizer_model_id,
     should_summarize,
 )
 from app.services.credential import (
-    build_credential_summary,
+    assemble_credential_summary_list,
+    build_credential_for_participant,
     credentials_to_block,
-    refresh_credential_summary,
 )
 from app.services.json_calls import orchestrator_call
 from app.services.orchestrator_speed import (
@@ -61,6 +63,7 @@ from app.services.orchestrator_speed import (
     _AiTurnSpec,
     compact_transcript_for_orchestrator,
     orchestrator_fast_model_id,
+    run_initial_opinions_roster,
     run_roster_ai_turns_parallel,
 )
 from app.services.resilience import run_resilient_turn
@@ -298,7 +301,8 @@ async def _wait_for_continue(
     else:
         session.orchestrator_call_cap += bump_inc
     session.pause_reason = None
-    yield _sse("status", {"message": "Resuming conversation..."})
+    for chunk in _orchestrator_banner_sse(session, "Resuming conversation..."):
+        yield chunk
 
 
 # ---------------------------------------------------------------------------
@@ -546,13 +550,38 @@ async def _call_participant(
 
     await _maybe_summarize_for_participant(session, participant, api_messages)
 
-    needs_sum, needs_trim, _ = should_summarize(
+    needs_sum, needs_trim, input_budget = should_summarize(
         participant.model_id, api_messages, participant.summary,
     )
-    if needs_trim:
-        api_messages = build_compressed_messages(
-            api_messages, participant.summary, needs_trim,
+
+    # CCAI embeds the transcript inside the user prompt. When over budget,
+    # swap that block for summary + recent tail (AskJerry pattern).
+    if needs_sum or needs_trim:
+        recent_transcript = _format_history(
+            session.messages[-KEEP_RECENT_MESSAGES:],
+            include_orchestrator=False,
         )
+        compressed_block = build_compressed_transcript_block(
+            participant.summary,
+            recent_transcript,
+        )
+        if compressed_block:
+            new_prompt = replace_embedded_transcript(user_prompt, compressed_block)
+            user_prompt = new_prompt
+            api_messages[1] = {"role": "user", "content": user_prompt}
+        elif len(user_prompt) > input_budget * 4:
+            # Last-resort: keep prompt head + tail if no transcript header matched.
+            keep = max(512, input_budget * 2)
+            user_prompt = (
+                user_prompt[:keep]
+                + "\n\n[…middle truncated for context…]\n\n"
+                + user_prompt[-keep:]
+            )
+            api_messages[1] = {"role": "user", "content": user_prompt}
+
+    max_tokens = cap_max_tokens_for_window(
+        participant.model_id, api_messages, max_tokens,
+    )
 
     resolved = {
         "model_id": participant.model_id,
@@ -699,13 +728,154 @@ def _msg_payload(msg: dict[str, Any]) -> dict[str, Any]:
     return msg
 
 
+def _orchestrator_banner_sse(
+    session: Session,
+    text: str,
+    *,
+    kind: str = "status",
+    extra: dict[str, Any] | None = None,
+) -> list[str]:
+    """Append an orchestrator line to the transcript and emit chat + status SSE."""
+    msg = _add_orchestrator_message(session, text, kind=kind, extra=extra)
+    return [
+        _sse("orchestrator", _msg_payload(msg)),
+        _sse("status", {"message": text}),
+    ]
+
+
+def _participant_turn_failure_sse(
+    session: Session,
+    participant: Participant,
+) -> list[str]:
+    """Emit participant_error and auto-disable banner when threshold hit."""
+    out = [
+        _sse("participant_error", {
+            "participant_id": participant.participant_id,
+            "name": participant.name,
+            "phase": session.phase.value,
+        }),
+    ]
+    if participant.consecutive_failures >= session.limits.auto_disable_failures:
+        participant.enabled = False
+        out.extend(_orchestrator_banner_sse(
+            session,
+            f"{participant.name} auto-disabled after "
+            f"{session.limits.auto_disable_failures} consecutive failures.",
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Credential summary (concurrent with Phase 1)
+# ---------------------------------------------------------------------------
+
+async def _credential_build_runner(
+    session: Session,
+    participant: Participant,
+    initial_opinion: str,
+) -> None:
+    """Background task: one participant's credential row."""
+    try:
+        cred = await build_credential_for_participant(
+            orchestrator_model_id=_orchestrator_model_id(session),
+            question=session.question,
+            participant=participant,
+            initial_opinion=initial_opinion,
+            api_log=session.api_log,
+        )
+        session.credential_entries_by_pid[participant.participant_id] = cred
+        session.credential_model_by_pid[participant.participant_id] = (
+            participant.model_id
+        )
+        _bump_orchestrator_count(session)
+    except Exception as exc:
+        LOG.exception(
+            "Credential build failed for %s: %s",
+            participant.participant_id,
+            exc,
+        )
+
+
+def _schedule_phase1_credential_build(
+    session: Session,
+    participant: Participant,
+    initial_opinion: str,
+) -> None:
+    """Start (or restart) a background credential build for one AI participant."""
+    if participant.kind == "human":
+        return
+    if not (initial_opinion or "").strip():
+        return
+
+    pid = participant.participant_id
+    existing = session.credential_build_tasks.get(pid)
+    if existing is not None and not existing.done():
+        existing.cancel()
+
+    session.credential_build_tasks[pid] = asyncio.create_task(
+        _credential_build_runner(session, participant, initial_opinion),
+        name=f"credential:{pid}",
+    )
+
+
+def _sync_credential_summary_from_entries(session: Session) -> None:
+    session.credential_summary = assemble_credential_summary_list(
+        participants=_active_participants(session),
+        credential_entries_by_pid=session.credential_entries_by_pid,
+        human_credential=session.human_credential,
+    )
+
+
+async def _await_phase1_credential_tasks(session: Session) -> None:
+    """Wait for any in-flight per-participant credential builds."""
+    tasks = [
+        t for t in session.credential_build_tasks.values()
+        if t is not None and not t.done()
+    ]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _sync_credential_summary_from_entries(session)
+
+
+async def _rebuild_participant_credential_on_model_change(
+    session: Session,
+    participant: Participant,
+) -> bool:
+    """Rebuild one credential row when the backing LLM model changes."""
+    if participant.kind == "human":
+        return False
+    pid = participant.participant_id
+    opinion = (session.initial_opinions or {}).get(pid, "")
+    if not opinion.strip():
+        return False
+    prior_model = session.credential_model_by_pid.get(pid)
+    if not prior_model or prior_model == participant.model_id:
+        return False
+
+    cred = await build_credential_for_participant(
+        orchestrator_model_id=_orchestrator_model_id(session),
+        question=session.question,
+        participant=participant,
+        initial_opinion=opinion,
+        api_log=session.api_log,
+    )
+    _bump_orchestrator_count(session)
+    session.credential_entries_by_pid[pid] = cred
+    session.credential_model_by_pid[pid] = participant.model_id
+    _sync_credential_summary_from_entries(session)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Phase implementations
 # ---------------------------------------------------------------------------
 
 async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     session.phase = Phase.INITIAL_OPINIONS
-    yield _sse("status", {"message": "Phase 1: collecting independent first opinions..."})
+    for chunk in _orchestrator_banner_sse(
+        session, "Phase 1: collecting independent first opinions...",
+    ):
+        yield chunk
 
     actives = _active_participants(session)
 
@@ -721,7 +891,11 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
             yield chunk
 
     async def _post_initial(result: _AiTurnResult) -> dict[str, Any]:
-        session.initial_opinions[result.participant.participant_id] = result.turn.text
+        speaker = result.turn.speaker
+        session.initial_opinions[speaker.participant_id] = result.turn.text
+        _schedule_phase1_credential_build(
+            session, speaker, result.turn.text,
+        )
         return {}
 
     def _build_initial_spec(p: Participant) -> _AiTurnSpec | None:
@@ -734,10 +908,9 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
             max_tokens=700,
         )
 
-    async for chunk in run_roster_ai_turns_parallel(
+    async for chunk in run_initial_opinions_roster(
         session,
         actives,
-        phase=session.phase,
         build_spec=_build_initial_spec,
         call_participant=_call_participant,
         on_human_turn=_human_initial,
@@ -745,20 +918,9 @@ async def _phase_initial_opinions(session: Session) -> AsyncIterator[str]:
     ):
         yield chunk
 
-    yield _sse("status", {"message": "Building Credential Summary..."})
-    creds = await build_credential_summary(
-        orchestrator_model_id=_orchestrator_model_id(session),
-        question=session.question,
-        participants=_active_participants(session),
-        initial_opinions=session.initial_opinions,
-        api_log=session.api_log,
-        human_credential=session.human_credential,
-    )
-    _bump_orchestrator_count(session)
-    session.credential_summary = creds
-    # Surface the freshly-built summary so the frontend can enable the
-    # "View Credential Summary" menu item and cache its snapshot. The
-    # full list also stays available via GET /api/chat/{id}/credentials.
+    # Credential rows were built in parallel as each opinion landed;
+    # only wait here if any background task is still finishing.
+    await _await_phase1_credential_tasks(session)
     yield _sse("credentials_updated", {
         "stage": "built",
         "credentials": session.credential_summary,
@@ -784,9 +946,11 @@ def _critique_phase_for(round_number: int) -> Phase:
 async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[str]:
     session.phase = _critique_phase_for(round_number)
     round_total = session.limits.critique_rounds
-    yield _sse("status", {
-        "message": f"Phase 2: critique round {round_number} of {round_total}...",
-    })
+    for chunk in _orchestrator_banner_sse(
+        session,
+        f"Phase 2: critique round {round_number} of {round_total}...",
+    ):
+        yield chunk
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
     # Freeze transcript + pending threads at round start so parallel
@@ -859,10 +1023,12 @@ async def _phase_critique(session: Session, round_number: int) -> AsyncIterator[
 
 async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
     session.phase = Phase.STATUS_ASSESSMENT
-    yield _sse("status", {"message": "Phase 3: assessing whether more questions are needed..."})
+    for chunk in _orchestrator_banner_sse(
+        session, "Phase 3: assessing whether more questions are needed...",
+    ):
+        yield chunk
 
     cred_block = credentials_to_block(session.credential_summary)
-    cred_refreshed = False
 
     for iteration in range(session.limits.status_assessment_max):
         session.status_assessment_iterations = iteration + 1
@@ -899,27 +1065,6 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             )
             yield _sse("orchestrator", _msg_payload(msg))
             return
-
-        # Refresh credentials only when follow-ups are actually needed.
-        if not cred_refreshed:
-            cred_refreshed = True
-            full_transcript = _format_history(session.messages)
-            refreshed = await refresh_credential_summary(
-                orchestrator_model_id=_orchestrator_model_id(session),
-                question=session.question,
-                participants=_active_participants(session),
-                existing=session.credential_summary,
-                critique_transcript=full_transcript,
-                api_log=session.api_log,
-            )
-            _bump_orchestrator_count(session)
-            if refreshed != session.credential_summary:
-                session.credential_summary = refreshed
-                yield _sse("credentials_updated", {
-                    "stage": "refreshed",
-                    "credentials": session.credential_summary,
-                })
-            cred_block = credentials_to_block(session.credential_summary)
 
         # Otherwise run targeted follow-ups
         active_ids = {p.participant_id for p in _active_participants(session)}
@@ -996,10 +1141,8 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
             for ev in turn.sse_events:
                 yield ev
             if not turn.ok:
-                yield _sse("participant_error", {
-                    "participant_id": target.participant_id, "name": target.name,
-                    "phase": session.phase.value,
-                })
+                for chunk in _participant_turn_failure_sse(session, target):
+                    yield chunk
                 continue
             speaker = turn.speaker
             text, elapsed = turn.text, turn.elapsed
@@ -1031,7 +1174,8 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
 
 async def _phase_finalization(session: Session) -> AsyncIterator[str]:
     session.phase = Phase.FINALIZATION
-    yield _sse("status", {"message": "Phase 4: opinion finalization..."})
+    for chunk in _orchestrator_banner_sse(session, "Phase 4: opinion finalization..."):
+        yield chunk
 
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
@@ -1089,7 +1233,8 @@ async def _phase_finalization(session: Session) -> AsyncIterator[str]:
 
 async def _phase_consensus(session: Session) -> AsyncIterator[str]:
     session.phase = Phase.CONSENSUS
-    yield _sse("status", {"message": "Phase 5: consensus gathering..."})
+    for chunk in _orchestrator_banner_sse(session, "Phase 5: consensus gathering..."):
+        yield chunk
 
     cred_block = credentials_to_block(session.credential_summary)
     actives = _active_participants(session)
@@ -1108,7 +1253,12 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
     # Render alliance group members using the same display names shown
     # in the sidebar (Participant.name), not raw participant_ids.
     id_to_name = {p.participant_id: p.name for p in actives}
-    announce = "Alliance groups detected: " + "; ".join(
+    alliance_prefix = (
+        "Updated alliance groups detected: "
+        if session.consensus_attempts > 0
+        else "Alliance groups detected: "
+    )
+    announce = alliance_prefix + "; ".join(
         f"\"{g.get('stance', '')}\" -> ["
         + ", ".join(
             id_to_name.get(m, m) for m in (g.get("members") or [])
@@ -1139,6 +1289,10 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
 
     while consensus_turns < max_consensus_turns:
         consensus_turns += 1
+        actives = _active_participants(session)
+        if len(actives) < 2:
+            break
+        queue = [p for p in queue if p.enabled]
 
         # Pick speaker. Prefer the addressed-to target (dyadic exchange)
         # only while we're under the consecutive-routing cap. Once the
@@ -1216,10 +1370,8 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         for ev in turn.sse_events:
             yield ev
         if not turn.ok:
-            yield _sse("participant_error", {
-                "participant_id": speaker.participant_id, "name": speaker.name,
-                "phase": session.phase.value,
-            })
+            for chunk in _participant_turn_failure_sse(session, speaker):
+                yield chunk
             continue
         # Consensus phase doesn't swap participants, only LLMs behind
         # them, so turn.speaker is the same instance as `speaker`. Use
@@ -1394,7 +1546,8 @@ def _build_consensus_prompt(
 
 async def _phase_closure(session: Session) -> AsyncIterator[str]:
     session.phase = Phase.CLOSURE
-    yield _sse("status", {"message": "Phase 6: closure..."})
+    for chunk in _orchestrator_banner_sse(session, "Phase 6: closure..."):
+        yield chunk
 
     cred_block = credentials_to_block(session.credential_summary)
     transcript = await compact_transcript_for_orchestrator(

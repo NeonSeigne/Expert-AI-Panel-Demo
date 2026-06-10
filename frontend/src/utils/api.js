@@ -310,6 +310,32 @@ export async function patchHumanCredential(sessionId, patch) {
  * first question or (rarely) a final summary if the LLM bails. The
  * draft_id is needed for subsequent /answer calls.
  */
+/**
+ * Generate a structured credential summary from a human's freeform
+ * profile text (experience, personality, etc.). Uses the orchestrator
+ * the same way it assesses an LLM participant's role prompt.
+ */
+export async function generateHumanCredentialFromProfile({
+  name, question, profile_text, participant_id, orchestrator_model_id,
+}) {
+  const resp = await fetch(`${API_BASE}/api/chat/credentials/from-profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      question,
+      profile_text,
+      participant_id: participant_id || '',
+      orchestrator_model_id: orchestrator_model_id || null,
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Credential generation failed');
+  }
+  return resp.json();
+}
+
 export async function startCredentialDraft({
   name, question, max_questions = 6, orchestrator_model_id = null,
 }) {

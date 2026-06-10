@@ -533,6 +533,7 @@
   border-collapse: collapse;
   font-size: 12px;
   color: var(--text-primary);
+  table-layout: fixed;
 }
 
 .ccai-table th,
@@ -554,6 +555,18 @@
   top: 0;
 }
 
+.ccai-table th:first-child,
+.ccai-table td:first-child {
+  width: 15%;
+}
+
+.ccai-table th:nth-child(n + 2),
+.ccai-table td:nth-child(n + 2) {
+  width: 21.25%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
 .ccai-table-name {
   white-space: nowrap;
   font-weight: 600;
@@ -569,7 +582,7 @@
 
 /* ── Credential Summary modal ──────────────────────────────────────
    Surfaces the orchestrator's per-participant assessment built after
-   Phase 1 and refreshed after Phase 2 critique. Reuses the table
+   Phase 1 (concurrent per participant). Reuses the table
    modal's overlay/card chrome for visual consistency.
    ──────────────────────────────────────────────────────────────── */
 
@@ -615,6 +628,33 @@
   color: var(--text-tertiary);
   line-height: 1.4;
   max-width: 560px;
+}
+
+.ccai-rate-limit-card {
+  width: min(480px, 92vw);
+}
+
+.ccai-rate-limit-body {
+  padding: 16px 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ccai-rate-limit-body a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.ccai-rate-limit-body a:hover {
+  text-decoration: underline;
+}
+
+.ccai-rate-limit-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border-primary);
 }
 
 .ccai-credentials-question {

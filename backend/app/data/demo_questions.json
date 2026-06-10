@@ -2,6 +2,12 @@
   "version": 1,
   "questions": [
     {
+      "id": "best_pet",
+      "category": "lifestyle",
+      "title": "Which is the best pet, cats or dogs?",
+      "text": "Which is the best pet, cats or dogs?"
+    },
+    {
       "id": "undergrad_majors",
       "category": "education",
       "title": "Best undergraduate majors for career prospects",
