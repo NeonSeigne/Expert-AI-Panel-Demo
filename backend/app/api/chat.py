@@ -47,6 +47,7 @@ from app.services.models import (
     clamp_conversation_limits,
 )
 from app.services.auto_select import auto_select_participants
+from app.services.model_recommend import suggest_model_for_persona
 from app.services.prompts.catalog import build_prompt_catalog
 from app.services.orchestrator import (
     create_session,
@@ -67,19 +68,53 @@ LOG = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class GenerateRoleRequest(BaseModel):
-    model_id: str
+    """Structured persona fields → role prompt. `model_id` is ignored (legacy)."""
+
+    model_id: str = ""
     name: str = ""
     profile: str = ""
     identity: str = ""
     samples: str = ""
     role_style: str = "exact"
+    orchestrator_model_id: str | None = None
 
 
 class GenerateRoleFreeformRequest(BaseModel):
-    model_id: str
+    """Freeform persona text → role prompt. `model_id` is ignored (legacy)."""
+
+    model_id: str = ""
     name: str = ""
     text: str = ""
     role_style: str = "ai_completed"
+    orchestrator_model_id: str | None = None
+
+
+class AvailableModelPayload(BaseModel):
+    """One row of the builder's live model list (from allModelsFlat)."""
+
+    id: str
+    name: str = ""
+    provider: str = ""
+    kind: str = "provider"
+
+
+class PanelMemberPayload(BaseModel):
+    """Another participant already in the panel (for diversity hints)."""
+
+    name: str = ""
+    model_id: str = ""
+    provider: str = ""
+
+
+class SuggestModelRequest(BaseModel):
+    """Body of POST /api/chat/suggest-model."""
+
+    persona_name: str = ""
+    source_text: str = ""
+    role_prompt: str = ""
+    available_models: list[AvailableModelPayload]
+    panel_context: list[PanelMemberPayload] = Field(default_factory=list)
+    orchestrator_model_id: str | None = None
 
 
 class SetOrchestratorRequest(BaseModel):
@@ -231,15 +266,35 @@ async def api_set_speed_priority(req: SetSpeedPriorityRequest):
 # Role-prompt generation (used by the Expert Persona modal)
 # ---------------------------------------------------------------------------
 
+async def _builder_neon_model_ids() -> list[str]:
+    """Flat neon:model@ver:persona ids for neutral writer fallback."""
+    ids: list[str] = []
+    try:
+        for nm in await hana_client.get_models():
+            base = nm.get("model_id") or ""
+            for p in nm.get("personas") or []:
+                if p.get("enabled") is False:
+                    continue
+                pname = p.get("persona_name") or ""
+                if base and pname:
+                    ids.append(f"neon:{base}:{pname}")
+    except Exception as exc:
+        LOG.warning("Could not list Neon models for role writer pick: %s", exc)
+    return ids
+
+
 @router.post("/chat/generate-role")
 async def api_generate_role(req: GenerateRoleRequest):
+    neon_ids = await _builder_neon_model_ids()
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
     result = await generate_role_prompt(
-        model_id=req.model_id,
         name=req.name,
         profile=req.profile,
         identity=req.identity,
         samples=req.samples,
         role_style=req.role_style,
+        orchestrator_model_id=orchestrator_id,
+        extra_model_ids=neon_ids,
     )
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
@@ -248,11 +303,40 @@ async def api_generate_role(req: GenerateRoleRequest):
 
 @router.post("/chat/generate-role-freeform")
 async def api_generate_role_freeform(req: GenerateRoleFreeformRequest):
+    neon_ids = await _builder_neon_model_ids()
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
     result = await generate_role_prompt_freeform(
-        model_id=req.model_id,
         name=req.name,
         text=req.text,
         role_style=req.role_style,
+        orchestrator_model_id=orchestrator_id,
+        extra_model_ids=neon_ids,
+    )
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/chat/suggest-model")
+async def api_suggest_model(req: SuggestModelRequest):
+    """Recommend an LLM for an Expert Persona from the builder's model list.
+
+    Returns: {"recommended_model_id": "...", "rationale": "..."} on success,
+    or {"error": "..."} when the description is empty, the model list is
+    empty, or the orchestrator call fails / returns an invalid id.
+    """
+    if not req.available_models:
+        raise HTTPException(400, "At least one available model is required")
+
+    orchestrator_id = req.orchestrator_model_id or settings.orchestrator_model
+    neon_ids = await _builder_neon_model_ids()
+    result = await suggest_model_for_persona(
+        orchestrator_model_id=orchestrator_id,
+        persona_name=req.persona_name,
+        source_text=req.source_text,
+        role_prompt=req.role_prompt,
+        available_models=[m.model_dump() for m in req.available_models],
+        panel_context=[p.model_dump() for p in req.panel_context],
     )
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])

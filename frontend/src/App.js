@@ -216,7 +216,7 @@ export default function App() {
     const list = [];
     for (const p of providers) {
       for (const m of p.models) {
-        list.push({ id: m.id, name: m.name, provider: p.name });
+        list.push({ id: m.id, name: m.name, provider: p.name, kind: 'provider' });
       }
     }
     for (const nm of neonModels) {
@@ -226,11 +226,21 @@ export default function App() {
           id: `neon:${nm.model_id}:${p.persona_name}`,
           name: p.persona_name,
           provider: `Neon / ${nm.name.split('/').pop()}`,
+          kind: 'neon_character',
         });
       }
     }
     return list;
   }, [providers, neonModels]);
+
+  // Default for new Expert Personas: orchestrator if it's in the builder
+  // list, otherwise the first model the user can actually pick.
+  const expertDefaultModelId = useMemo(() => {
+    if (orchestratorModel && allModelsFlat.some(m => m.id === orchestratorModel)) {
+      return orchestratorModel;
+    }
+    return allModelsFlat[0]?.id || '';
+  }, [orchestratorModel, allModelsFlat]);
 
   // Map neon:model@ver:persona ids -> HANA system_prompt (from /api/models).
   const neonPromptByModelId = useMemo(() => {
@@ -279,6 +289,23 @@ export default function App() {
     // The human always appears first in the sidebar / participants list.
     return humanCatalogEntry ? [humanCatalogEntry, ...fromCatalog] : fromCatalog;
   }, [selectedIds, allCatalogParticipants, humanCatalogEntry]);
+
+  // Other panel members sent to the Expert Persona "Suggest a model"
+  // action so recommendations can favor model-family diversity.
+  const expertPanelContext = useMemo(() => {
+    const editingId = expertEditing?.participant_id;
+    return selectedParticipants
+      .filter(p => p.kind !== 'human' && p.participant_id !== editingId)
+      .map(p => {
+        const mid = modelAssignments[p.participant_id] || p.model_id || '';
+        const m = allModelsFlat.find(x => x.id === mid);
+        return {
+          name: p.name,
+          model_id: mid,
+          provider: m?.provider || '',
+        };
+      });
+  }, [selectedParticipants, modelAssignments, expertEditing, allModelsFlat]);
 
   const enabledSelectedCount = useMemo(() => {
     return selectedParticipants.filter(p => enabledMap[p.participant_id] !== false).length;
@@ -1164,7 +1191,9 @@ export default function App() {
         onSave={handleSaveExpert}
         onDelete={handleDeleteExpert}
         allModels={allModelsFlat}
-        defaultModelId={orchestratorModel || ''}
+        defaultModelId={expertDefaultModelId}
+        panelContext={expertPanelContext}
+        orchestratorModelId={orchestratorModel || undefined}
       />
       {tableOpen && (
         <ChatTableView

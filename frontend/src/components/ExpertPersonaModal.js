@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Save, Trash2 } from 'lucide-react';
-import { generateRole, generateRoleFreeform } from '../utils/api';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Upload, Save, Trash2, Wand2 } from 'lucide-react';
+import { generateRole, generateRoleFreeform, suggestModel } from '../utils/api';
 
 /**
  * Single source of truth for creating Expert Personas. Replaces the
@@ -19,6 +19,8 @@ export default function ExpertPersonaModal({
   onDelete,
   allModels,                 // [{ id, name, provider }]
   defaultModelId,
+  panelContext,              // [{ name, model_id, provider }] — other panel members
+  orchestratorModelId,       // optional override for the meta-LLM call
 }) {
   const [activeTab, setActiveTab] = useState('freeform');
   const [name, setName] = useState('');
@@ -31,7 +33,50 @@ export default function ExpertPersonaModal({
   const [generatedPrompt, setGeneratedPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+  const [suggestMessage, setSuggestMessage] = useState('');
   const fileInputRef = useRef(null);
+
+  const rolePromptText = useMemo(
+    () => (generatedPrompt || '').trim(),
+    [generatedPrompt],
+  );
+
+  const composeSourceText = useCallback(() => {
+    if (activeTab === 'freeform') {
+      return freeText.trim();
+    }
+    return [identity, profile, samples]
+      .map(s => (s || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+  }, [activeTab, freeText, identity, profile, samples]);
+
+  const hasDescriptionContent = useMemo(() => {
+    if (activeTab === 'freeform') {
+      return Boolean(freeText.trim());
+    }
+    return Boolean(identity.trim() || profile.trim() || samples.trim());
+  }, [activeTab, freeText, identity, profile, samples]);
+
+  const modelNameForId = useCallback((id) => {
+    const m = (allModels || []).find(x => x.id === id);
+    return m ? m.name : id;
+  }, [allModels]);
+
+  const modelProviderForId = useCallback((id) => {
+    const m = (allModels || []).find(x => x.id === id);
+    return m?.provider || '';
+  }, [allModels]);
+
+  const resolveModelId = useCallback((preferred) => {
+    const models = allModels || [];
+    if (preferred && models.some(m => m.id === preferred)) {
+      return preferred;
+    }
+    return models[0]?.id || '';
+  }, [allModels]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,7 +88,7 @@ export default function ExpertPersonaModal({
       setSamples(initial.samples || '');
       setFreeText(initial.freeform || '');
       setRoleStyle(initial.role_style || 'ai_completed');
-      setModelId(initial.model_id || defaultModelId || '');
+      setModelId(resolveModelId(initial.model_id || defaultModelId));
       setGeneratedPrompt(initial.role_prompt || '');
     } else {
       setActiveTab('freeform');
@@ -53,11 +98,14 @@ export default function ExpertPersonaModal({
       setSamples('');
       setFreeText('');
       setRoleStyle('ai_completed');
-      setModelId(defaultModelId || '');
+      setModelId(resolveModelId(defaultModelId));
       setGeneratedPrompt('');
     }
     setError('');
-  }, [isOpen, initial, defaultModelId]);
+    setSuggestion(null);
+    setSuggestMessage('');
+    setSuggestBusy(false);
+  }, [isOpen, initial, defaultModelId, resolveModelId]);
 
   if (!isOpen) return null;
 
@@ -75,30 +123,30 @@ export default function ExpertPersonaModal({
 
   const handleGenerate = async () => {
     setError('');
-    if (!modelId) {
-      setError('Pick a model to power this persona first.');
-      return;
-    }
     if (!name.trim()) {
       setError('Persona needs a name.');
+      return;
+    }
+    if (!hasDescriptionContent) {
+      setError('Add a description before generating a role prompt.');
       return;
     }
     setBusy(true);
     try {
       const result = activeTab === 'freeform'
         ? await generateRoleFreeform({
-          model_id: modelId,
           name: name.trim(),
           text: freeText,
           role_style: roleStyle,
+          orchestrator_model_id: orchestratorModelId || undefined,
         })
         : await generateRole({
-          model_id: modelId,
           name: name.trim(),
           profile,
           identity,
           samples,
           role_style: roleStyle,
+          orchestrator_model_id: orchestratorModelId || undefined,
         });
       setGeneratedPrompt(result.role_prompt || '');
     } catch (err) {
@@ -106,6 +154,48 @@ export default function ExpertPersonaModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleSuggestModel = async () => {
+    setError('');
+    setSuggestion(null);
+    setSuggestMessage('');
+    const sourceText = composeSourceText();
+    if (!sourceText && !rolePromptText) {
+      setSuggestMessage(
+        'Enter a description or role prompt for a model to be suggested.',
+      );
+      return;
+    }
+    if (!(allModels || []).length) {
+      setSuggestMessage('No models available to suggest from.');
+      return;
+    }
+    setSuggestBusy(true);
+    try {
+      const result = await suggestModel({
+        persona_name: name.trim() || 'Unnamed',
+        source_text: sourceText,
+        role_prompt: rolePromptText,
+        available_models: allModels,
+        panel_context: panelContext || [],
+        orchestrator_model_id: orchestratorModelId || undefined,
+      });
+      setSuggestion({
+        modelId: result.recommended_model_id,
+        rationale: result.rationale || '',
+      });
+    } catch (err) {
+      setSuggestMessage(err.message || String(err));
+    } finally {
+      setSuggestBusy(false);
+    }
+  };
+
+  const handleAcceptSuggestion = () => {
+    if (!suggestion?.modelId) return;
+    setModelId(suggestion.modelId);
+    setSuggestion(null);
   };
 
   const canSave = name.trim() && modelId && generatedPrompt.trim();
@@ -147,19 +237,63 @@ export default function ExpertPersonaModal({
                 onChange={e => setName(e.target.value)}
               />
             </div>
-            <div className="ccai-expert-field">
+            <div className="ccai-expert-field ccai-expert-model-field">
               <label>Powered by LLM</label>
-              <select
-                value={modelId}
-                onChange={e => setModelId(e.target.value)}
-              >
-                <option value="">Pick a model...</option>
-                {(allModels || []).map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {m.provider ? `(${m.provider})` : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="ccai-expert-model-row">
+                <select
+                  value={modelId}
+                  onChange={e => setModelId(e.target.value)}
+                >
+                  <option value="">Pick a model...</option>
+                  {(allModels || []).map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.provider ? `(${m.provider})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn-sm btn-outline ccai-suggest-model-btn"
+                  onClick={handleSuggestModel}
+                  disabled={suggestBusy || !(allModels || []).length}
+                  title="Analyze the role prompt and recommend a model"
+                >
+                  <Wand2 size={12} />
+                  {suggestBusy ? 'Suggesting...' : 'Suggest a model'}
+                </button>
+              </div>
+              {suggestMessage && (
+                <div className="ccai-expert-suggest-message">{suggestMessage}</div>
+              )}
+              {suggestion && (
+                <div className="ccai-model-suggestion">
+                  <div className="ccai-model-suggestion-title">
+                    Suggested: {modelNameForId(suggestion.modelId)}
+                    {modelProviderForId(suggestion.modelId)
+                      ? ` (${modelProviderForId(suggestion.modelId)})`
+                      : ''}
+                  </div>
+                  {suggestion.rationale && (
+                    <p className="ccai-model-suggestion-rationale">{suggestion.rationale}</p>
+                  )}
+                  <div className="ccai-model-suggestion-actions">
+                    <button
+                      type="button"
+                      className="btn-sm btn-primary"
+                      onClick={handleAcceptSuggestion}
+                    >
+                      Use this model
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-sm btn-secondary"
+                      onClick={() => setSuggestion(null)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -256,22 +390,25 @@ export default function ExpertPersonaModal({
             <button
               className="btn-secondary"
               onClick={handleGenerate}
-              disabled={busy || !modelId || !name.trim()}
+              disabled={busy || !name.trim() || !hasDescriptionContent}
             >
               {busy ? 'Generating role prompt...' : 'Generate role prompt'}
             </button>
           </div>
 
-          {generatedPrompt && (
-            <div className="ccai-expert-prompt">
-              <label>Generated role prompt (editable)</label>
-              <textarea
-                value={generatedPrompt}
-                onChange={e => setGeneratedPrompt(e.target.value)}
-                rows={6}
-              />
-            </div>
-          )}
+          <div className="ccai-expert-prompt">
+            <label>Role prompt</label>
+            <textarea
+              value={generatedPrompt}
+              onChange={e => {
+                setGeneratedPrompt(e.target.value);
+                if (suggestMessage) setSuggestMessage('');
+                if (suggestion) setSuggestion(null);
+              }}
+              rows={6}
+              placeholder="Generate a role prompt above, or write one here. Suggest a model analyzes this text."
+            />
+          </div>
 
           {error && <div className="ccai-expert-error">{error}</div>}
 

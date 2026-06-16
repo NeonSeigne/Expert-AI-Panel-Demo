@@ -30,11 +30,25 @@ export async function fetchDemoQuestions() {
   return resp.json();
 }
 
-export async function generateRole({ model_id, name, profile, identity, samples, role_style }) {
+export async function generateRole({
+  name,
+  profile,
+  identity,
+  samples,
+  role_style,
+  orchestrator_model_id,
+}) {
   const resp = await fetch(`${API_BASE}/api/chat/generate-role`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_id, name, profile, identity, samples, role_style }),
+    body: JSON.stringify({
+      name,
+      profile,
+      identity,
+      samples,
+      role_style,
+      orchestrator_model_id,
+    }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
@@ -43,15 +57,66 @@ export async function generateRole({ model_id, name, profile, identity, samples,
   return resp.json();
 }
 
-export async function generateRoleFreeform({ model_id, name, text, role_style }) {
+export async function generateRoleFreeform({
+  name,
+  text,
+  role_style,
+  orchestrator_model_id,
+}) {
   const resp = await fetch(`${API_BASE}/api/chat/generate-role-freeform`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_id, name, text, role_style }),
+    body: JSON.stringify({
+      name,
+      text,
+      role_style,
+      orchestrator_model_id,
+    }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
     throw new Error(err.detail || 'Role generation failed');
+  }
+  return resp.json();
+}
+
+/**
+ * Suggest an LLM for an Expert Persona from the builder's live model list.
+ *
+ * Body: { persona_name, source_text, role_prompt, available_models,
+ *         panel_context, orchestrator_model_id }
+ *
+ * Returns: { recommended_model_id, rationale }
+ */
+export async function suggestModel({
+  persona_name,
+  source_text,
+  role_prompt,
+  available_models,
+  panel_context,
+  orchestrator_model_id,
+}) {
+  const resp = await fetch(`${API_BASE}/api/chat/suggest-model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      persona_name,
+      source_text,
+      role_prompt,
+      available_models,
+      panel_context,
+      orchestrator_model_id,
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    const detail = err.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+        : 'Model suggestion failed';
+    throw new Error(message);
   }
   return resp.json();
 }

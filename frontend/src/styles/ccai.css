@@ -348,6 +348,55 @@
   font-size: 13px;
 }
 
+.ccai-expert-model-field {
+  min-width: 0;
+}
+
+.ccai-expert-model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ccai-expert-model-row select {
+  width: 100%;
+}
+
+.ccai-suggest-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.ccai-model-suggestion {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-primary);
+  border-radius: 8px;
+  background: var(--accent-light);
+}
+
+.ccai-model-suggestion-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ccai-model-suggestion-rationale {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.ccai-model-suggestion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .ccai-tab-row {
   display: flex;
   align-items: center;
@@ -418,6 +467,32 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.ccai-expert-prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ccai-expert-prompt-header label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ccai-expert-suggest-message {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .ccai-expert-prompt label {
