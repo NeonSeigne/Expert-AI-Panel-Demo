@@ -67,10 +67,29 @@ displayed, or fed back to the orchestrator/summarizer/Credential builder.
 
 ## Quick Start (local development)
 
-```bash
-cp .env.example .env
-# Edit .env with your API keys
+### Shared secrets (`shared.env`)
 
+This project supports a cross-project secrets file (same pattern as other Neon
+Cursor repos). Place API keys in `shared.env` **outside the repo** — never
+commit it. The backend loads it automatically before the project `.env`:
+
+1. `SHARED_ENV_PATH` or `SHARED_ENV_FILE` if set in the shell
+2. `~/.secrets/shared.env`
+3. `~/Downloads/shared.env`
+
+Project `.env` overrides any duplicate keys from `shared.env`.
+
+```bash
+# Optional: only project-specific overrides (orchestrator model, CORS, etc.)
+cp .env.example .env
+
+# Or use the dev script (auto-detects shared.env + starts both servers)
+./scripts/dev-local.sh
+```
+
+Manual start:
+
+```bash
 # Backend
 cd backend
 pip install -r requirements.txt
@@ -86,7 +105,8 @@ npm start
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
+# Optional: point Docker at your shared secrets file
+export SHARED_ENV_FILE="$HOME/Downloads/shared.env"
 docker compose up --build
 # Open http://localhost:7860
 ```

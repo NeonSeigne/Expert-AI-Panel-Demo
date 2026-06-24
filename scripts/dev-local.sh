@@ -8,9 +8,20 @@ echo "Starting CCAI-Vibe-Demo local dev (hot reload enabled)"
 echo "Project root: $ROOT"
 echo ""
 
+# Cross-project secrets (shared.env) — loaded by backend/app/config.py before .env
+if [[ -n "${SHARED_ENV_PATH:-}" && -f "${SHARED_ENV_PATH}" ]]; then
+  echo "Using shared secrets: $SHARED_ENV_PATH"
+elif [[ -f "$HOME/.secrets/shared.env" ]]; then
+  export SHARED_ENV_PATH="$HOME/.secrets/shared.env"
+  echo "Using shared secrets: $SHARED_ENV_PATH"
+elif [[ -f "$HOME/Downloads/shared.env" ]]; then
+  export SHARED_ENV_PATH="$HOME/Downloads/shared.env"
+  echo "Using shared secrets: $SHARED_ENV_PATH"
+fi
+
 if [[ ! -f "$ROOT/.env" ]]; then
   cp "$ROOT/.env.example" "$ROOT/.env"
-  echo "Created .env from .env.example — add your API keys if needed."
+  echo "Created .env from .env.example — project overrides only; API keys can live in shared.env."
 fi
 
 if [[ ! -f "$ROOT/frontend/.env.development" ]]; then
