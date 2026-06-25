@@ -5,7 +5,7 @@ import { Users, Plus, ChevronDown, Wand2, Check } from 'lucide-react';
  * Header dropdown that lists every available participant the user can
  * pull into the conversation. Three sections:
  *   - Neon (HANA personas, vanilla/RAG already filtered server-side)
- *   - Extra (the four bundled non-Neon-LLM personas)
+ *   - Extra (bundled catalog personas, provider + Neon LLMs)
  *   - Expert (user-created, stored in localStorage)
  *
  * A top-of-list "Select N Automatically" toggle defers the choice to

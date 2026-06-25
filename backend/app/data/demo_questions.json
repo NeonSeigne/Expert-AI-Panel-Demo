@@ -2,28 +2,22 @@
   "version": 1,
   "questions": [
     {
-      "id": "best_pet",
-      "category": "lifestyle",
-      "title": "Which is the best pet, cats or dogs?",
-      "text": "Which is the best pet, cats or dogs?"
-    },
-    {
-      "id": "undergrad_majors",
-      "category": "education",
-      "title": "Best undergraduate majors for career prospects",
-      "text": "What are the three best majors for my undergraduate degree? I live in Washington State, USA, and I am starting college in the fall. My biggest priority is to make sure I have good job prospects when I graduate in 2031. I love using AI and exploring new technology, math is one of my strongest subjects, I don't want to travel for my job, and I don't want to have to publish papers as part of my job. I like to talk to people, and to travel. I know a lot about finance because my parents are both accountants. I also love animals."
-    },
-    {
-      "id": "small_business_ai",
-      "category": "small business",
-      "title": "Should a small bakery introduce AI?",
-      "text": "Should I introduce AI tools into my small bakery, and if so, where should I start? I run a single-storefront bakery in a tourist town in Vermont with three full-time employees and four part-timers. We do counter sales, weekend wholesale to two coffee shops, and a small custom-cake business. I'm 54, comfortable with tech but not a developer. My priorities, in order: keep the staff feeling valued, hold the food quality steady, save myself maybe 5-10 hours a week of paperwork, and slowly grow custom-cake revenue. I have about $3,000 a year I could redirect into software or services without straining the books."
+      "id": "build_vs_buy_ai",
+      "category": "tech / business strategy",
+      "title": "Should a company build its own AI system or rely on a third-party provider?",
+      "text": "Should a company build its own AI system or rely on a third-party provider?"
     },
     {
       "id": "rural_water",
       "category": "public policy",
       "title": "Best fix for a small town's failing water system",
       "text": "Our rural town in central Pennsylvania has roughly 1,800 residents and a 1960s-era municipal water system that has had three boil-water advisories in the last two years. We have a small budget and an aging volunteer water board. The state has offered a 50% matching grant but only if we commit to a project plan within nine months. The three options on the table are: (a) replace the existing main lines incrementally over twelve years, (b) consolidate with a neighboring town's larger system, losing local control but gaining redundancy, or (c) install a smaller modern treatment plant of our own with recurring maintenance contracts. Residents are split, and the median household income is around $52,000."
+    },
+    {
+      "id": "undergrad_majors",
+      "category": "education",
+      "title": "Best undergraduate majors for career prospects",
+      "text": "What are the three best majors for my undergraduate degree? I live in Washington State, USA, and I am starting college in the fall. My biggest priority is to make sure I have good job prospects when I graduate in 2031. I love using AI and exploring new technology, math is one of my strongest subjects, I don't want to travel for my job, and I don't want to have to publish papers as part of my job. I like to talk to people, and to travel. I know a lot about finance because my parents are both accountants. I also love animals."
     },
     {
       "id": "acquisition_decision",
@@ -38,6 +32,12 @@
       "text": "I'm a principal at a public middle school in Texas, grades 6-8, 480 students. Many of my teachers are quietly using ChatGPT and similar tools to plan lessons and draft feedback. About a third of students are using AI for homework, sometimes well, sometimes to skip thinking entirely. The school board wants me to publish a formal AI policy by the end of the semester. I have to balance student learning, equity (not all students have the same access at home), staff workload, parental concerns about screen time and privacy, and our district's tight budget. Should I lean toward restricting AI, embracing it, or some structured middle path - and what would the most important rules be?"
     },
     {
+      "id": "small_business_ai",
+      "category": "small business",
+      "title": "Should a small bakery introduce AI?",
+      "text": "Should I introduce AI tools into my small bakery, and if so, where should I start? I run a single-storefront bakery in a tourist town in Vermont with three full-time employees and four part-timers. We do counter sales, weekend wholesale to two coffee shops, and a small custom-cake business. I'm 54, comfortable with tech but not a developer. My priorities, in order: keep the staff feeling valued, hold the food quality steady, save myself maybe 5-10 hours a week of paperwork, and slowly grow custom-cake revenue. I have about $3,000 a year I could redirect into software or services without straining the books."
+    },
+    {
       "id": "career_pivot_30s",
       "category": "career",
       "title": "Pivot from journalism to tech in your 30s",
@@ -48,6 +48,12 @@
       "category": "environment / personal finance",
       "title": "Buying property knowing the climate is shifting",
       "text": "My partner and I are looking to buy a 5-15 acre property within a four-hour drive of Denver. We want a small homestead - some chickens, a vegetable garden, room for two large dogs - and a place we can live in long term. Our budget is around $550,000 including a modest house. We're worried about climate exposure: wildfire smoke, water-rights pressure on small wells, longer droughts, and how much insurance is going to cost ten years from now. We're also worried about being too far from a hospital. Neither of us has farming experience but we're hands-on. How do we think about which properties to look at, what to actually optimize for, and what we should be willing to compromise on?"
+    },
+    {
+      "id": "best_pet",
+      "category": "lifestyle",
+      "title": "Which is the best pet, cats or dogs?",
+      "text": "Which is the best pet, cats or dogs?"
     },
     {
       "id": "open_source_strategy",

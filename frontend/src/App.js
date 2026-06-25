@@ -48,12 +48,16 @@ function appendInlineChatNote(setMessages, text, extra = {}) {
 export default function App() {
   // Persistent state
   const persisted = useMemo(() => storage.loadState(), []);
+  const initialParticipants = useMemo(
+    () => storage.resolveInitialParticipants(persisted),
+    [persisted],
+  );
   const [theme, setTheme] = useState(() => persisted.theme
     || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   );
   const [expertPersonas, setExpertPersonas] = useState(persisted.expert_personas || []);
-  const [selectedIds, setSelectedIds] = useState(persisted.participants_selected || []);
-  const [enabledMap, setEnabledMap] = useState(persisted.participants_enabled || {});
+  const [selectedIds, setSelectedIds] = useState(initialParticipants.selectedIds);
+  const [enabledMap, setEnabledMap] = useState(initialParticipants.enabledMap);
   const [modelAssignments, setModelAssignments] = useState(persisted.model_assignments || {});
   const [orchestratorModel, setOrchestratorModelState] = useState(persisted.orchestrator_model_id);
   const [summarizerModel, setSummarizerModelState] = useState(persisted.summarizer_model_id);
@@ -1074,13 +1078,19 @@ export default function App() {
   // available in the catalog.
   const autoSelectReady = autoSelectMode
     && Object.keys(allCatalogParticipants).length >= 2;
-  const startDisabled = isRunning
-    || (!autoSelectMode && enabledSelectedCount < 2)
-    || (autoSelectMode && !autoSelectReady);
+  const hasEnoughParticipantsToStart = autoSelectMode
+    ? autoSelectReady
+    : enabledSelectedCount >= 2;
+  const startDisabled = isRunning || !hasEnoughParticipantsToStart;
   const startDisabledReason = autoSelectMode
     ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
     : enabledSelectedCount < 2
     ? 'Add at least 2 active participants to start.'
+    : '';
+  const startDisabledTooltip = autoSelectMode
+    ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
+    : enabledSelectedCount < 2
+    ? 'Select at least 2 participants.'
     : '';
 
   return (
@@ -1154,12 +1164,14 @@ export default function App() {
             disabled={startDisabled}
             isRunning={isRunning}
             disabledReason={startDisabledReason}
+            disabledTooltip={startDisabledTooltip}
             activeQuestion={activeQuestion}
           />
           <ChatArea
             messages={messages}
             systemMessages={systemMessages}
             isRunning={isRunning}
+            hasEnoughParticipantsToStart={hasEnoughParticipantsToStart}
             statusText={statusText}
             pause={pause}
             onContinuePause={handleContinuePause}

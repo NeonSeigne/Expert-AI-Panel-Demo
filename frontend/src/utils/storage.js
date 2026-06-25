@@ -9,11 +9,51 @@
 const NS = 'ccai-vibe-demo';
 const SCHEMA_VERSION = 1;
 
+/** Demo trio — ids/names mirror backend/app/services/extra_personas.py */
+export const DEFAULT_DEMO_PERSONAS = [
+  {
+    participant_id: 'extra_elena_financial_strategist',
+    name: 'Elena — Financial Strategist',
+  },
+  {
+    participant_id: 'extra_marcus_technology_strategist',
+    name: 'Marcus — Technology Strategist',
+  },
+  {
+    participant_id: 'extra_amira_security_advisor',
+    name: 'Dr. Amira — Security & Privacy Advisor',
+  },
+];
+
+/** Default panel for first load / empty saved selection (demo trio). */
+export const DEFAULT_PARTICIPANT_IDS = DEFAULT_DEMO_PERSONAS.map(
+  (p) => p.participant_id,
+);
+
+export const DEFAULT_PARTICIPANTS_ENABLED = Object.fromEntries(
+  DEFAULT_PARTICIPANT_IDS.map((id) => [id, true]),
+);
+
+/** Use saved selection when non-empty; otherwise the demo default trio. */
+export function resolveInitialParticipants(persisted) {
+  const saved = persisted?.participants_selected;
+  if (Array.isArray(saved) && saved.length > 0) {
+    return {
+      selectedIds: saved,
+      enabledMap: persisted.participants_enabled || {},
+    };
+  }
+  return {
+    selectedIds: [...DEFAULT_PARTICIPANT_IDS],
+    enabledMap: { ...DEFAULT_PARTICIPANTS_ENABLED },
+  };
+}
+
 const DEFAULTS = {
   schema_version: SCHEMA_VERSION,
   expert_personas: [],
-  participants_selected: [],
-  participants_enabled: {},
+  participants_selected: [...DEFAULT_PARTICIPANT_IDS],
+  participants_enabled: { ...DEFAULT_PARTICIPANTS_ENABLED },
   model_assignments: {},
   orchestrator_model_id: null,
   summarizer_model_id: null,

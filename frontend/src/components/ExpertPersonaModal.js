@@ -297,38 +297,60 @@ export default function ExpertPersonaModal({
             </div>
           </div>
 
-          <div className="ccai-tab-row">
-            <button
-              className={'ccai-tab-btn' + (activeTab === 'freeform' ? ' ccai-tab-btn-active' : '')}
-              onClick={() => setActiveTab('freeform')}
-            >
-              Freeform
-            </button>
-            <button
-              className={'ccai-tab-btn' + (activeTab === 'structured' ? ' ccai-tab-btn-active' : '')}
-              onClick={() => setActiveTab('structured')}
-            >
-              Structured
-            </button>
-            <div className="ccai-tab-spacer" />
-            <label className="ccai-role-style">
-              <input
-                type="radio"
-                name="role-style"
-                checked={roleStyle === 'ai_completed'}
-                onChange={() => setRoleStyle('ai_completed')}
-              />
-              AI-completed
-            </label>
-            <label className="ccai-role-style">
-              <input
-                type="radio"
-                name="role-style"
-                checked={roleStyle === 'exact'}
-                onChange={() => setRoleStyle('exact')}
-              />
-              Exact (no inferring)
-            </label>
+          <div className="ccai-expert-input-mode">
+            <div className="ccai-tab-row">
+              <button
+                type="button"
+                className={'ccai-tab-btn' + (activeTab === 'freeform' ? ' ccai-tab-btn-active' : '')}
+                onClick={() => setActiveTab('freeform')}
+                title="One text area for background, bio, and writing samples."
+              >
+                Freeform
+              </button>
+              <button
+                type="button"
+                className={'ccai-tab-btn' + (activeTab === 'structured' ? ' ccai-tab-btn-active' : '')}
+                onClick={() => setActiveTab('structured')}
+                title="Separate fields for identity, profile, and writing samples."
+              >
+                Structured
+              </button>
+            </div>
+            <p className="ccai-expert-field-hint">
+              Freeform = one box for everything; Structured = separate fields for identity, profile, and samples.
+            </p>
+          </div>
+
+          <div className="ccai-expert-role-style">
+            <div className="ccai-tab-row ccai-tab-row-compact">
+              <label
+                className="ccai-role-style"
+                title="Fills in tone and style from your notes; stays within what you described."
+              >
+                <input
+                  type="radio"
+                  name="role-style"
+                  checked={roleStyle === 'ai_completed'}
+                  onChange={() => setRoleStyle('ai_completed')}
+                />
+                AI-completed
+              </label>
+              <label
+                className="ccai-role-style"
+                title="Reorganizes your text only; won't add traits or facts you didn't provide."
+              >
+                <input
+                  type="radio"
+                  name="role-style"
+                  checked={roleStyle === 'exact'}
+                  onChange={() => setRoleStyle('exact')}
+                />
+                Exact (no inferring)
+              </label>
+            </div>
+            <p className="ccai-expert-field-hint">
+              AI-completed fills in tone and style from your notes (no new facts); Exact uses only what you typed.
+            </p>
           </div>
 
           {activeTab === 'freeform' ? (
