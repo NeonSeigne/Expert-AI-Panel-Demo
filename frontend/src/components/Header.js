@@ -4,6 +4,56 @@ import AuthBadge from './AuthBadge';
 import ParticipantDropdown from './ParticipantDropdown';
 import DownloadMenu from './DownloadMenu';
 import DevMenu from './DevMenu';
+import HeaderMoreMenu from './HeaderMoreMenu';
+
+function HumanParticipantButton({ humanParticipant, onOpenHumanModal, className }) {
+  return (
+    <button
+      type="button"
+      className={
+        'btn-sm btn-outline ccai-human-add-btn header-actions-desktop'
+        + (className ? ` ${className}` : '')
+        + (humanParticipant ? ' ccai-human-add-btn-active' : '')
+      }
+      onClick={onOpenHumanModal}
+      title={humanParticipant
+        ? `Edit ${humanParticipant.name}'s credential summary`
+        : 'Add a human participant to the conversation'}
+    >
+      {humanParticipant ? (
+        <>
+          <UserCheck size={14} style={{ marginRight: 4 }} />
+          {humanParticipant.name}
+        </>
+      ) : (
+        <>
+          <UserPlus size={14} style={{ marginRight: 4 }} />
+          Add a Human Participant
+        </>
+      )}
+    </button>
+  );
+}
+
+function TableViewButton({ hasChat, onShowTableView, className }) {
+  return (
+    <button
+      type="button"
+      className={
+        'btn-sm btn-outline ccai-table-view-btn header-actions-desktop'
+        + (className ? ` ${className}` : '')
+      }
+      onClick={onShowTableView}
+      disabled={!hasChat}
+      title={hasChat
+        ? 'Open the conversation summary table'
+        : 'Start a chat to view the summary table'}
+    >
+      <Table2 size={14} style={{ marginRight: 4 }} />
+      Table View
+    </button>
+  );
+}
 
 /**
  * Header bar: brand on the left; on the right, auth badge, participant
@@ -97,41 +147,20 @@ export default function Header({
           autoSelectMode={autoSelectMode}
           onToggleAutoSelectMode={onToggleAutoSelectMode}
         />
-        <button
-          type="button"
-          className={
-            'btn-sm btn-outline ccai-human-add-btn'
-            + (humanParticipant ? ' ccai-human-add-btn-active' : '')
-          }
-          onClick={onOpenHumanModal}
-          title={humanParticipant
-            ? `Edit ${humanParticipant.name}'s credential summary`
-            : 'Add a human participant to the conversation'}
-        >
-          {humanParticipant ? (
-            <>
-              <UserCheck size={14} style={{ marginRight: 4 }} />
-              {humanParticipant.name}
-            </>
-          ) : (
-            <>
-              <UserPlus size={14} style={{ marginRight: 4 }} />
-              Add a Human Participant
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          className="btn-sm btn-outline ccai-table-view-btn"
-          onClick={onShowTableView}
-          disabled={!hasChat}
-          title={hasChat
-            ? 'Open the conversation summary table'
-            : 'Start a chat to view the summary table'}
-        >
-          <Table2 size={14} style={{ marginRight: 4 }} />
-          Table View
-        </button>
+        <HumanParticipantButton
+          humanParticipant={humanParticipant}
+          onOpenHumanModal={onOpenHumanModal}
+        />
+        <TableViewButton
+          hasChat={hasChat}
+          onShowTableView={onShowTableView}
+        />
+        <HeaderMoreMenu
+          humanParticipant={humanParticipant}
+          onOpenHumanModal={onOpenHumanModal}
+          hasChat={hasChat}
+          onShowTableView={onShowTableView}
+        />
         <DownloadMenu
           hasChat={hasChat}
           hasApiLog={hasApiLog}
