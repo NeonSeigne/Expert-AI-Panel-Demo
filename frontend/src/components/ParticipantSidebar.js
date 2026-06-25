@@ -69,6 +69,7 @@ export default function ParticipantSidebar({
 
 function ParticipantCard({ participant, enabled, modelOverride, neonPromptByModelId, onToggleEnabled, onRemove }) {
   const [open, setOpen] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const isHuman = participant.kind === 'human';
 
   const effectiveModelId = modelOverride
@@ -79,6 +80,16 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
     || participant.role_prompt
     || '';
 
+  const PROMPT_PREVIEW_CHARS = 280;
+  const promptIsLong = personaPrompt.length > PROMPT_PREVIEW_CHARS;
+
+  const handleToggleOpen = () => {
+    setOpen((wasOpen) => {
+      if (wasOpen) setPromptExpanded(false);
+      return !wasOpen;
+    });
+  };
+
   return (
     <div
       className={
@@ -87,15 +98,27 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
         + (isHuman ? ' ccai-participant-card-human' : '')
       }
     >
-      <div className="ccai-participant-row">
+      <div
+        className={
+          'ccai-participant-row'
+          + (open ? ' ccai-participant-row--expanded' : '')
+        }
+      >
         <button
           className="ccai-accordion-chevron"
-          onClick={() => setOpen(o => !o)}
+          onClick={handleToggleOpen}
           aria-label="Toggle participant details"
+          aria-expanded={open}
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <div className="ccai-participant-name">
+        <div
+          className={
+            'ccai-participant-name'
+            + (open ? ' ccai-participant-name--expanded' : '')
+          }
+          title={!open ? participant.name : undefined}
+        >
           {isHuman && (
             <User
               size={12}
@@ -161,9 +184,25 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
               </div>
               <div className="ccai-participant-field">
                 <div className="ccai-participant-field-label">Persona prompt</div>
-                <pre className="ccai-participant-prompt">
+                <pre
+                  className={
+                    'ccai-participant-prompt'
+                    + (promptIsLong && !promptExpanded
+                      ? ' ccai-participant-prompt--preview'
+                      : '')
+                  }
+                >
                   {personaPrompt || '(no prompt set)'}
                 </pre>
+                {promptIsLong && (
+                  <button
+                    type="button"
+                    className="ccai-participant-prompt-toggle"
+                    onClick={() => setPromptExpanded(v => !v)}
+                  >
+                    {promptExpanded ? 'Show less' : 'Show full prompt'}
+                  </button>
+                )}
               </div>
             </>
           )}

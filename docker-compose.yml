@@ -7,6 +7,9 @@ services:
       # or the environment so local devs can sidestep port conflicts.
       - "${CCAI_HOST_PORT:-7860}:7860"
     env_file:
+      # Optional cross-project secrets file (set SHARED_ENV_FILE in shell).
+      - path: ${SHARED_ENV_FILE}
+        required: false
       - .env
     environment:
       CORS_ORIGINS: "http://localhost:7860,http://localhost:3000"

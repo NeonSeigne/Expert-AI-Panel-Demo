@@ -20,6 +20,7 @@ const ChatControls = forwardRef(function ChatControls({
   disabled,
   isRunning,
   disabledReason,
+  disabledTooltip,
   activeQuestion,
 }, ref) {
   const demoIndexRef = useRef(0);
@@ -68,7 +69,7 @@ const ChatControls = forwardRef(function ChatControls({
   };
 
   const handleKeyDown = (e) => {
-    if (disabled || mode !== 'demo') return;
+    if (mode !== 'demo') return;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       setMode('custom');
       setUserText(e.key);
@@ -90,6 +91,7 @@ const ChatControls = forwardRef(function ChatControls({
   };
 
   const canStart = !disabled && !!resolveQuestion();
+  const startButtonTitle = !canStart && disabledTooltip ? disabledTooltip : undefined;
 
   return (
     <div className="chat-controls">
@@ -110,31 +112,51 @@ const ChatControls = forwardRef(function ChatControls({
         </>
       ) : (
         <>
-          <input
-            type="text"
-            value={inputValue}
-            placeholder={
-              disabled
-                ? (disabledReason || 'Add participants to start a conversation')
-                : (demoQuestions.length === 0 ? 'Loading demo questions…' : '')
-            }
-            disabled={disabled}
-            onChange={handleChange}
-            onKeyDown={(e) => {
-              handleKeyDown(e);
-              if (e.key === 'Enter' && canStart) {
-                handleStart();
+          <div className="chat-controls-row">
+            <input
+              type="text"
+              className="chat-controls-question"
+              value={inputValue}
+              placeholder={
+                disabled && disabledReason
+                  ? disabledReason
+                  : demoQuestions.length === 0
+                    ? 'Loading demo questions…'
+                    : ''
               }
-            }}
-          />
-          <button
-            className="btn-primary"
-            disabled={!canStart}
-            onClick={handleStart}
-          >
-            <Play size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            Start Chat
-          </button>
+              onChange={handleChange}
+              onKeyDown={(e) => {
+                handleKeyDown(e);
+                if (e.key === 'Enter' && canStart) {
+                  e.preventDefault();
+                  handleStart();
+                }
+              }}
+            />
+            <span
+              className={
+                'chat-start-btn-wrap'
+                + (startButtonTitle ? ' chat-start-btn-wrap-disabled' : '')
+              }
+              title={startButtonTitle}
+            >
+              <button
+                type="button"
+                className="btn-primary chat-controls-start"
+                disabled={!canStart}
+                onClick={handleStart}
+                aria-disabled={!canStart}
+              >
+                <Play size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                Start Chat
+              </button>
+            </span>
+          </div>
+          {startButtonTitle && (
+            <span className="chat-start-hint" role="status">
+              {startButtonTitle}
+            </span>
+          )}
         </>
       )}
     </div>

@@ -48,12 +48,16 @@ function appendInlineChatNote(setMessages, text, extra = {}) {
 export default function App() {
   // Persistent state
   const persisted = useMemo(() => storage.loadState(), []);
+  const initialParticipants = useMemo(
+    () => storage.resolveInitialParticipants(persisted),
+    [persisted],
+  );
   const [theme, setTheme] = useState(() => persisted.theme
     || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   );
   const [expertPersonas, setExpertPersonas] = useState(persisted.expert_personas || []);
-  const [selectedIds, setSelectedIds] = useState(persisted.participants_selected || []);
-  const [enabledMap, setEnabledMap] = useState(persisted.participants_enabled || {});
+  const [selectedIds, setSelectedIds] = useState(initialParticipants.selectedIds);
+  const [enabledMap, setEnabledMap] = useState(initialParticipants.enabledMap);
   const [modelAssignments, setModelAssignments] = useState(persisted.model_assignments || {});
   const [orchestratorModel, setOrchestratorModelState] = useState(persisted.orchestrator_model_id);
   const [summarizerModel, setSummarizerModelState] = useState(persisted.summarizer_model_id);
@@ -216,7 +220,7 @@ export default function App() {
     const list = [];
     for (const p of providers) {
       for (const m of p.models) {
-        list.push({ id: m.id, name: m.name, provider: p.name });
+        list.push({ id: m.id, name: m.name, provider: p.name, kind: 'provider' });
       }
     }
     for (const nm of neonModels) {
@@ -226,11 +230,21 @@ export default function App() {
           id: `neon:${nm.model_id}:${p.persona_name}`,
           name: p.persona_name,
           provider: `Neon / ${nm.name.split('/').pop()}`,
+          kind: 'neon_character',
         });
       }
     }
     return list;
   }, [providers, neonModels]);
+
+  // Default for new Expert Personas: orchestrator if it's in the builder
+  // list, otherwise the first model the user can actually pick.
+  const expertDefaultModelId = useMemo(() => {
+    if (orchestratorModel && allModelsFlat.some(m => m.id === orchestratorModel)) {
+      return orchestratorModel;
+    }
+    return allModelsFlat[0]?.id || '';
+  }, [orchestratorModel, allModelsFlat]);
 
   // Map neon:model@ver:persona ids -> HANA system_prompt (from /api/models).
   const neonPromptByModelId = useMemo(() => {
@@ -279,6 +293,23 @@ export default function App() {
     // The human always appears first in the sidebar / participants list.
     return humanCatalogEntry ? [humanCatalogEntry, ...fromCatalog] : fromCatalog;
   }, [selectedIds, allCatalogParticipants, humanCatalogEntry]);
+
+  // Other panel members sent to the Expert Persona "Suggest a model"
+  // action so recommendations can favor model-family diversity.
+  const expertPanelContext = useMemo(() => {
+    const editingId = expertEditing?.participant_id;
+    return selectedParticipants
+      .filter(p => p.kind !== 'human' && p.participant_id !== editingId)
+      .map(p => {
+        const mid = modelAssignments[p.participant_id] || p.model_id || '';
+        const m = allModelsFlat.find(x => x.id === mid);
+        return {
+          name: p.name,
+          model_id: mid,
+          provider: m?.provider || '',
+        };
+      });
+  }, [selectedParticipants, modelAssignments, expertEditing, allModelsFlat]);
 
   const enabledSelectedCount = useMemo(() => {
     return selectedParticipants.filter(p => enabledMap[p.participant_id] !== false).length;
@@ -1047,13 +1078,19 @@ export default function App() {
   // available in the catalog.
   const autoSelectReady = autoSelectMode
     && Object.keys(allCatalogParticipants).length >= 2;
-  const startDisabled = isRunning
-    || (!autoSelectMode && enabledSelectedCount < 2)
-    || (autoSelectMode && !autoSelectReady);
+  const hasEnoughParticipantsToStart = autoSelectMode
+    ? autoSelectReady
+    : enabledSelectedCount >= 2;
+  const startDisabled = isRunning || !hasEnoughParticipantsToStart;
   const startDisabledReason = autoSelectMode
     ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
     : enabledSelectedCount < 2
     ? 'Add at least 2 active participants to start.'
+    : '';
+  const startDisabledTooltip = autoSelectMode
+    ? (!autoSelectReady ? 'No candidate participants available for auto-select.' : '')
+    : enabledSelectedCount < 2
+    ? 'Select at least 2 participants.'
     : '';
 
   return (
@@ -1127,12 +1164,14 @@ export default function App() {
             disabled={startDisabled}
             isRunning={isRunning}
             disabledReason={startDisabledReason}
+            disabledTooltip={startDisabledTooltip}
             activeQuestion={activeQuestion}
           />
           <ChatArea
             messages={messages}
             systemMessages={systemMessages}
             isRunning={isRunning}
+            hasEnoughParticipantsToStart={hasEnoughParticipantsToStart}
             statusText={statusText}
             pause={pause}
             onContinuePause={handleContinuePause}
@@ -1164,7 +1203,9 @@ export default function App() {
         onSave={handleSaveExpert}
         onDelete={handleDeleteExpert}
         allModels={allModelsFlat}
-        defaultModelId={orchestratorModel || ''}
+        defaultModelId={expertDefaultModelId}
+        panelContext={expertPanelContext}
+        orchestratorModelId={orchestratorModel || undefined}
       />
       {tableOpen && (
         <ChatTableView

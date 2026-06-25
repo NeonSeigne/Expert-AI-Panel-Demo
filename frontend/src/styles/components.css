@@ -445,16 +445,75 @@
   gap: 16px;
   padding: 16px 0;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .chat-empty {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: min-content;
+  gap: 1.5rem;
+  padding: 0.25rem 0 1.5rem;
   color: var(--text-muted);
   font-size: 15px;
   font-style: italic;
+  pointer-events: none;
+}
+
+.chat-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1.25rem;
+  flex-shrink: 0;
+}
+
+.chat-empty-lead,
+.chat-empty-instruction {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.chat-empty-lead {
+  font-weight: 700;
+}
+
+.chat-empty-sample {
+  width: min(100%, 42rem);
+  flex-shrink: 0;
+  opacity: 0.72;
+  border: 1px dashed var(--border-primary);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  padding: 12px 14px 10px;
+  font-style: normal;
+}
+
+.chat-empty-sample-label {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.chat-empty-sample-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-empty-sample-panel .message-row,
+.chat-empty-sample-panel .ccai-orchestrator-msg {
+  animation: none;
 }
 
 /* ── Message Bubbles ───────────────────────────────────────────── */
@@ -512,6 +571,27 @@
   box-shadow: var(--shadow-sm);
   overflow-wrap: break-word;
   word-break: break-word;
+}
+
+/* Live participant bubbles use light pastel backgrounds (set inline in
+   MessageBubble.js). Keep body text dark so it stays readable in both
+   light and dark app themes — do not inherit --text-primary, which is
+   light-colored in dark mode. */
+.ccai-bubble {
+  color: #111827;
+  font-style: normal;
+}
+
+.ccai-bubble :where(p, li, ol, ul, blockquote, td, th, h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+}
+
+.ccai-bubble a {
+  color: #4338CA;
+}
+
+.ccai-bubble .message-elapsed {
+  color: #6B7280;
 }
 
 .message-bubble.bubble-a {
@@ -593,38 +673,109 @@
 /* Download strip rendered below the "End of Chat" marker. Mirrors the
    items in the header DownloadMenu so the user doesn't have to scroll
    back up to the top of a finished conversation to export it. */
+.chat-end-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 0 4px;
+}
+
 .chat-end-downloads {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  padding: 12px 0 4px;
 }
 
 .chat-end-download-btn {
   white-space: nowrap;
 }
 
+.chat-end-cta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 20rem;
+}
+
+.chat-end-cta a {
+  color: var(--accent-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-end-cta a:hover {
+  text-decoration: underline;
+}
+
 /* ── Chat Controls ─────────────────────────────────────────────── */
 
 .chat-controls {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
   align-items: stretch;
+  gap: 6px;
+  width: 100%;
   padding: 12px 0;
+  flex-shrink: 0;
 }
 
-.chat-controls input {
-  flex: 1;
-  padding: 10px 14px;
+.chat-controls-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.chat-start-btn-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
+.chat-start-btn-wrap-disabled {
+  cursor: not-allowed;
+}
+
+.chat-start-btn-wrap button:disabled {
+  pointer-events: none;
+}
+
+.chat-start-hint {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.chat-controls-question {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  padding: 9px 12px;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: clamp(12px, calc(0.62vw + 5px), 14px);
+  line-height: 1.25;
+  font-family: inherit;
+  letter-spacing: -0.01em;
 }
 
-.chat-controls input:focus {
+.chat-controls-start {
+  height: 100%;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.chat-controls-question:focus {
   outline: none;
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px var(--accent-light);
@@ -1216,11 +1367,9 @@
     padding: 12px 16px 16px;
   }
   .chat-controls {
-    flex-wrap: wrap;
     gap: 8px;
   }
-  .chat-controls input {
-    flex-basis: 100%;
+  .chat-controls-question {
     font-size: 13px;
   }
   .message-row {
@@ -1334,10 +1483,18 @@
   }
   /* On phones the download strip stacks so each label is fully
      readable; on wider viewports it stays inline-wrap. */
+  .chat-end-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
   .chat-end-downloads {
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
+  }
+  .chat-end-cta {
+    max-width: none;
   }
   .chat-end-download-btn {
     justify-content: center;

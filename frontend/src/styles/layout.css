@@ -72,6 +72,14 @@
   flex-shrink: 0;
 }
 
+.header-actions-mobile {
+  display: none;
+}
+
+.header-actions-desktop {
+  display: inline-flex;
+}
+
 .icon-btn {
   display: flex;
   align-items: center;
@@ -117,7 +125,7 @@
   flex: 1;
   min-height: 0;
   padding: 20px 24px;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -141,6 +149,32 @@
   }
   .content {
     padding: 16px;
+  }
+}
+
+/* ── Small tablet / large phone (<600px) ──────────────────────── */
+@media (max-width: 600px) {
+  .app-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .header-right {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .header-actions-desktop {
+    display: none !important;
+  }
+  .header-actions-mobile {
+    display: block;
   }
 }
 

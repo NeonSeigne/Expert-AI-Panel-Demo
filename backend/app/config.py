@@ -1,12 +1,42 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_FILE = _PROJECT_ROOT / ".env"
+
+
+def _shared_env_candidates() -> list[Path]:
+    """Locations for the cross-project shared.env (never committed)."""
+    explicit = (os.getenv("SHARED_ENV_PATH") or os.getenv("SHARED_ENV_FILE") or "").strip()
+    if explicit:
+        return [Path(explicit).expanduser()]
+    return [
+        Path.home() / ".secrets" / "shared.env",
+        Path.home() / "Downloads" / "shared.env",
+    ]
+
+
+def _resolve_shared_env() -> Path | None:
+    for candidate in _shared_env_candidates():
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _settings_env_files() -> tuple[str, ...]:
+    """Shared secrets first; project .env overrides."""
+    files: list[str] = []
+    shared = _resolve_shared_env()
+    if shared:
+        files.append(str(shared))
+    if _ENV_FILE.is_file():
+        files.append(str(_ENV_FILE))
+    return tuple(files)
 
 
 class Settings(BaseSettings):
@@ -21,7 +51,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("HANA_KLATCHAT_PASSWORD", "HANA_PASSWORD_KLATCHAT"),
     )
     # Direct vLLM base (no /v1); matches brainforge-webapp docker config 4090-x1-3 host.
-    neon_security_vllm_base_url: str = "https://4090-x1-3.neonaiservices2.com/vllm0"
+    neon_security_vllm_base_url: str = Field(
+        default="https://4090-x1-3.neonaiservices2.com/vllm0",
+        validation_alias=AliasChoices("NEON_SECURITY_VLLM_BASE_URL", "VLLM_BASE_URL"),
+    )
     # Comma-separated model_id values to merge via get_personas when get_models omits them (needs HANA access)
     hana_neon_model_supplement_ids: str = "BrainForge/Security@2026.03.18"
 
@@ -44,7 +77,17 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
 
-    model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
+    model_config = SettingsConfigDict(
+        env_file=_settings_env_files(),
+        env_file_encoding="utf-8",
+    )
+
+    @field_validator("neon_security_vllm_base_url", mode="before")
+    @classmethod
+    def _strip_vllm_v1_suffix(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.rstrip("/").removesuffix("/v1")
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -218,40 +261,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# region agent log
-def _agent_log_settings_env() -> None:
-    import json
-    import time
-
-    _path = r"c:\Users\dream\CCAI-Demo-FEAT_Config\debug-c86901.log"
-    try:
-        raw = _ENV_FILE.read_text(encoding="utf-8") if _ENV_FILE.is_file() else ""
-        data = {
-            "app": "LLMChats3",
-            "env_file": str(_ENV_FILE),
-            "env_file_exists": _ENV_FILE.is_file(),
-            "dotenv_line_HANA_KLATCHAT_PASSWORD": "HANA_KLATCHAT_PASSWORD" in raw,
-            "dotenv_line_HANA_PASSWORD_KLATCHAT": "HANA_PASSWORD_KLATCHAT" in raw,
-            "settings_hana_password_klatchat_nonempty": bool((settings.hana_password_klatchat or "").strip()),
-        }
-        with open(_path, "a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "sessionId": "c86901",
-                        "hypothesisId": "H1",
-                        "location": "LLMChats3/config.py:settings",
-                        "message": "env_binding",
-                        "data": data,
-                        "timestamp": int(time.time() * 1000),
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-
-
-_agent_log_settings_env()
-# endregion

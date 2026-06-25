@@ -2,7 +2,7 @@
 
 `GET /api/personas` returns three sections - Neon HANA personas (with
 vanilla/RAG personas filtered out and display names reformatted via an
-LLM), the four bundled extra personas, and the user-supplied expert
+LLM), the bundled extra personas, and the user-supplied expert
 personas (which are local-only on the frontend but echoed here for
 completeness so the API can act as the source of truth for participant
 choices when needed).

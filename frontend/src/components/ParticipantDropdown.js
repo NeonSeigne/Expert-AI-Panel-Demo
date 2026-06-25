@@ -5,7 +5,7 @@ import { Users, Plus, ChevronDown, Wand2, Check } from 'lucide-react';
  * Header dropdown that lists every available participant the user can
  * pull into the conversation. Three sections:
  *   - Neon (HANA personas, vanilla/RAG already filtered server-side)
- *   - Extra (the four bundled non-Neon-LLM personas)
+ *   - Extra (bundled catalog personas, provider + Neon LLMs)
  *   - Expert (user-created, stored in localStorage)
  *
  * A top-of-list "Select N Automatically" toggle defers the choice to
@@ -45,6 +45,11 @@ export default function ParticipantDropdown({
   // orchestrator picks at start time, so user picks are ignored.
   const checkboxDisabledForAuto = !!autoSelectMode;
 
+  const openCreateExpertModal = () => {
+    setOpen(false);
+    onOpenExpertModal(null);
+  };
+
   return (
     <div className="ccai-dropdown-wrap" ref={ref}>
       <button
@@ -65,7 +70,14 @@ export default function ParticipantDropdown({
         <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="ccai-dropdown-panel">
+        <>
+          <button
+            type="button"
+            className="ccai-dropdown-backdrop"
+            aria-label="Close participants menu"
+            onClick={() => setOpen(false)}
+          />
+          <div className="ccai-dropdown-panel">
           <div className="ccai-dropdown-section">
             <button
               type="button"
@@ -86,8 +98,9 @@ export default function ParticipantDropdown({
             <div className="ccai-dropdown-autoselect-help">
               {autoSelectMode
                 ? 'The orchestrator will pick the most relevant participants for your question when you start the chat.'
-                : 'Or pick manually from the lists below.'}
+                : 'Create or pick manually from the lists below.'}
             </div>
+            <CreateExpertPersonaButton onClick={openCreateExpertModal} />
           </div>
           <div className="ccai-dropdown-divider" />
           <div
@@ -164,17 +177,28 @@ export default function ParticipantDropdown({
                 onToggle={() => onToggleParticipant(p, 'expert')}
               />
             ))}
-            <button
-              className="ccai-dropdown-create-btn"
-              onClick={() => { setOpen(false); onOpenExpertModal(null); }}
-            >
-              <Plus size={12} />
-              Create Expert Persona...
-            </button>
+            <CreateExpertPersonaButton onClick={openCreateExpertModal} />
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+function CreateExpertPersonaButton({ onClick, className }) {
+  return (
+    <button
+      type="button"
+      className={
+        'ccai-dropdown-create-btn'
+        + (className ? ` ${className}` : '')
+      }
+      onClick={onClick}
+    >
+      <Plus size={12} />
+      Create Expert Persona...
+    </button>
   );
 }
 

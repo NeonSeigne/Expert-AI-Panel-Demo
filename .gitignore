@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .env
+shared.env
+**/.secrets/
 node_modules/
 frontend/build/
 .DS_Store
