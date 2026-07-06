@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, UserPlus, UserCheck, Table2 } from 'lucide-react';
+import { useParticipants } from '../context/ParticipantsContext';
+import { useChatSession } from '../context/ChatSessionContext';
 
-/**
- * Mobile header overflow for wide labeled actions (human participant,
- * table view). Mirrors DownloadMenu's open/close pattern.
- */
-export default function HeaderMoreMenu({
-  humanParticipant,
-  onOpenHumanModal,
-  hasChat,
-  onShowTableView,
-}) {
+export default function HeaderMoreMenu() {
+  const { humanParticipant, handleOpenHumanModal } = useParticipants();
+  const { hasChat, handleShowTableView } = useChatSession();
+
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -43,11 +39,8 @@ export default function HeaderMoreMenu({
           <div className="dev-panel">
             <button
               type="button"
-              className={
-                'dev-panel-row'
-                + (humanParticipant ? ' ccai-human-add-btn-active' : '')
-              }
-              onClick={fire(onOpenHumanModal)}
+              className={'dev-panel-row' + (humanParticipant ? ' ccai-human-add-btn-active' : '')}
+              onClick={fire(handleOpenHumanModal)}
               title={humanParticipant
                 ? `Edit ${humanParticipant.name}'s credential summary`
                 : 'Add a human participant to the conversation'}
@@ -68,7 +61,7 @@ export default function HeaderMoreMenu({
               type="button"
               className="dev-panel-row"
               disabled={!hasChat}
-              onClick={fire(onShowTableView)}
+              onClick={fire(handleShowTableView)}
               title={hasChat
                 ? 'Open the conversation summary table'
                 : 'Start a chat to view the summary table'}

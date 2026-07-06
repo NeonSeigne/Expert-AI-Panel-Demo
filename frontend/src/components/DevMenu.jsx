@@ -4,67 +4,51 @@ import {
   Square, CheckSquare, UserPlus, ScrollText, SlidersHorizontal,
   BookOpen,
 } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
+import { useParticipants } from '../context/ParticipantsContext';
+import { useChatSession } from '../context/ChatSessionContext';
 
-/**
- * Settings menu (gear-icon dropdown in the header).
- *
- * Layout, top-to-bottom. Multi-item categories are *collapsible
- * accordions* that default to closed; single-item categories stay
- * inline beneath their small uppercase label.
- *
- *   - Theme               (single item: Sun/Moon toggle)
- *   - Model Selection     (accordion — merges what used to be the
- *                          separate "Models" and "Participants"
- *                          categories: Orchestrator model, Summarizer
- *                          model, Create Expert Persona, then one
- *                          stacked row per active participant)
- *   - Max participants    (single item: - / value / + stepper, 3-9)
- *   - Response priority   (accordion — Prioritize model choice vs.
- *                          conversation speed; under "speed", the
- *                          orchestrator races the chosen model
- *                          against a fast fallback and aggressively
- *                          substitutes failed LLMs)
- *   - Display options     (accordion — two toggles)
- *   - View Prompts        (accordion — Credential Summary, Prompt
- *                          Catalog)
- *   - Advanced            (single item: Conversation limits…)
- *
- * The Downloads section that previously lived at the bottom of this
- * panel has been removed; every item it offered is already reachable
- * from the header DownloadMenu, so duplicating them here just made the
- * settings menu unnecessarily long.
- */
-export default function DevMenu({
-  theme,
-  onToggleTheme,
-  allModels,
-  orchestratorModel,
-  onOrchestratorChange,
-  summarizerModel,
-  onSummarizerChange,
-  speedPriority,
-  onSpeedPriorityChange,
-  conversationFormats,
-  conversationStructureId,
-  onConversationStructureChange,
-  decisionMethodId,
-  onDecisionMethodChange,
-  showResponseTime,
-  onShowResponseTimeChange,
-  showChatStats,
-  onShowChatStatsChange,
-  maxParticipants,
-  onMaxParticipantsChange,
-  participants,
-  modelAssignments,
-  onModelAssignmentChange,
-  onOpenExpertModal,
-  onShowCredentials,
-  hasCredentials,
-  onShowPromptCatalog,
-  onShowConversationLimits,
-  conversationLimitsOverridden,
-}) {
+export default function DevMenu() {
+  const {
+    theme,
+    toggleTheme,
+    allModelsFlat: allModels,
+    orchestratorModel,
+    handleOrchestratorChange: onOrchestratorChange,
+    summarizerModel,
+    handleSummarizerChange: onSummarizerChange,
+    speedPriority,
+    handleSpeedPriorityChange: onSpeedPriorityChange,
+    conversationFormats,
+    conversationStructureId,
+    handleConversationStructureChange: onConversationStructureChange,
+    decisionMethodId,
+    handleDecisionMethodChange: onDecisionMethodChange,
+    showResponseTime,
+    setShowResponseTime: onShowResponseTimeChange,
+    showChatStats,
+    setShowChatStats: onShowChatStatsChange,
+    maxParticipants,
+    handleShowConversationLimits: onShowConversationLimits,
+    handleShowPromptCatalog: onShowPromptCatalog,
+    limitsOverrides,
+  } = useSettings();
+
+  const {
+    selectedParticipants: participants,
+    modelAssignments,
+    handleModelAssignmentChange: onModelAssignmentChange,
+    handleOpenExpertModal: onOpenExpertModal,
+    handleMaxParticipantsChange: onMaxParticipantsChange,
+  } = useParticipants();
+
+  const {
+    hasCredentials,
+    handleShowCredentials: onShowCredentials,
+  } = useChatSession();
+
+  const conversationLimitsOverridden = Object.keys(limitsOverrides).length > 0;
+  const onToggleTheme = toggleTheme;
   const [open, setOpen] = useState(false);
   const [activeSub, setActiveSub] = useState(null); // null | "orch" | "sum" | <participant_id>
   const [q, setQ] = useState('');

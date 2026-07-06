@@ -6,6 +6,9 @@ import FailsafePauseBanner from './FailsafePauseBanner';
 import HumanInputSlot from './HumanInputSlot';
 import HumanTurnIndicator from './HumanTurnIndicator';
 import { DEFAULT_DEMO_PERSONAS, DEFAULT_PARTICIPANT_IDS } from '../utils/storage';
+import { useSettings } from '../context/SettingsContext';
+import { useParticipants } from '../context/ParticipantsContext';
+import { useChatSession } from '../context/ChatSessionContext';
 
 /** Update when the Neon contact destination changes on the redesigned site. */
 const NEON_CONTACT_URL = 'https://www.neon.ai/contact';
@@ -81,28 +84,28 @@ function buildSamplePreviewMessages(nameById) {
  * table view, .txt, .md, .csv, full API log). Per UX request these
  * stack vertically on narrow viewports.
  */
-export default function ChatArea({
-  messages,
-  systemMessages,
-  isRunning,
-  hasEnoughParticipantsToStart,
-  statusText,
-  pause,
-  onContinuePause,
-  participants,
-  showResponseTime,
-  showChatStats,
-  awaitingHuman,
-  humanSubmitting,
-  onHumanSubmit,
-  onHumanSkip,
-  onShowTableView,
-  onDownloadChatTxt,
-  onDownloadChatMd,
-  onDownloadCsvTable,
-  onDownloadApiLog,
-  hasApiLog,
-}) {
+export default function ChatArea() {
+  const { showResponseTime, showChatStats } = useSettings();
+  const { hasEnoughParticipantsToStart } = useParticipants();
+  const {
+    messages,
+    systemMessages,
+    isRunning,
+    statusText,
+    pause,
+    handleContinuePause: onContinuePause,
+    rosterParticipants: participants,
+    awaitingHuman,
+    humanSubmitting,
+    handleHumanSubmit: onHumanSubmit,
+    handleHumanSkip: onHumanSkip,
+    handleShowTableView: onShowTableView,
+    handleDownloadTxt: onDownloadChatTxt,
+    handleDownloadMd: onDownloadChatMd,
+    handleDownloadCsvTable: onDownloadCsvTable,
+    handleDownloadApiLog: onDownloadApiLog,
+    hasApiLog,
+  } = useChatSession();
   const speakerIdxFor = useMemo(() => {
     const map = {};
     (participants || []).forEach((p, i) => {

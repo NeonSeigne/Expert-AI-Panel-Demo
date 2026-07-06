@@ -1,7 +1,9 @@
 import React from 'react';
 import { LogOut, User } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
 
-export default function AuthBadge({ auth }) {
+export default function AuthBadge() {
+  const { auth } = useSettings();
   if (!auth) return null;
 
   if (auth.logged_in) {

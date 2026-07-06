@@ -1,27 +1,19 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, User, X } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
+import { useParticipants } from '../context/ParticipantsContext';
 
-/**
- * Replaces LLMChats3's LLMSelector. Lists the user's currently selected
- * participants with:
- *   - Toggle slider (on/off, doesn't deselect)
- *   - Accordion showing the LLM and the persona prompt
- *   - "Remove" button when the participant is off (does deselect)
- */
-export default function ParticipantSidebar({
-  participants,
-  enabledMap,
-  modelAssignments,
-  neonPromptByModelId = {},
-  onToggleEnabled,
-  onRemove,
-  autoSelectMode,
-  maxParticipants,
-}) {
-  // In auto-select mode with no chat in progress, the sidebar shows a
-  // placeholder explaining the deferred selection. Once the chat
-  // starts, App.js populates `participants` with the LLM-chosen set
-  // and the regular cards render normally.
+export default function ParticipantSidebar() {
+  const { maxParticipants, neonPromptByModelId } = useSettings();
+  const {
+    selectedParticipants: participants,
+    enabledMap,
+    modelAssignments,
+    autoSelectMode,
+    handleSidebarToggleEnabled,
+    handleSidebarRemove,
+  } = useParticipants();
+
   const showAutoPlaceholder = autoSelectMode && participants.length === 0;
 
   return (
@@ -58,8 +50,8 @@ export default function ParticipantSidebar({
             enabled={enabled}
             modelOverride={modelOverride}
             neonPromptByModelId={neonPromptByModelId}
-            onToggleEnabled={() => onToggleEnabled(p.participant_id, !enabled)}
-            onRemove={() => onRemove(p.participant_id)}
+            onToggleEnabled={() => handleSidebarToggleEnabled(p.participant_id, !enabled)}
+            onRemove={() => handleSidebarRemove(p.participant_id)}
           />
         );
       })}
@@ -134,11 +126,7 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
         <div className="ccai-participant-controls">
           {enabled ? (
             <label className="ccai-toggle" title="Toggle participation">
-              <input
-                type="checkbox"
-                checked={true}
-                onChange={onToggleEnabled}
-              />
+              <input type="checkbox" checked={true} onChange={onToggleEnabled} />
               <span className="ccai-toggle-slider"></span>
             </label>
           ) : (
@@ -154,10 +142,7 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
       </div>
       {!enabled && (
         <div className="ccai-participant-row ccai-participant-row-secondary">
-          <button
-            className="btn-sm btn-outline ccai-reenable-btn"
-            onClick={onToggleEnabled}
-          >
+          <button className="btn-sm btn-outline ccai-reenable-btn" onClick={onToggleEnabled}>
             Re-enable
           </button>
         </div>
@@ -187,9 +172,7 @@ function ParticipantCard({ participant, enabled, modelOverride, neonPromptByMode
                 <pre
                   className={
                     'ccai-participant-prompt'
-                    + (promptIsLong && !promptExpanded
-                      ? ' ccai-participant-prompt--preview'
-                      : '')
+                    + (promptIsLong && !promptExpanded ? ' ccai-participant-prompt--preview' : '')
                   }
                 >
                   {personaPrompt || '(no prompt set)'}

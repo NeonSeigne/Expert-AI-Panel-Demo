@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSettings } from '../context/SettingsContext';
 
 const COPY = {
   one_left: {
@@ -23,11 +24,10 @@ const COPY = {
   },
 };
 
-/**
- * Modal notice for anonymous / rate-limited users at 1 chat left or
- * when they try to start after the daily cap is exhausted.
- */
-export default function RateLimitNotice({ kind, onClose }) {
+export default function RateLimitNotice() {
+  const { rateLimitNotice: kind, setRateLimitNotice } = useSettings();
+  const onClose = () => setRateLimitNotice(null);
+
   if (!kind || !COPY[kind]) return null;
   const { title, body } = COPY[kind];
 

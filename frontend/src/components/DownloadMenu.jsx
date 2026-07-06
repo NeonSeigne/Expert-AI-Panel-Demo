@@ -1,26 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Table2, FileText, FileCode, FileSpreadsheet, History } from 'lucide-react';
+import { useChatSession } from '../context/ChatSessionContext';
 
-/**
- * Header dropdown that consolidates every "view this conversation as…"
- * and "download this conversation as…" action behind a single Download
- * icon. The same chat-as-.txt / .md / .csv items are *also* listed in
- * the Settings menu's Downloads section (intentional duplication, per
- * UX request); the only item that lives *exclusively* here is
- * "Download full API history".
- *
- * Mirrors the open/close + outside-mousedown pattern used by DevMenu so
- * both dropdowns feel and behave identically.
- */
-export default function DownloadMenu({
-  hasChat,
-  hasApiLog,
-  onShowTableView,
-  onDownloadChatTxt,
-  onDownloadChatMd,
-  onDownloadCsvTable,
-  onDownloadApiLog,
-}) {
+export default function DownloadMenu() {
+  const {
+    hasChat,
+    hasApiLog,
+    handleShowTableView,
+    handleDownloadTxt,
+    handleDownloadMd,
+    handleDownloadCsvTable,
+    handleDownloadApiLog,
+  } = useChatSession();
+
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -53,7 +45,7 @@ export default function DownloadMenu({
             <button
               className="dev-panel-row"
               disabled={!hasChat}
-              onClick={fire(onShowTableView)}
+              onClick={fire(handleShowTableView)}
               title="Open the conversation summary table"
             >
               <Table2 size={14} className="dev-check-icon" />
@@ -62,26 +54,18 @@ export default function DownloadMenu({
 
             <div className="dev-panel-divider" />
             <div className="dev-panel-label">Downloads</div>
-            <button
-              className="dev-panel-row"
-              disabled={!hasChat}
-              onClick={fire(onDownloadChatTxt)}
-            >
+            <button className="dev-panel-row" disabled={!hasChat} onClick={fire(handleDownloadTxt)}>
               <FileText size={14} className="dev-check-icon" />
               Chat as .txt
             </button>
-            <button
-              className="dev-panel-row"
-              disabled={!hasChat}
-              onClick={fire(onDownloadChatMd)}
-            >
+            <button className="dev-panel-row" disabled={!hasChat} onClick={fire(handleDownloadMd)}>
               <FileCode size={14} className="dev-check-icon" />
               Chat as .md
             </button>
             <button
               className="dev-panel-row"
               disabled={!hasChat}
-              onClick={fire(onDownloadCsvTable)}
+              onClick={fire(handleDownloadCsvTable)}
               title="Download the summary table as CSV"
             >
               <FileSpreadsheet size={14} className="dev-check-icon" />
@@ -90,7 +74,7 @@ export default function DownloadMenu({
             <button
               className="dev-panel-row"
               disabled={!hasApiLog}
-              onClick={fire(onDownloadApiLog)}
+              onClick={fire(handleDownloadApiLog)}
               title="Download the full backend API call history for this session"
             >
               <History size={14} className="dev-check-icon" />

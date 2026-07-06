@@ -1,5 +1,7 @@
-import React, { useState, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Play } from 'lucide-react';
+import { useParticipants } from '../context/ParticipantsContext';
+import { useChatSession } from '../context/ChatSessionContext';
 
 const DEMO_SUFFIX = ' [Or type your own question]';
 
@@ -9,20 +11,19 @@ function formatDemoDisplay(question) {
   return `Demo Question: ${label}${DEMO_SUFFIX}`;
 }
 
-/**
- * Question field pre-filled with a cycling demo prompt; "Start Chat"
- * uses the demo question text or whatever the user typed.
- */
-const ChatControls = forwardRef(function ChatControls({
-  demoQuestions = [],
-  onStart,
-  onStop,
-  disabled,
-  isRunning,
-  disabledReason,
-  disabledTooltip,
-  activeQuestion,
-}, ref) {
+export default function ChatControls() {
+  const { demoQuestions } = useParticipants();
+  const {
+    handleStart,
+    handleStop,
+    startDisabled,
+    isRunning,
+    startDisabledReason,
+    startDisabledTooltip,
+    activeQuestion,
+    getDraftQuestionRef,
+  } = useChatSession();
+
   const demoIndexRef = useRef(0);
   const [demoIndex, setDemoIndex] = useState(0);
   const [mode, setMode] = useState('demo');
@@ -39,9 +40,11 @@ const ChatControls = forwardRef(function ChatControls({
     return (currentDemo?.text || '').trim();
   }, [mode, userText, currentDemo]);
 
-  useImperativeHandle(ref, () => ({
-    getDraftQuestion: resolveQuestion,
-  }), [resolveQuestion]);
+  useEffect(() => {
+    if (getDraftQuestionRef) {
+      getDraftQuestionRef.current = resolveQuestion;
+    }
+  }, [getDraftQuestionRef, resolveQuestion]);
 
   const advanceDemo = useCallback(() => {
     if (demoQuestions.length === 0) return;
@@ -83,28 +86,25 @@ const ChatControls = forwardRef(function ChatControls({
     }
   };
 
-  const handleStart = () => {
+  const onStartClick = () => {
     const question = resolveQuestion();
-    if (!question || disabled) return;
-    onStart(question);
+    if (!question || startDisabled) return;
+    handleStart(question);
     advanceDemo();
   };
 
-  const canStart = !disabled && !!resolveQuestion();
-  const startButtonTitle = !canStart && disabledTooltip ? disabledTooltip : undefined;
+  const canStart = !startDisabled && !!resolveQuestion();
+  const startButtonTitle = !canStart && startDisabledTooltip ? startDisabledTooltip : undefined;
 
   return (
     <div className="chat-controls">
       {isRunning ? (
         <>
-          <button className="btn-stop" onClick={onStop}>
+          <button className="btn-stop" onClick={handleStop}>
             Stop Chat
           </button>
           {activeQuestion && (
-            <div
-              className="ccai-active-question"
-              title={activeQuestion}
-            >
+            <div className="ccai-active-question" title={activeQuestion}>
               <span className="ccai-active-question-label">Question:</span>
               <span className="ccai-active-question-text">{activeQuestion}</span>
             </div>
@@ -118,8 +118,8 @@ const ChatControls = forwardRef(function ChatControls({
               className="chat-controls-question"
               value={inputValue}
               placeholder={
-                disabled && disabledReason
-                  ? disabledReason
+                startDisabled && startDisabledReason
+                  ? startDisabledReason
                   : demoQuestions.length === 0
                     ? 'Loading demo questions…'
                     : ''
@@ -129,22 +129,19 @@ const ChatControls = forwardRef(function ChatControls({
                 handleKeyDown(e);
                 if (e.key === 'Enter' && canStart) {
                   e.preventDefault();
-                  handleStart();
+                  onStartClick();
                 }
               }}
             />
             <span
-              className={
-                'chat-start-btn-wrap'
-                + (startButtonTitle ? ' chat-start-btn-wrap-disabled' : '')
-              }
+              className={'chat-start-btn-wrap' + (startButtonTitle ? ' chat-start-btn-wrap-disabled' : '')}
               title={startButtonTitle}
             >
               <button
                 type="button"
                 className="btn-primary chat-controls-start"
                 disabled={!canStart}
-                onClick={handleStart}
+                onClick={onStartClick}
                 aria-disabled={!canStart}
               >
                 <Play size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
@@ -161,6 +158,4 @@ const ChatControls = forwardRef(function ChatControls({
       )}
     </div>
   );
-});
-
-export default ChatControls;
+}

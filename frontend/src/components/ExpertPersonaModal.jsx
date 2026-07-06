@@ -1,27 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Upload, Save, Trash2, Wand2 } from 'lucide-react';
 import { generateRole, generateRoleFreeform, suggestModel } from '../utils/api';
+import { useSettings } from '../context/SettingsContext';
+import { useParticipants } from '../context/ParticipantsContext';
 
-/**
- * Single source of truth for creating Expert Personas. Replaces the
- * inline PersonaAccordion + DevMenu persona-mode/role-style settings
- * from LLMChats3 - those choices now live inside this modal.
- *
- * Tabs: Structured | Freeform
- * Role-style toggle: AI-completed | Exact (matches LLMChats3 semantics)
- * Freeform tab supports a file upload for writing samples.
- */
 export default function ExpertPersonaModal({
   isOpen,
-  initial,                   // existing persona to edit, or null for new
+  initial,
   onClose,
   onSave,
   onDelete,
-  allModels,                 // [{ id, name, provider }]
-  defaultModelId,
-  panelContext,              // [{ name, model_id, provider }] — other panel members
-  orchestratorModelId,       // optional override for the meta-LLM call
 }) {
+  const { allModelsFlat: allModels, orchestratorModel } = useSettings();
+  const { expertDefaultModelId: defaultModelId, expertPanelContext: panelContext } = useParticipants();
+  const orchestratorModelId = orchestratorModel || undefined;
   const [activeTab, setActiveTab] = useState('freeform');
   const [name, setName] = useState('');
   const [profile, setProfile] = useState('');

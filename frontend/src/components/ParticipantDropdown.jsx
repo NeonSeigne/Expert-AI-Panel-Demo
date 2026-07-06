@@ -1,31 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Users, Plus, ChevronDown, Wand2, Check } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
+import { useParticipants } from '../context/ParticipantsContext';
 
-/**
- * Header dropdown that lists every available participant the user can
- * pull into the conversation. Three sections:
- *   - Neon (HANA personas, vanilla/RAG already filtered server-side)
- *   - Extra (bundled catalog personas, provider + Neon LLMs)
- *   - Expert (user-created, stored in localStorage)
- *
- * A top-of-list "Select N Automatically" toggle defers the choice to
- * the orchestrator LLM: when enabled, manual checkboxes are visually
- * disabled and the actual picks happen at /chat/start time via the
- * /api/chat/auto-select-participants endpoint.
- *
- * Selecting a participant adds them to the active conversation list. The
- * "Create Expert Persona..." entry opens the modal.
- */
-export default function ParticipantDropdown({
-  catalog,
-  expertPersonas,
-  selectedIds,
-  maxParticipants,
-  onToggleParticipant,
-  onOpenExpertModal,
-  autoSelectMode,
-  onToggleAutoSelectMode,
-}) {
+export default function ParticipantDropdown() {
+  const { maxParticipants } = useSettings();
+  const {
+    catalog,
+    expertPersonas,
+    selectedIds,
+    autoSelectMode,
+    handleToggleParticipant,
+    handleOpenExpertModal,
+    handleToggleAutoSelectMode,
+  } = useParticipants();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -47,7 +35,7 @@ export default function ParticipantDropdown({
 
   const openCreateExpertModal = () => {
     setOpen(false);
-    onOpenExpertModal(null);
+    handleOpenExpertModal(null);
   };
 
   return (
@@ -85,7 +73,7 @@ export default function ParticipantDropdown({
                 'ccai-dropdown-autoselect' +
                 (autoSelectMode ? ' ccai-dropdown-autoselect-on' : '')
               }
-              onClick={() => onToggleAutoSelectMode?.(!autoSelectMode)}
+              onClick={() => handleToggleAutoSelectMode?.(!autoSelectMode)}
               title={
                 autoSelectMode
                   ? 'Turn off auto-select and resume manual picking'
@@ -125,7 +113,7 @@ export default function ParticipantDropdown({
                   || (atCap && !isSelected(p.participant_id))
                 }
                 autoSelectActive={checkboxDisabledForAuto}
-                onToggle={() => onToggleParticipant(p, 'neon')}
+                onToggle={() => handleToggleParticipant(p)}
               />
             ))}
           </div>
@@ -147,7 +135,7 @@ export default function ParticipantDropdown({
                   || (atCap && !isSelected(p.participant_id))
                 }
                 autoSelectActive={checkboxDisabledForAuto}
-                onToggle={() => onToggleParticipant(p, 'extra')}
+                onToggle={() => handleToggleParticipant(p)}
               />
             ))}
           </div>
@@ -174,7 +162,7 @@ export default function ParticipantDropdown({
                   || (atCap && !isSelected(p.participant_id))
                 }
                 autoSelectActive={checkboxDisabledForAuto}
-                onToggle={() => onToggleParticipant(p, 'expert')}
+                onToggle={() => handleToggleParticipant(p)}
               />
             ))}
             <CreateExpertPersonaButton onClick={openCreateExpertModal} />
