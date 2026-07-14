@@ -20,6 +20,7 @@ usable string.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -146,6 +147,26 @@ async def reformat_neon_names(
         out[k] = display
 
     return out
+
+
+async def reformat_neon_names_bounded(
+    pairs: Iterable[tuple[str, str]],
+    *,
+    timeout: float = 8.0,
+) -> dict[tuple[str, str], str]:
+    """Like reformat_neon_names but never blocks the personas API indefinitely."""
+    pair_list = list(pairs)
+    if not pair_list:
+        return {}
+    try:
+        return await asyncio.wait_for(reformat_neon_names(pair_list), timeout=timeout)
+    except asyncio.TimeoutError:
+        LOG.warning(
+            "persona_naming timed out after %.1fs for %d pairs; using fallbacks",
+            timeout,
+            len(pair_list),
+        )
+        return {k: _fallback_name(*k) for k in pair_list}
 
 
 def cache_size() -> int:

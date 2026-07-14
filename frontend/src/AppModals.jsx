@@ -5,12 +5,17 @@ import CredentialSummaryModal from './components/CredentialSummaryModal';
 import ConversationLimitsModal from './components/ConversationLimitsModal';
 import PromptCatalogModal from './components/PromptCatalogModal';
 import HumanParticipantModal from './components/HumanParticipantModal';
+import AddParticipantsModal from './components/AddParticipantsModal';
 import RateLimitNotice from './components/RateLimitNotice';
+import OnboardingModal from './components/onboarding/OnboardingModal';
 import { useSettings } from './context/SettingsContext';
 import { useParticipants } from './context/ParticipantsContext';
 import { useChatSession } from './context/ChatSessionContext';
 
-export default function AppModals() {
+export default function AppModals({
+  showOnboarding = false,
+  onDismissOnboarding,
+}) {
   const {
     limitsSchema,
     limitsOverrides,
@@ -52,6 +57,10 @@ export default function AppModals() {
 
   return (
     <>
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onDismiss={onDismissOnboarding}
+      />
       <ExpertPersonaModal
         isOpen={expertModalOpen}
         initial={expertEditing}
@@ -94,6 +103,7 @@ export default function AppModals() {
         catalog={promptCatalog}
         onClose={() => setPromptCatalogOpen(false)}
       />
+      <AddParticipantsModal />
       <RateLimitNotice />
     </>
   );

@@ -1140,11 +1140,21 @@ async def api_table_view(session_id: str):
         LOG.warning("Failed to build contribution summaries: %s", exc)
 
     rows = []
+    threshold = session.limits.auto_disable_failures
     for p in session.participants:
         first = (session.initial_opinions or {}).get(p.participant_id, "")
         contribution = (session.contribution_summaries or {}).get(p.participant_id, "")
         revised = (session.final_opinions or {}).get(p.participant_id, "")
         final_msg = _last_consensus_message_for(session, p.participant_id) or revised
+        cred = _credential_for(session, p.participant_id)
+        credibility = cred.get("credibility_for_question")
+        try:
+            credibility_val = float(credibility) if credibility is not None else None
+        except (TypeError, ValueError):
+            credibility_val = None
+        failures = int(getattr(p, "consecutive_failures", 0) or 0)
+        enabled = bool(p.enabled)
+        auto_disabled = (not enabled) and failures >= threshold
         rows.append({
             "participant_id": p.participant_id,
             "name": p.name,
@@ -1153,13 +1163,19 @@ async def api_table_view(session_id: str):
             "contribution_summary": contribution,
             "revised_opinion": revised,
             "final_opinion": final_msg,
+            "credibility_for_question": credibility_val,
+            "consecutive_failures": failures,
+            "enabled": enabled,
+            "auto_disabled": auto_disabled,
         })
     final_report = (session.final_report or {}).get("text", "")
+    decision = dict(session.final_report) if session.final_report else None
     return {
         "session_id": session_id,
         "question": session.question,
         "final_report": final_report,
         "final_report_kind": (session.final_report or {}).get("kind", ""),
+        "decision": decision,
         "rows": rows,
     }
 
@@ -1351,9 +1367,16 @@ def _export_csv_table(session: Session) -> dict:
         "Conversation contribution",
         "Revised opinion",
         "Final opinion",
+        "Consecutive failures",
+        "Enabled",
+        "Auto-disabled",
     ])
+    threshold = session.limits.auto_disable_failures
     for p in session.participants:
         cred = _credential_for(session, p.participant_id)
+        failures = int(getattr(p, "consecutive_failures", 0) or 0)
+        enabled = bool(p.enabled)
+        auto_disabled = (not enabled) and failures >= threshold
         writer.writerow([
             p.name,
             cred.get("expertise", ""),
@@ -1364,5 +1387,8 @@ def _export_csv_table(session: Session) -> dict:
             (session.contribution_summaries or {}).get(p.participant_id, ""),
             (session.final_opinions or {}).get(p.participant_id, ""),
             _last_consensus_message_for(session, p.participant_id),
+            failures,
+            "yes" if enabled else "no",
+            "yes" if auto_disabled else "no",
         ])
     return {"filename": "ccai_chat_table.csv", "content": buf.getvalue()}

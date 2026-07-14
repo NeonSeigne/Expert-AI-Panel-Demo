@@ -1,0 +1,1248 @@
+/* Onboarding wizard modal */
+
+.onboarding-overlay {
+  flex-direction: column;
+  gap: 0;
+  z-index: 1050;
+}
+
+/* Settings modal: same chrome as onboarding, slightly higher stack */
+.onboarding-overlay.preferences-overlay {
+  z-index: 1100;
+  /* Don't vertically center a ~90vh card + chrome — that clips the top
+     and dumps Close under the viewport onto the chat composer. */
+  justify-content: flex-start;
+  align-items: center;
+  padding: 24px 16px 32px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.preferences-frame {
+  width: min(880px, 100%);
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.preferences-card {
+  position: relative;
+  width: min(800px, 100%);
+  /* Prefer flexible height over forcing 640px min that overflows the viewport */
+  min-height: 0;
+  height: auto;
+  max-height: min(86vh, 900px);
+}
+
+.preferences-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.preferences-card-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.onboarding-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(960px, 95vw);
+  max-width: 95vw;
+}
+
+.onboarding-card {
+  width: min(960px, 92vw);
+  height: min(720px, 85vh);
+  max-height: 85vh;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Settings modal keeps flexible height (shares onboarding-card chrome) */
+.onboarding-card.preferences-card {
+  width: min(800px, 100%);
+  height: auto;
+  min-height: 0;
+  max-height: min(86vh, 900px);
+}
+
+.onboarding-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.onboarding-card-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.onboarding-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px 28px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-card-slide {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.onboarding-card-slide--forward {
+  animation: onboarding-slide-from-right 0.3s ease;
+}
+
+.onboarding-card-slide--back {
+  animation: onboarding-slide-from-left 0.3s ease;
+}
+
+@keyframes onboarding-slide-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes onboarding-slide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.onboarding-card-footer {
+  flex-shrink: 0;
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-step-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: left;
+  line-height: 1.25;
+}
+
+.onboarding-step-heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 36rem;
+  margin: 0 auto 16px;
+  flex-shrink: 0;
+}
+
+.onboarding-step-heading-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--brand-periwinkle);
+  color: var(--brand-purple);
+  animation: onboarding-chat-graphic-icon-in 0.55s ease-out both;
+}
+
+.onboarding-step-lede {
+  margin: 0 0 16px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.onboarding-step-body {
+  margin: 0;
+  font-size: 0.975rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 32rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Center steps both horizontally and vertically in the card body */
+.onboarding-step {
+  width: 100%;
+  margin-block: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.onboarding-step--welcome {
+  padding: 24px 8px 32px;
+}
+
+.onboarding-brand-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  margin-bottom: 20px;
+}
+
+.onboarding-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.onboarding-chat-graphic {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: min(100%, 34rem);
+  max-width: 34rem;
+  margin: 0 auto 8px;
+  align-self: center;
+  box-sizing: border-box;
+}
+
+.onboarding-chat-graphic-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.onboarding-chat-graphic--compact {
+  width: min(100%, 32rem);
+  max-width: 32rem;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.onboarding-chat-graphic--compact .neon-chat-row {
+  margin-bottom: 0.45rem;
+}
+
+.onboarding-chat-graphic--compact .neon-chat-bubble {
+  padding: 0.65rem 0.9rem;
+  font-size: 0.875rem;
+}
+
+.onboarding-chat-graphic-thread {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.onboarding-chat-graphic-thread .neon-chat-row {
+  margin-bottom: 0.65rem;
+}
+
+.onboarding-chat-graphic-thread .neon-chat-row:last-child {
+  margin-bottom: 0;
+}
+
+.onboarding-chat-graphic-thread .neon-chat-bubble-wrap {
+  max-width: 100%;
+}
+
+.onboarding-chat-graphic-row {
+  animation: onboarding-chat-graphic-row-in 0.5s ease-out both;
+}
+
+.onboarding-chat-graphic-row--1 {
+  animation-delay: 0.2s;
+}
+
+.onboarding-chat-graphic-row--2 {
+  animation-delay: 0.55s;
+}
+
+.onboarding-chat-graphic-row--3 {
+  animation-delay: 0.9s;
+}
+
+@keyframes onboarding-chat-graphic-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes onboarding-chat-graphic-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-step-heading-icon,
+  .onboarding-chat-graphic-row {
+    animation: none;
+  }
+}
+
+.onboarding-intro-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 0 24px;
+}
+
+.onboarding-intro-list p {
+  margin: 0;
+}
+
+.onboarding-step--intro {
+  padding: 12px 8px 24px;
+}
+
+.onboarding-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  width: 100%;
+  max-width: 40rem;
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
+  padding: 2px 2px 8px;
+}
+
+@media (min-width: 700px) {
+  .onboarding-suggestions-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.onboarding-see-all-card {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.onboarding-see-all-card:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.onboarding-see-all-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--brand-periwinkle);
+  color: var(--brand-purple);
+  margin-bottom: 0.15rem;
+}
+
+.onboarding-see-all-card .participant-directory-card-name {
+  width: 100%;
+  text-align: center;
+}
+
+.onboarding-see-all-card .participant-directory-card-model {
+  width: 100%;
+  text-align: center;
+}
+
+.onboarding-suggestions-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 40rem;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-primary);
+  margin-top: 4px;
+}
+
+.onboarding-suggestions-count {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.onboarding-random-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.onboarding-random-pick-btn:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: var(--bg-primary);
+}
+
+.onboarding-random-pick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.onboarding-random-pick-btn svg {
+  color: var(--brand-purple);
+  flex-shrink: 0;
+}
+
+/* Participants / human: keep content centered; scroll if needed */
+.onboarding-step--participants,
+.onboarding-step--human {
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px 8px;
+  justify-content: center;
+}
+
+/* Form-heavy steps still fill and scroll from the top */
+.onboarding-step--preferences,
+.onboarding-step--limits {
+  margin-block: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+/* Title/icon stay pinned; bubbles + form scroll together */
+.onboarding-step--preferences:has(.onboarding-step-preferences-scroll) {
+  overflow: hidden;
+}
+
+.onboarding-step--preferences .onboarding-step-heading {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+  z-index: 1;
+}
+
+.onboarding-step-preferences-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding-bottom: 8px;
+}
+
+/* Form expands with content so parent scroll moves bubbles + options together */
+.onboarding-step-preferences-scroll .onboarding-form-root,
+.onboarding-step-preferences-scroll .onboarding-form.onboarding-form--preferences {
+  flex: none;
+  overflow: visible;
+  min-height: 0;
+}
+
+.onboarding-directory-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.onboarding-directory-wrap .participant-directory {
+  flex: 1;
+  min-height: 0;
+}
+
+.onboarding-directory-wrap .participant-directory > .participant-directory-search-wrap {
+  margin: 0.65rem 0.85rem 0;
+}
+
+.onboarding-directory-wrap .participant-directory-body {
+  min-height: 0;
+  flex: 1;
+}
+
+.onboarding-directory-wrap .participant-directory-detail--empty {
+  font-size: 0.8125rem;
+}
+
+/* Human step */
+.onboarding-choice-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0 16px;
+  width: 100%;
+  max-width: 34rem;
+}
+
+.onboarding-choice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.onboarding-choice-card strong {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.onboarding-choice-card span {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.onboarding-choice-card:hover {
+  border-color: var(--accent-primary);
+}
+
+.onboarding-choice-card--active {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 35%, transparent);
+  background: var(--bg-primary);
+}
+
+/* Preferences form: wrap-safe 2-column choice cards (4 options → 2×2) */
+.preferences-choice-section {
+  gap: 10px;
+  min-width: 0;
+}
+
+.preferences-choice-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.preferences-choice-card {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+}
+
+.preferences-choice-card-icon {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: normal;
+  font-style: normal;
+  color: var(--md-sys-color-on-surface-variant, var(--text-secondary));
+  margin-bottom: 2px;
+}
+
+.onboarding-choice-card--active .preferences-choice-card-icon {
+  color: var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.preferences-choice-card strong {
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.preferences-choice-card span {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.preferences-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--md-sys-color-outline-variant, var(--border-primary));
+}
+
+.preferences-advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 4px;
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.preferences-advanced-toggle:hover {
+  color: var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.preferences-advanced-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.preferences-advanced-toggle--open .preferences-advanced-chevron {
+  transform: rotate(180deg);
+}
+
+.preferences-advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-bottom: 8px;
+}
+
+.preferences-advanced-lede {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--md-sys-color-on-surface-variant, var(--text-secondary));
+}
+
+@media (max-width: 640px) {
+  .preferences-choice-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.onboarding-human-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  width: 100%;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Flat material preferences / limits form */
+.onboarding-form-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.onboarding-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 4px 16px;
+  text-align: left;
+}
+
+/* Settings-menu layout: section TITLE, then options tiled below */
+.onboarding-form--preferences,
+.onboarding-form--limits {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 2px 2px 16px;
+  text-align: left;
+}
+
+.onboarding-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-form-section-label,
+.onboarding-form-fieldset > legend {
+  margin: 0;
+  padding: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant, var(--text-tertiary));
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, var(--border-primary));
+}
+
+.onboarding-form-fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+/* Options tile into a responsive grid under each title */
+.onboarding-form-radio-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.onboarding-form-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--md-sys-color-outline-variant, var(--border-primary));
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container, var(--bg-secondary));
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+}
+
+.onboarding-form-radio-row--selected {
+  border-color: var(--md-sys-color-primary, var(--accent-primary));
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.onboarding-form--preferences md-radio {
+  --md-radio-icon-size: 16px;
+  --md-radio-state-layer-size: 28px;
+}
+
+.onboarding-form--preferences md-switch {
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.onboarding-form-radio-label {
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+/* Display-option switches tile side by side */
+.onboarding-form-section--switches .onboarding-form-switch-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.onboarding-form-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--md-sys-color-outline-variant, var(--border-primary));
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container, var(--bg-secondary));
+  cursor: pointer;
+}
+
+.onboarding-form-switch-label {
+  font-size: 0.82rem;
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+}
+
+/* Model selects tile into a grid */
+.onboarding-form-section--models .onboarding-form-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.onboarding-form-section--limits .onboarding-form-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.onboarding-form-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant, var(--border-primary));
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container, var(--bg-secondary));
+  min-width: 0;
+}
+
+.onboarding-form-slider-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.onboarding-form-slider-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.onboarding-form-slider-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.onboarding-form-slider-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+  line-height: 1.3;
+}
+
+.onboarding-form-slider-value {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.onboarding-form-slider-help {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--md-sys-color-on-surface-variant, var(--text-secondary));
+}
+
+.onboarding-form-slider {
+  width: 100%;
+  margin-inline: -4px;
+}
+
+.onboarding-form-slider-range {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--md-sys-color-on-surface-variant, var(--text-tertiary));
+}
+
+.onboarding-limit-reset {
+  flex-shrink: 0;
+  margin-top: 0;
+  font-size: 0.72rem;
+}
+
+.onboarding-form-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.onboarding-form-field-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant, var(--text-secondary));
+}
+
+/* Material-outlined look; menu itself is the native OS select */
+.onboarding-form-select-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.onboarding-form-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 36px 10px 14px;
+  border: 1px solid var(--md-sys-color-outline, var(--border-primary));
+  border-radius: 4px;
+  background: var(--md-sys-color-surface, var(--bg-primary));
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+  font-family: var(--font-app);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.onboarding-form-select:hover {
+  border-color: var(--md-sys-color-on-surface, var(--text-primary));
+}
+
+.onboarding-form-select:focus {
+  outline: none;
+  border-color: var(--md-sys-color-primary, var(--accent-primary));
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.onboarding-form-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.onboarding-form-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 2px solid var(--md-sys-color-on-surface-variant, var(--text-secondary));
+  border-bottom: 2px solid var(--md-sys-color-on-surface-variant, var(--text-secondary));
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.onboarding-form-select:focus + .onboarding-form-select-chevron {
+  border-color: var(--md-sys-color-primary, var(--accent-primary));
+}
+
+.onboarding-form-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.onboarding-limits-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.onboarding-limits-form.onboarding-form--limits {
+  gap: 22px;
+}
+
+.onboarding-limits-form-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+
+/* Navigation arrows */
+.onboarding-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.onboarding-arrow:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.onboarding-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.onboarding-arrow--prev {
+  left: -52px;
+}
+
+.onboarding-arrow--next {
+  right: -52px;
+}
+
+.onboarding-finish-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-primary, #0b57d0);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent-primary, #0b57d0) 35%, transparent);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.onboarding-finish-btn:hover {
+  background: color-mix(in srgb, var(--accent-primary, #0b57d0) 88%, #000);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-primary, #0b57d0) 45%, transparent);
+}
+
+/* Go CTA in the next-arrow slot (last step) — circular check */
+.onboarding-finish-btn--arrow {
+  position: absolute;
+  top: 50%;
+  right: -52px;
+  z-index: 2;
+  margin-top: 0;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  gap: 0;
+  font-size: 0;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-primary, #0b57d0) 40%, transparent);
+}
+
+/* Dots */
+.onboarding-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 999px;
+  border: none;
+  background: var(--border-primary);
+  cursor: default;
+}
+
+.onboarding-dot--active {
+  width: 20px;
+  background: var(--accent-primary);
+  cursor: default;
+}
+
+.onboarding-dot--done {
+  background: color-mix(in srgb, var(--accent-primary) 55%, var(--border-primary));
+  cursor: pointer;
+}
+
+.onboarding-validation-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Skip below the modal card */
+.onboarding-skip {
+  margin-top: 14px;
+  padding: 8px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #000000;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.onboarding-skip:hover {
+  background: #f5f5f5;
+  color: #000000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Nested modals above onboarding / preferences */
+body:has(.onboarding-overlay) .ccai-credentials-overlay:not(.onboarding-overlay),
+body:has(.onboarding-overlay) .modal-overlay,
+body:has(.onboarding-overlay) .participant-directory-overlay,
+body:has(.preferences-overlay) .ccai-credentials-overlay:not(.preferences-overlay):not(.onboarding-overlay),
+body:has(.preferences-overlay) .modal-overlay,
+body:has(.preferences-overlay) .participant-directory-overlay {
+  z-index: 1200;
+}
+
+@media (max-width: 900px) {
+  .onboarding-frame {
+    width: min(100%, 95vw);
+    padding: 0 48px;
+  }
+
+  .onboarding-arrow--prev {
+    left: 0;
+  }
+
+  .onboarding-arrow--next {
+    right: 0;
+  }
+
+  .onboarding-finish-btn--arrow {
+    right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .onboarding-frame {
+    padding: 0;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .onboarding-card {
+    width: min(100%, 95vw);
+    height: min(720px, 85vh);
+  }
+
+  .onboarding-arrow {
+    position: static;
+    transform: none;
+  }
+
+  .onboarding-finish-btn--arrow {
+    position: static;
+    transform: none;
+  }
+
+  .onboarding-frame {
+    display: grid;
+    grid-template-columns: 44px 1fr minmax(44px, auto);
+    grid-template-rows: auto auto;
+    align-items: stretch;
+  }
+
+  .onboarding-arrow--prev {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .onboarding-card {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .onboarding-arrow--next,
+  .onboarding-finish-btn--arrow {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .onboarding-arrow--next {
+    width: 44px;
+    padding: 0;
+  }
+
+  .onboarding-choice-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-card-body {
+    padding: 16px 14px 8px;
+  }
+}

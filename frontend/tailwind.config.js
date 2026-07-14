@@ -3,6 +3,17 @@ module.exports = {
   darkMode: ['selector', '[data-theme="dark"]'],
   content: ['./src/**/*.{js,jsx}'],
   theme: {
+    fontFamily: {
+      sans: [
+        'Figtree',
+        'ui-sans-serif',
+        'system-ui',
+        '-apple-system',
+        'BlinkMacSystemFont',
+        'Segoe UI',
+        'sans-serif',
+      ],
+    },
     extend: {
       colors: {
         bg: {
@@ -50,8 +61,8 @@ module.exports = {
           'b-bg': 'var(--speaker-b-bg)',
         },
         human: {
-          DEFAULT: '#16A34A',
-          bg: '#F0FDF4',
+          DEFAULT: '#2EC4F2',
+          bg: '#D6F4FD',
         },
       },
       boxShadow: {
@@ -62,17 +73,6 @@ module.exports = {
       backgroundImage: {
         'app-gradient': 'var(--bg-gradient)',
         'accent-gradient': 'var(--accent-gradient)',
-      },
-      fontFamily: {
-        sans: [
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'Roboto',
-          'Helvetica Neue',
-          'Arial',
-          'sans-serif',
-        ],
       },
     },
   },

@@ -1,82 +1,76 @@
-import React from 'react';
-import { UserPlus, UserCheck, Table2 } from 'lucide-react';
-import AuthBadge from './AuthBadge';
-import ParticipantDropdown from './ParticipantDropdown';
-import DownloadMenu from './DownloadMenu';
+import React, { useState } from 'react';
+import { Table2 } from 'lucide-react';
 import DevMenu from './DevMenu';
-import HeaderMoreMenu from './HeaderMoreMenu';
-import { useParticipants } from '../context/ParticipantsContext';
+import DemoAboutModal from './DemoAboutModal';
+import NeonDesignRoot from './NeonDesignRoot';
+import '../neon/neon-material.register.js';
 import { useChatSession } from '../context/ChatSessionContext';
-
-function HumanParticipantButton() {
-  const { humanParticipant, handleOpenHumanModal } = useParticipants();
-  return (
-    <button
-      type="button"
-      className={
-        'btn-sm btn-outline ccai-human-add-btn header-actions-desktop'
-        + (humanParticipant ? ' ccai-human-add-btn-active' : '')
-      }
-      onClick={handleOpenHumanModal}
-      title={humanParticipant
-        ? `Edit ${humanParticipant.name}'s credential summary`
-        : 'Add a human participant to the conversation'}
-    >
-      {humanParticipant ? (
-        <>
-          <UserCheck size={14} style={{ marginRight: 4 }} />
-          {humanParticipant.name}
-        </>
-      ) : (
-        <>
-          <UserPlus size={14} style={{ marginRight: 4 }} />
-          Add a Human Participant
-        </>
-      )}
-    </button>
-  );
-}
 
 function TableViewButton() {
   const { hasChat, handleShowTableView } = useChatSession();
   return (
-    <button
-      type="button"
-      className="btn-sm btn-outline ccai-table-view-btn header-actions-desktop"
+    <md-outlined-button
+      className="header-table-view-btn header-actions-desktop"
       onClick={handleShowTableView}
       disabled={!hasChat}
       title={hasChat
         ? 'Open the conversation summary table'
         : 'Start a chat to view the summary table'}
     >
-      <Table2 size={14} style={{ marginRight: 4 }} />
+      <Table2 size={16} strokeWidth={2} slot="icon" aria-hidden />
       Table View
-    </button>
+    </md-outlined-button>
   );
 }
 
-export default function Header() {
+export default function Header({
+  sidebarCollapsed = false,
+  onToggleSidebar,
+  onOpenTutorial,
+}) {
+  const [aboutOpen, setAboutOpen] = useState(false);
+
   return (
     <header className="app-header">
-      <div className="header-left">
-        <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="header-brand-link">
-          <img src="/neon-logo.png" alt="Neon.ai" className="app-logo" />
-        </a>
-        <h1 className="app-title">
-          <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="app-title-link">
-            Neon.ai
-          </a> - Collaborative Conversational AI (CCAI) Demo
-        </h1>
-      </div>
-      <div className="header-right">
-        <ParticipantDropdown />
-        <HumanParticipantButton />
-        <TableViewButton />
-        <HeaderMoreMenu />
-        <DownloadMenu />
-        <DevMenu />
-        <AuthBadge />
-      </div>
+      <NeonDesignRoot className="app-header-md">
+        <div className="header-left">
+          <md-icon-button
+            className="header-icon-btn header-menu-btn"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="participant-sidebar"
+            onClick={onToggleSidebar}
+          >
+            <md-icon>menu</md-icon>
+          </md-icon-button>
+          <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="header-brand-link">
+            <img src="/neon-logo.png" alt="Neon.ai" className="app-logo" />
+          </a>
+          <h1 className="app-title">Collaborative Conversational Artificial Intelligence</h1>
+        </div>
+        <div className="header-right">
+          <md-text-button
+            className="header-tutorial-btn"
+            aria-label="Tutorial"
+            title="Open the welcome tutorial"
+            onClick={onOpenTutorial}
+          >
+            Tutorial
+          </md-text-button>
+          <TableViewButton />
+          <md-icon-button
+            className="header-icon-btn"
+            aria-label="About this demo"
+            title="About this demo"
+            onClick={() => setAboutOpen(true)}
+          >
+            <md-icon>help</md-icon>
+          </md-icon-button>
+          <DevMenu />
+        </div>
+      </NeonDesignRoot>
+      <DemoAboutModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} />
     </header>
   );
 }

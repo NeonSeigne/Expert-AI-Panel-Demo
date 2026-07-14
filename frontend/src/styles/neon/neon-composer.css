@@ -1,0 +1,478 @@
+/* Vendored from neon-design@dev-cursor — MD3 bridge + composer-final styles */
+
+.neon-design-root {
+  color-scheme: dark;
+
+  --color-neon-primary: #0b57d0;
+  --color-neon-on-primary: #ffffff;
+  --color-neon-primary-container: #0a2540;
+  --color-neon-on-primary-container: #d3e3fd;
+  --color-neon-secondary: #ccccff;
+  --color-neon-on-secondary: #1a1b22;
+  --color-neon-secondary-container: #1a2e38;
+  --color-neon-on-secondary-container: #ffffff;
+  --color-neon-tertiary: #2ec4f2;
+  --color-neon-on-tertiary: #ffffff;
+  --color-neon-tertiary-container: #123540;
+  --color-neon-on-tertiary-container: #b8eeff;
+  --color-neon-error: #ff3b30;
+  --color-neon-on-error: #ffffff;
+  --color-neon-error-container: #4a1512;
+  --color-neon-on-error-container: #ffdad6;
+  --color-neon-surface-dim: #0d0e12;
+  --color-neon-surface: #12141a;
+  --color-neon-surface-bright: #161820;
+  --color-neon-surface-container-lowest: #0a0b0f;
+  --color-neon-surface-container-low: #161820;
+  --color-neon-surface-container: #0d0d0d;
+  --color-neon-surface-container-high: #22252e;
+  --color-neon-surface-container-highest: #282b36;
+  --color-neon-on-surface: #f8f9fa;
+  --color-neon-on-surface-variant: #ccccff;
+  --color-neon-outline: rgba(255, 255, 255, 0.1);
+  --color-neon-outline-variant: rgba(204, 204, 255, 0.1);
+  --color-neon-composer-surface: #22252e;
+  --color-neon-composer-on-surface: #f8f9fa;
+  --color-neon-composer-border: rgba(204, 204, 255, 0.1);
+  --color-neon-composer-placeholder: #ccccff;
+  --color-neon-action-emphasis: #ffffff;
+
+  --font-sans: var(--font-app);
+  --md-ref-typeface-brand: var(--font-app);
+  --md-ref-typeface-plain: var(--font-app);
+  --radius-neon-full: 9999px;
+  --radius-neon-md: 12px;
+
+  --md-sys-color-primary: var(--color-neon-primary);
+  --md-sys-color-on-primary: var(--color-neon-on-primary);
+  --md-sys-color-primary-container: var(--color-neon-primary-container);
+  --md-sys-color-on-primary-container: var(--color-neon-on-primary-container);
+  --md-sys-color-secondary: var(--color-neon-secondary);
+  --md-sys-color-on-secondary: var(--color-neon-on-secondary);
+  --md-sys-color-secondary-container: var(--color-neon-secondary-container);
+  --md-sys-color-on-secondary-container: var(--color-neon-on-secondary-container);
+  --md-sys-color-tertiary: var(--color-neon-tertiary);
+  --md-sys-color-on-tertiary: var(--color-neon-on-tertiary);
+  --md-sys-color-tertiary-container: var(--color-neon-tertiary-container);
+  --md-sys-color-on-tertiary-container: var(--color-neon-on-tertiary-container);
+  --md-sys-color-error: var(--color-neon-error);
+  --md-sys-color-on-error: var(--color-neon-on-error);
+  --md-sys-color-error-container: var(--color-neon-error-container);
+  --md-sys-color-on-error-container: var(--color-neon-on-error-container);
+  --md-sys-color-background: var(--color-neon-surface-dim);
+  --md-sys-color-on-background: var(--color-neon-on-surface);
+  --md-sys-color-surface: var(--color-neon-surface);
+  --md-sys-color-on-surface: var(--color-neon-on-surface);
+  --md-sys-color-surface-dim: var(--color-neon-surface-dim);
+  --md-sys-color-surface-bright: var(--color-neon-surface-bright);
+  --md-sys-color-surface-container-lowest: var(--color-neon-surface-container-lowest);
+  --md-sys-color-surface-container-low: var(--color-neon-surface-container-low);
+  --md-sys-color-surface-container: var(--color-neon-surface-container);
+  --md-sys-color-surface-container-high: var(--color-neon-surface-container-high);
+  --md-sys-color-surface-container-highest: var(--color-neon-surface-container-highest);
+  --md-sys-color-on-surface-variant: var(--color-neon-on-surface-variant);
+  --md-sys-color-outline: var(--color-neon-outline);
+  --md-sys-color-outline-variant: var(--color-neon-outline-variant);
+
+  --md-outlined-icon-button-container-shape: var(--radius-neon-full);
+  --md-filled-icon-button-container-shape: var(--radius-neon-full);
+  --md-filled-tonal-icon-button-container-shape: var(--radius-neon-full);
+  --md-outlined-icon-button-container-width: 44px;
+  --md-outlined-icon-button-container-height: 44px;
+  --md-filled-icon-button-container-width: 44px;
+  --md-filled-icon-button-container-height: 44px;
+  --md-filled-tonal-icon-button-container-width: 44px;
+  --md-filled-tonal-icon-button-container-height: 44px;
+
+  --md-filled-icon-button-container-color: var(--md-sys-color-primary);
+  --md-filled-icon-button-icon-color: var(--md-sys-color-on-primary);
+  --md-filled-icon-button-hover-icon-color: var(--md-sys-color-on-primary);
+  --md-filled-icon-button-focus-icon-color: var(--md-sys-color-on-primary);
+  --md-filled-icon-button-pressed-icon-color: var(--md-sys-color-on-primary);
+}
+
+.neon-design-root[data-theme='light'] {
+  color-scheme: light;
+  --color-neon-primary: #0b57d0;
+  --color-neon-on-primary: #ffffff;
+  --color-neon-primary-container: #d3e3fd;
+  --color-neon-on-primary-container: #041e49;
+  --color-neon-secondary: #d3e3fd;
+  --color-neon-on-secondary: #1f1f1f;
+  --color-neon-secondary-container: #e8f0fe;
+  --color-neon-on-secondary-container: #041e49;
+  --color-neon-tertiary: #2ec4f2;
+  --color-neon-on-tertiary: #ffffff;
+  --color-neon-tertiary-container: #d0f0fa;
+  --color-neon-on-tertiary-container: #0a3d4d;
+  --color-neon-error: #ff3b30;
+  --color-neon-on-error: #ffffff;
+  --color-neon-error-container: #ffdad6;
+  --color-neon-on-error-container: #690005;
+  --color-neon-surface-dim: #f5f5f5;
+  --color-neon-surface: #ffffff;
+  --color-neon-surface-bright: #ffffff;
+  --color-neon-surface-container-lowest: #ffffff;
+  --color-neon-surface-container-low: #f8f8f8;
+  --color-neon-surface-container: #f5f5f5;
+  --color-neon-surface-container-high: #eeeeee;
+  --color-neon-surface-container-highest: #e0e0e0;
+  --color-neon-on-surface: #1f1f1f;
+  --color-neon-on-surface-variant: #444746;
+  --color-neon-outline: #e0e0e0;
+  --color-neon-outline-variant: rgba(0, 0, 0, 0.08);
+  --color-neon-composer-surface: #ffffff;
+  --color-neon-composer-on-surface: #1f1f1f;
+  --color-neon-composer-border: rgba(0, 0, 0, 0.12);
+  --color-neon-composer-placeholder: #80868b;
+  --color-neon-action-emphasis: #0b57d0;
+  --neon-composer-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.neon-design-root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-neon-composer-surface: #22252e;
+  --color-neon-composer-on-surface: #f8f9fa;
+  --color-neon-composer-border: rgba(204, 204, 255, 0.12);
+  --color-neon-composer-placeholder: #ccccff;
+  --neon-composer-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.neon-design-root .md-icon-button-host {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.neon-design-root md-outlined-icon-button,
+.neon-design-root md-filled-icon-button,
+.neon-design-root md-filled-tonal-icon-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  vertical-align: middle;
+  font-family: var(--font-sans);
+}
+
+.neon-design-root md-filled-tonal-icon-button.md-icon-button--ghost {
+  --md-filled-tonal-icon-button-container-color: transparent;
+  --md-filled-tonal-icon-button-icon-color: var(--md-sys-color-on-surface-variant);
+  --md-filled-tonal-icon-button-hover-icon-color: var(--md-sys-color-on-surface);
+  --md-filled-tonal-icon-button-focus-icon-color: var(--md-sys-color-on-surface);
+  --md-filled-tonal-icon-button-pressed-icon-color: var(--md-sys-color-on-surface);
+  --md-filled-tonal-icon-button-hover-state-layer-color: var(--md-sys-color-on-surface);
+  box-shadow: none;
+}
+
+.neon-composer--final.neon-composer {
+  --radius-neon-composer: 1.5rem;
+  --neon-composer-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --neon-composer-shadow-focus: 0 8px 28px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  box-sizing: border-box;
+}
+
+.neon-design-root[data-theme='dark'] .neon-composer--final {
+  --neon-composer-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  --neon-composer-shadow-focus: 0 10px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* ChatGPT/Gemini-style shell: rounded rect, text above, actions below */
+.neon-composer--final .neon-composer-pill {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  min-height: 3.5rem;
+  padding: 0.875rem 1rem 0.625rem;
+  border: 1px solid #000;
+  border-radius: var(--radius-neon-composer);
+  background: var(--color-neon-composer-surface);
+  box-shadow: var(--neon-composer-shadow);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  overflow: visible;
+}
+
+.neon-composer--final .neon-composer-pill:focus-within {
+  border-color: #000;
+  box-shadow: var(--neon-composer-shadow-focus);
+}
+
+.neon-design-root[data-theme='dark'] .neon-composer--final .neon-composer-pill {
+  border-color: #fff;
+}
+
+.neon-design-root[data-theme='dark'] .neon-composer--final .neon-composer-pill:focus-within {
+  border-color: #fff;
+}
+
+.neon-composer--final .neon-composer-pill--listening {
+  border-color: #000;
+  box-shadow: var(--neon-composer-shadow-focus);
+}
+
+.neon-composer--final .neon-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+}
+
+.neon-composer--final .neon-composer-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.neon-composer--final .neon-composer-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.neon-composer--final .md-icon-button-host {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.neon-composer--final .md-icon-button-host md-filled-tonal-icon-button,
+.neon-composer--final .md-icon-button-host md-filled-icon-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  box-shadow: none;
+}
+
+.neon-composer--final .md-icon-button-host md-filled-tonal-icon-button.md-icon-button--ghost {
+  --md-filled-tonal-icon-button-icon-color: var(--color-neon-composer-placeholder);
+  --md-filled-tonal-icon-button-hover-icon-color: var(--color-neon-composer-on-surface);
+  --md-filled-tonal-icon-button-focus-icon-color: var(--color-neon-composer-on-surface);
+  --md-filled-tonal-icon-button-pressed-icon-color: var(--color-neon-composer-on-surface);
+}
+
+/* Idle send: muted; ready send: filled primary */
+.neon-composer--final .md-icon-button-host md-filled-icon-button.neon-composer-send--idle {
+  --md-filled-icon-button-container-color: rgba(0, 0, 0, 0.08);
+  --md-filled-icon-button-icon-color: rgba(0, 0, 0, 0.35);
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+.neon-design-root[data-theme='dark'] .neon-composer--final .md-icon-button-host md-filled-icon-button.neon-composer-send--idle {
+  --md-filled-icon-button-container-color: rgba(255, 255, 255, 0.1);
+  --md-filled-icon-button-icon-color: rgba(255, 255, 255, 0.4);
+  box-shadow: none;
+}
+
+.neon-composer--final .md-icon-button-host md-filled-icon-button.neon-composer-send--ready {
+  --md-filled-icon-button-container-color: var(--md-sys-color-primary, var(--color-neon-primary));
+  --md-filled-icon-button-icon-color: var(--md-sys-color-on-primary, #ffffff);
+  opacity: 1;
+  box-shadow: none;
+}
+
+.neon-composer--final .md-icon-button-host md-filled-tonal-icon-button svg,
+.neon-composer--final .md-icon-button-host md-filled-icon-button svg {
+  color: currentColor;
+}
+
+.neon-composer--final .neon-composer-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  /* Keep >=16px to avoid iOS focus zoom */
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--color-neon-composer-on-surface);
+  min-height: 1.55rem;
+  max-height: 12.5rem;
+  padding: 0.15rem 0.15rem 0;
+  margin: 0;
+  font-family: inherit;
+  overflow-y: auto;
+}
+
+.neon-composer--final .neon-composer-input::placeholder {
+  color: var(--color-neon-composer-placeholder);
+}
+
+.neon-composer--final .neon-composer-input:disabled {
+  opacity: 0.65;
+}
+
+.neon-composer--final .neon-composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.neon-composer--final .neon-composer-spin {
+  animation: neon-composer-spin 0.9s linear infinite;
+}
+
+@keyframes neon-composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Demo question pills (md-outlined-button) ─────────────────── */
+
+.demo-question-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.demo-question-suggestions-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary, var(--text-muted));
+}
+
+.demo-question-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.neon-design-root md-outlined-button.demo-question-pill {
+  --md-outlined-button-container-height: 32px;
+  --md-outlined-button-label-text-size: 13px;
+  --md-outlined-button-label-text-line-height: 1.35;
+  --md-outlined-button-label-text-weight: 500;
+  --md-outlined-button-label-text-font: var(--font-app);
+  --md-outlined-button-label-text-color: var(--text-primary);
+  --md-outlined-button-hover-label-text-color: var(--text-primary);
+  --md-outlined-button-focus-label-text-color: var(--text-primary);
+  --md-outlined-button-pressed-label-text-color: var(--text-primary);
+  --md-outlined-button-hover-state-layer-color: var(--text-primary);
+  --md-outlined-button-pressed-state-layer-color: var(--text-primary);
+  --md-outlined-button-outline-color: var(--border-primary);
+  --md-outlined-button-leading-space: 14px;
+  --md-outlined-button-trailing-space: 14px;
+  --md-outlined-button-container-shape: var(--radius-neon-full);
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  text-wrap: wrap;
+  white-space: normal;
+  font-family: var(--font-app);
+}
+
+/* ── Responsive composer scaling ──────────────────────────────── */
+
+@media (max-width: 900px) {
+  .neon-composer--final .neon-composer-pill {
+    padding: 0.75rem 0.875rem 0.55rem;
+    --radius-neon-composer: 1.35rem;
+  }
+
+  .neon-composer--final .neon-composer-input {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .neon-composer--final.neon-composer {
+    gap: 0.5rem;
+    --radius-neon-composer: 1.25rem;
+  }
+
+  .neon-composer--final .neon-composer-pill {
+    gap: 0.4rem;
+    min-height: 3.25rem;
+    padding: 0.65rem 0.75rem 0.5rem;
+  }
+
+  .neon-composer--final .neon-composer-footer {
+    min-height: 2rem;
+  }
+
+  .neon-composer--final .neon-composer-actions {
+    gap: 0.125rem;
+  }
+
+  .neon-composer--final .md-icon-button-host md-filled-tonal-icon-button,
+  .neon-composer--final .md-icon-button-host md-filled-icon-button {
+    width: 2.125rem;
+    height: 2.125rem;
+    min-width: 2.125rem;
+    min-height: 2.125rem;
+  }
+
+  .neon-composer--final .neon-composer-toolbar {
+    gap: 0.25rem;
+  }
+
+  .demo-question-suggestions {
+    margin-top: 0.55rem;
+  }
+
+  .demo-question-pills {
+    gap: 0.4rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .neon-composer--final .neon-composer-pill {
+    min-height: 3rem;
+    padding: 0.55rem 0.65rem 0.4rem;
+    --radius-neon-composer: 1.15rem;
+  }
+
+  .demo-question-pills {
+    gap: 0.35rem;
+  }
+
+  .neon-design-root md-outlined-button.demo-question-pill {
+    --md-outlined-button-leading-space: 12px;
+    --md-outlined-button-trailing-space: 12px;
+    --md-outlined-button-label-text-size: 12px;
+  }
+}
+
+/* Short viewports: start from the top so the composer stays reachable */
+@media (max-height: 720px) {
+  .chat-empty {
+    justify-content: flex-start;
+    min-height: 0;
+    gap: 1rem;
+    padding: 1.25rem 0.75rem;
+  }
+
+  .chat-empty-headline {
+    font-size: clamp(1.35rem, 3.5vw, 2rem);
+  }
+}

@@ -160,8 +160,11 @@ class RobertsRulesVote(DecisionMethod):
         msg = _add_orchestrator_message(
             session, text, kind="vote_result",
             extra={
-                "vote_kind": "yesno", "tally": tally, "motion": motion,
+                "vote_kind": "yesno",
+                "tally": tally,
+                "motion": motion,
                 "flavor": "roberts_rules",
+                "ballots": ballots,
             },
         )
         yield _sse("orchestrator", _msg_payload(msg))

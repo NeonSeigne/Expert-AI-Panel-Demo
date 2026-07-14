@@ -9,7 +9,7 @@ from app.services.models import Participant
 
 # Number of columns in the CSV table (kept here for tests to assert
 # field-count stability if the schema ever shifts).
-EXPECTED_CSV_COLUMNS = 9
+EXPECTED_CSV_COLUMNS = 12
 
 
 def _mk_session(*, with_credentials: bool = False) -> Session:
@@ -107,6 +107,9 @@ def test_csv_export_roundtrips_through_csv_module():
         "Conversation contribution",
         "Revised opinion",
         "Final opinion",
+        "Consecutive failures",
+        "Enabled",
+        "Auto-disabled",
     ]
     alice_row = parsed[4]
     assert alice_row[0] == "Alice"
@@ -117,6 +120,9 @@ def test_csv_export_roundtrips_through_csv_module():
     assert alice_row[4] == "Tends to over-trust meta-analyses."
     # opinion columns - "First opinion" still preserves quotes/commas/newlines
     assert "\"quotes\"" in alice_row[5]
+    assert alice_row[9] == "0"
+    assert alice_row[10] == "yes"
+    assert alice_row[11] == "no"
     bob_row = parsed[5]
     assert bob_row[0] == "Bob, Ph.D."
     assert bob_row[3] == "0.62"

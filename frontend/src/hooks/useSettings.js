@@ -36,8 +36,8 @@ export default function useSettings() {
   );
   const [providers, setProviders] = useState([]);
   const [neonModels, setNeonModels] = useState([]);
-  const [showResponseTime, setShowResponseTime] = useState(false);
-  const [showChatStats, setShowChatStats] = useState(false);
+  const [showResponseTime, setShowResponseTime] = useState(true);
+  const [showChatStats, setShowChatStats] = useState(true);
   const [auth, setAuth] = useState(null);
   const [dailyLimit, setDailyLimit] = useState(30);
   const [limitsSchema, setLimitsSchema] = useState(null);
@@ -165,18 +165,23 @@ export default function useSettings() {
     setMaxParticipants(clamped);
   }, []);
 
-  const handleShowConversationLimits = useCallback(async () => {
-    if (!limitsSchema) {
-      try {
-        const data = await fetchConversationLimitsDefaults();
-        setLimitsSchema(data);
-      } catch (err) {
-        console.error('Conversation-limit schema fetch failed:', err);
-        return;
-      }
+  const loadLimitsSchema = useCallback(async () => {
+    if (limitsSchema) return limitsSchema;
+    try {
+      const data = await fetchConversationLimitsDefaults();
+      setLimitsSchema(data);
+      return data;
+    } catch (err) {
+      console.error('Conversation-limit schema fetch failed:', err);
+      return null;
     }
-    setLimitsOpen(true);
   }, [limitsSchema]);
+
+  const handleShowConversationLimits = useCallback(async () => {
+    const loaded = await loadLimitsSchema();
+    if (!loaded && !limitsSchema) return;
+    setLimitsOpen(true);
+  }, [limitsSchema, loadLimitsSchema]);
 
   const handleConversationLimitsChange = useCallback((next) => {
     setLimitsOverrides(next);
@@ -238,6 +243,7 @@ export default function useSettings() {
     handleDecisionMethodChange,
     handleMaxParticipantsChange,
     handleShowConversationLimits,
+    loadLimitsSchema,
     handleConversationLimitsChange,
     handleConversationLimitsResetAll,
     handleShowPromptCatalog,

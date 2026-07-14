@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   startChat,
   continueChat,
@@ -12,6 +12,16 @@ import {
   patchHumanCredential,
 } from '../utils/api';
 import { isRateLimitedUser, appendInlineChatNote } from '../utils/chatHelpers';
+import {
+  loadChatHistory,
+  saveChatToHistory,
+  removeChatFromHistory,
+  getChatById,
+  createHistoryEntryId,
+  saveActiveChatToSession,
+  clearActiveChatSession,
+  loadActiveChatFromSession,
+} from '../utils/chatHistory';
 import { useSettings } from '../context/SettingsContext';
 import { useParticipants } from '../context/ParticipantsContext';
 
@@ -62,7 +72,203 @@ export default function useChatSession() {
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [awaitingHuman, setAwaitingHuman] = useState(null);
   const [humanSubmitting, setHumanSubmitting] = useState(false);
+  const [chatHistory, setChatHistory] = useState(() => loadChatHistory());
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
+  /** Offline wrap-up payload (from finished snapshot or live table fetch). */
+  const [savedDecision, setSavedDecision] = useState(null);
+  const [savedRows, setSavedRows] = useState(null);
   const abortRef = useRef(null);
+  const historyEntryIdRef = useRef(null);
+  const messagesRef = useRef(messages);
+  const systemMessagesRef = useRef(systemMessages);
+  const activeQuestionRef = useRef(activeQuestion);
+  const sessionParticipantsRef = useRef(sessionParticipants);
+  const sessionIdRef = useRef(sessionId);
+  const savedDecisionRef = useRef(savedDecision);
+  const savedRowsRef = useRef(savedRows);
+  const tableDataRef = useRef(tableData);
+  const credentialsDataRef = useRef(credentialsData);
+
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { systemMessagesRef.current = systemMessages; }, [systemMessages]);
+  useEffect(() => { activeQuestionRef.current = activeQuestion; }, [activeQuestion]);
+  useEffect(() => { sessionParticipantsRef.current = sessionParticipants; }, [sessionParticipants]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { savedDecisionRef.current = savedDecision; }, [savedDecision]);
+  useEffect(() => { savedRowsRef.current = savedRows; }, [savedRows]);
+  useEffect(() => { tableDataRef.current = tableData; }, [tableData]);
+  useEffect(() => { credentialsDataRef.current = credentialsData; }, [credentialsData]);
+
+  // Restore a finished snapshot from sessionStorage after tab refresh.
+  useEffect(() => {
+    const snap = loadActiveChatFromSession();
+    if (!snap?.finished || !snap.question) return;
+    if ((snap.messages?.length || 0) + (snap.systemMessages?.length || 0) === 0) return;
+    setMessages(snap.messages || []);
+    setSystemMessages(snap.systemMessages || []);
+    setActiveQuestion(snap.question || '');
+    setSessionParticipants(snap.sessionParticipants || []);
+    setSavedDecision(snap.decision ?? null);
+    setSavedRows(Array.isArray(snap.rows) ? snap.rows : null);
+    setTableData(snap.table || null);
+    setCredentialsData(snap.credentials || null);
+    setIsRunning(false);
+    setSessionId(null);
+    if (snap.id) {
+      setActiveHistoryId(snap.id);
+      historyEntryIdRef.current = snap.id;
+    }
+  }, []);
+
+  const refreshChatHistory = useCallback(() => {
+    setChatHistory(loadChatHistory());
+  }, []);
+
+  const buildSnapshotPartial = useCallback((overrides = {}) => ({
+    id: overrides.id || historyEntryIdRef.current || null,
+    question: overrides.question ?? activeQuestionRef.current ?? '',
+    messages: overrides.messages ?? messagesRef.current ?? [],
+    systemMessages: overrides.systemMessages ?? systemMessagesRef.current ?? [],
+    sessionParticipants: overrides.sessionParticipants
+      ?? sessionParticipantsRef.current
+      ?? [],
+    decision: overrides.decision !== undefined
+      ? overrides.decision
+      : savedDecisionRef.current,
+    rows: overrides.rows !== undefined ? overrides.rows : savedRowsRef.current,
+    table: overrides.table !== undefined ? overrides.table : tableDataRef.current,
+    credentials: overrides.credentials !== undefined
+      ? overrides.credentials
+      : credentialsDataRef.current,
+    finished: overrides.finished,
+    savedAt: overrides.savedAt || Date.now(),
+  }), []);
+
+  /** Mirror live transcript into sessionStorage for tab restore. */
+  useEffect(() => {
+    const question = (activeQuestion || '').trim();
+    if (!question && messages.length === 0 && systemMessages.length === 0) {
+      return undefined;
+    }
+    if (activeHistoryId) {
+      // Viewing a finished history entry — keep session mirror in sync with it.
+      saveActiveChatToSession(buildSnapshotPartial({
+        id: activeHistoryId,
+        finished: true,
+      }));
+      return undefined;
+    }
+    const t = window.setTimeout(() => {
+      saveActiveChatToSession(buildSnapshotPartial({
+        finished: false,
+      }));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [
+    messages,
+    systemMessages,
+    activeQuestion,
+    sessionParticipants,
+    savedDecision,
+    savedRows,
+    tableData,
+    credentialsData,
+    activeHistoryId,
+    buildSnapshotPartial,
+  ]);
+
+  /** Snapshot current transcript into localStorage when it has content + a question. */
+  const archiveCurrentChat = useCallback((opts = {}) => {
+    const msgs = opts.messages ?? messagesRef.current ?? [];
+    const sys = opts.systemMessages ?? systemMessagesRef.current ?? [];
+    const question = (opts.question ?? activeQuestionRef.current ?? '').trim();
+    if (!question || (msgs.length + sys.length) === 0) return null;
+    if (opts.skipIfViewingHistory && activeHistoryId) return null;
+
+    const id = opts.id || historyEntryIdRef.current || createHistoryEntryId();
+    const entry = saveChatToHistory(buildSnapshotPartial({
+      ...opts,
+      id,
+      messages: msgs,
+      systemMessages: sys,
+      question,
+      messageCount: msgs.length + sys.length,
+      savedAt: Date.now(),
+      finished: opts.finished !== undefined ? opts.finished : true,
+    }));
+    historyEntryIdRef.current = entry.id;
+    refreshChatHistory();
+    return entry;
+  }, [activeHistoryId, refreshChatHistory, buildSnapshotPartial]);
+
+  const clearLiveSessionUi = useCallback(() => {
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+    setMessages([]);
+    setSystemMessages([]);
+    setIsRunning(false);
+    setStatusText('');
+    setPause(null);
+    setSessionId(null);
+    setSessionParticipants([]);
+    setActiveQuestion('');
+    setAwaitingHuman(null);
+    setHumanSubmitting(false);
+    setTableData(null);
+    setTableOpen(false);
+    setCredentialsData(null);
+    setCredentialsOpen(false);
+    setSavedDecision(null);
+    setSavedRows(null);
+    setActiveHistoryId(null);
+    historyEntryIdRef.current = null;
+    clearActiveChatSession();
+  }, []);
+
+  const loadHistoryChat = useCallback((id) => {
+    const entry = getChatById(id);
+    if (!entry) return;
+    if (activeHistoryId !== id) {
+      archiveCurrentChat({ skipIfViewingHistory: true });
+    }
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+    setIsRunning(false);
+    setStatusText('');
+    setPause(null);
+    setSessionId(null);
+    setAwaitingHuman(null);
+    setHumanSubmitting(false);
+    setMessages(entry.messages || []);
+    setSystemMessages(entry.systemMessages || []);
+    setActiveQuestion(entry.question || '');
+    setSessionParticipants(entry.sessionParticipants || []);
+    setSavedDecision(entry.decision ?? null);
+    setSavedRows(Array.isArray(entry.rows) ? entry.rows : null);
+    setTableData(entry.table || (
+      entry.decision || entry.rows
+        ? {
+          question: entry.question,
+          decision: entry.decision,
+          rows: entry.rows || [],
+          final_report: entry.final_report,
+          final_report_kind: entry.final_report_kind,
+        }
+        : null
+    ));
+    setTableOpen(false);
+    setCredentialsData(entry.credentials || null);
+    setCredentialsOpen(false);
+    setActiveHistoryId(entry.id);
+    historyEntryIdRef.current = entry.id;
+    saveActiveChatToSession({ ...entry, finished: true });
+  }, [activeHistoryId, archiveCurrentChat]);
+
+  const deleteHistoryChat = useCallback((id) => {
+    const next = removeChatFromHistory(id);
+    setChatHistory(next);
+    if (activeHistoryId === id) {
+      clearLiveSessionUi();
+    }
+  }, [activeHistoryId, clearLiveSessionUi]);
 
   const buildStartPayload = useCallback((theQuestion, participantsOverride, humanOverride) => {
     const sourceList = participantsOverride ?? selectedParticipants;
@@ -161,15 +367,27 @@ export default function useChatSession() {
   }, [sessionId, downloadFile]);
 
   const handleShowTableView = useCallback(async () => {
+    if (tableDataRef.current) {
+      setTableData(tableDataRef.current);
+      setTableOpen(true);
+      return;
+    }
     if (!sessionId) return;
     try {
       const data = await fetchTableView(sessionId);
       setTableData(data);
       setTableOpen(true);
+      if (Array.isArray(data?.rows)) setSavedRows(data.rows);
+      if (data?.decision) setSavedDecision(data.decision);
     } catch (err) { console.error('Table fetch failed:', err); }
   }, [sessionId]);
 
   const handleShowCredentials = useCallback(async () => {
+    if (credentialsDataRef.current) {
+      setCredentialsData(credentialsDataRef.current);
+      setCredentialsOpen(true);
+      return;
+    }
     if (!sessionId) return;
     try {
       const data = await fetchCredentials(sessionId);
@@ -219,6 +437,11 @@ export default function useChatSession() {
     setSystemMessages(prev => [...prev, { text: 'Chat stopped by user.' }]);
   }, []);
 
+  const handleStartNewChat = useCallback(() => {
+    archiveCurrentChat({ skipIfViewingHistory: true });
+    clearLiveSessionUi();
+  }, [archiveCurrentChat, clearLiveSessionUi]);
+
   const handleContinuePause = useCallback(async (reason) => {
     if (!sessionId) return;
     try {
@@ -260,8 +483,12 @@ export default function useChatSession() {
     }
     if (!autoSelectMode && enabledSelectedCount < 2) return;
 
+    archiveCurrentChat({ skipIfViewingHistory: true });
+
     const controller = new AbortController();
     abortRef.current = controller;
+    historyEntryIdRef.current = createHistoryEntryId();
+    setActiveHistoryId(null);
     setIsRunning(true);
     setMessages([]);
     setSystemMessages([]);
@@ -271,6 +498,9 @@ export default function useChatSession() {
     setPause(null);
     setActiveQuestion(theQuestion.trim());
     setCredentialsData(null);
+    setSavedDecision(null);
+    setSavedRows(null);
+    setTableData(null);
     setAwaitingHuman(null);
 
     let resolvedParticipants = null;
@@ -403,7 +633,17 @@ export default function useChatSession() {
           },
           onOrchestrator: (data) => {
             if (data && data.text) {
-              setMessages(prev => [...prev, { ...data, role: 'orchestrator' }]);
+              const msg = { ...data, role: 'orchestrator' };
+              if (msg.kind === 'ballot_options' || msg.kind === 'motion') {
+                msg.ballots = Array.isArray(msg.ballots) ? msg.ballots : [];
+                msg.vote_complete = false;
+                // Structure "motion on the floor" (debate) includes mover_id;
+                // vote announcements do not — only those get Aye/Nay/Abstain rows.
+                if (msg.kind === 'motion' && !msg.mover_id && !Array.isArray(data.options)) {
+                  msg.options = ['Aye', 'Nay', 'Abstain'];
+                }
+              }
+              setMessages(prev => [...prev, msg]);
             } else if (data?.message) {
               setStatusText(data.message);
             }
@@ -411,7 +651,49 @@ export default function useChatSession() {
           onStatus: (data) => setStatusText(data.message || ''),
           onSystem: (data) => {
             setSystemMessages(prev => [...prev, data]);
-            if (data.text === 'End of Chat') setStatusText('');
+            if (data.text === 'End of Chat') {
+              setStatusText('');
+              const msgs = messagesRef.current || [];
+              const sys = [...(systemMessagesRef.current || []), data];
+              const sid = sessionIdRef.current;
+              (async () => {
+                let table = null;
+                let credentials = null;
+                let decision = null;
+                let rows = null;
+                if (sid) {
+                  try {
+                    table = await fetchTableView(sid);
+                    decision = table?.decision ?? null;
+                    rows = Array.isArray(table?.rows) ? table.rows : [];
+                    setTableData(table);
+                    setSavedDecision(decision);
+                    setSavedRows(rows);
+                  } catch (err) {
+                    console.error('End-of-chat table snapshot failed:', err);
+                  }
+                  try {
+                    credentials = await fetchCredentials(sid);
+                    setCredentialsData(credentials);
+                  } catch (err) {
+                    console.error('End-of-chat credentials snapshot failed:', err);
+                  }
+                }
+                const entry = archiveCurrentChat({
+                  messages: msgs,
+                  systemMessages: sys,
+                  decision,
+                  rows,
+                  table,
+                  credentials,
+                  finished: true,
+                });
+                if (entry?.id) {
+                  setActiveHistoryId(entry.id);
+                  saveActiveChatToSession({ ...entry, finished: true });
+                }
+              })();
+            }
           },
           onError: (data) => {
             setStatusText('');
@@ -437,20 +719,69 @@ export default function useChatSession() {
               { kind: 'participant_replaced', phase: data.phase });
           },
           onVoteCast: (data) => {
-            const voter = data?.voter_name || 'A voter';
-            let line;
-            if (data?.vote) line = `${voter} votes ${data.vote}.`;
-            else if (Array.isArray(data?.ranking) && data.ranking.length > 0) {
-              line = `${voter} submitted ranking: ${data.ranking.join(' > ')}.`;
-            } else if (typeof data?.choice === 'number' && data.choice > 0) {
-              line = `${voter} votes for option ${data.choice}.`;
-            } else line = `${voter} abstained or returned an invalid ballot.`;
-            appendInlineChatNote(setMessages, line, { kind: 'vote_cast' });
+            setMessages((prev) => {
+              let lastIdx = -1;
+              for (let i = prev.length - 1; i >= 0; i -= 1) {
+                const m = prev[i];
+                if (m.role === 'orchestrator'
+                  && (m.kind === 'ballot_options'
+                    || (m.kind === 'motion' && !m.mover_id))
+                  && !m.vote_complete) {
+                  lastIdx = i;
+                  break;
+                }
+              }
+              if (lastIdx >= 0) {
+                const target = prev[lastIdx];
+                const ballots = Array.isArray(target.ballots) ? target.ballots : [];
+                const next = [...prev];
+                next[lastIdx] = {
+                  ...target,
+                  ballots: [...ballots, {
+                    voter_id: data?.voter_id,
+                    voter_name: data?.voter_name,
+                    vote: data?.vote,
+                    choice: data?.choice,
+                    ranking: data?.ranking,
+                    reason: data?.reason,
+                    ok: data?.ok,
+                  }],
+                };
+                return next;
+              }
+              const voter = data?.voter_name || 'A voter';
+              let line;
+              if (data?.vote) line = `${voter} votes ${data.vote}.`;
+              else if (Array.isArray(data?.ranking) && data.ranking.length > 0) {
+                line = `${voter} submitted ranking: ${data.ranking.join(' > ')}.`;
+              } else if (typeof data?.choice === 'number' && data.choice > 0) {
+                line = `${voter} votes for option ${data.choice}.`;
+              } else line = `${voter} abstained or returned an invalid ballot.`;
+              return [...prev, {
+                role: 'system',
+                kind: 'vote_cast',
+                text: line,
+                timestamp: Date.now() / 1000,
+              }];
+            });
           },
-          onVoteTally: (data) => {
-            appendInlineChatNote(setMessages,
-              `Vote complete (${data?.kind || 'vote'}); see report below.`,
-              { kind: 'vote_tally' });
+          onVoteTally: () => {
+            setMessages((prev) => {
+              let lastIdx = -1;
+              for (let i = prev.length - 1; i >= 0; i -= 1) {
+                const m = prev[i];
+                if (m.role === 'orchestrator'
+                  && (m.kind === 'ballot_options'
+                    || (m.kind === 'motion' && !m.mover_id))) {
+                  lastIdx = i;
+                  break;
+                }
+              }
+              if (lastIdx < 0) return prev;
+              const next = [...prev];
+              next[lastIdx] = { ...next[lastIdx], vote_complete: true };
+              return next;
+            });
           },
           onFailsafePause: (data) => setPause({ reason: 'messages', ...data }),
           onOrchestratorCapPause: (data) => setPause({ reason: 'orchestrator', ...data }),
@@ -496,6 +827,7 @@ export default function useChatSession() {
     autoSelectMode, allCatalogParticipants, modelAssignments, maxParticipants, orchestratorModel,
     enabledMap, humanParticipant, humanCatalogEntry, runHumanCredentialGeneration,
     humanCredentialGenRef, setHumanParticipant, setSelectedIds, setEnabledMap,
+    archiveCurrentChat,
   ]);
 
   const startDisabled = isRunning || !hasEnoughParticipantsToStart;
@@ -507,6 +839,7 @@ export default function useChatSession() {
     : enabledSelectedCount < 2 ? 'Select at least 2 participants.' : '';
 
   const rosterParticipants = sessionParticipants.length > 0 ? sessionParticipants : selectedParticipants;
+  const hasContent = messages.length + systemMessages.length > 0;
 
   return {
     messages,
@@ -526,16 +859,24 @@ export default function useChatSession() {
     setCredentialsOpen,
     awaitingHuman,
     humanSubmitting,
+    chatHistory,
+    activeHistoryId,
+    savedDecision,
+    savedRows,
     hasEnoughParticipantsToStart,
     startDisabled,
     startDisabledReason,
     startDisabledTooltip,
+    hasContent,
     hasChat: messages.length > 0,
     hasApiLog: !!sessionId,
-    hasCredentials: !!sessionId,
+    hasCredentials: !!sessionId || !!credentialsData,
     getDraftQuestionRef,
     handleStart,
     handleStop,
+    handleStartNewChat,
+    loadHistoryChat,
+    deleteHistoryChat,
     handleContinuePause,
     handleHumanSubmit,
     handleHumanSkip,

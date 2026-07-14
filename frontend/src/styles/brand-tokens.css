@@ -1,0 +1,16 @@
+/* Neon brand palette — Contacts-inspired Google blue / white */
+
+:root {
+  /* Primary accent — Google / Material blue (token name kept for compatibility) */
+  --brand-purple: #0B57D0;
+  --brand-periwinkle: #D3E3FD;
+  --brand-crimson: #FF3B30;
+  --brand-neon-blue: #2EC4F2;
+  --brand-orchestration-gradient: var(--brand-purple);
+
+  /* App typeface — also wired into Material Web (--md-ref-typeface-*) */
+  --font-app: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  --md-ref-typeface-brand: var(--font-app);
+  --md-ref-typeface-plain: var(--font-app);
+}

@@ -1,0 +1,46 @@
+/* Vendored from neon-design@dev-cursor — final/neon-components.css (tokens only) */
+
+.neon-design-root {
+  font-family: var(--font-app);
+  --font-sans: var(--font-app);
+  /* Material Web defaults to Roboto; without it, labels fall back to Times */
+  --md-ref-typeface-brand: var(--font-app);
+  --md-ref-typeface-plain: var(--font-app);
+  --md-outlined-button-label-text-font: var(--font-app);
+  --md-filled-button-label-text-font: var(--font-app);
+  --md-filled-tonal-button-label-text-font: var(--font-app);
+  --md-elevated-button-label-text-font: var(--font-app);
+  --md-text-button-label-text-font: var(--font-app);
+  --md-menu-item-label-text-font: var(--font-app);
+  --md-menu-item-supporting-text-font: var(--font-app);
+  --md-switch-label-text-font: var(--font-app);
+
+  --neon-purple: #0b57d0;
+  --neon-purple-hover: #0842a0;
+  --neon-neon-blue: #2ec4f2;
+  --neon-periwinkle: #ccccff;
+  --neon-max-width: 768px;
+  --neon-bg: #000000;
+  --neon-bg2: #111111;
+  --neon-surface: #141414;
+  --neon-text: #f5f5f5;
+  --neon-muted: #a3a3a3;
+  --neon-border: #2a2a2a;
+  --neon-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --neon-placeholder: #737373;
+}
+
+.neon-design-root svg.lucide {
+  stroke-width: 3;
+}
+
+.neon-design-root[data-theme='light'] {
+  --neon-bg: #ffffff;
+  --neon-bg2: #ffffff;
+  --neon-surface: #ffffff;
+  --neon-text: #1a1b22;
+  --neon-muted: #5c5c7a;
+  --neon-border: rgba(0, 0, 0, 0.08);
+  --neon-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+  --neon-placeholder: #8e8e93;
+}

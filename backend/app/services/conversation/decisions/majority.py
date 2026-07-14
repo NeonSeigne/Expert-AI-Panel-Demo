@@ -126,7 +126,12 @@ class MajorityRulesDecision(DecisionMethod):
         }
         msg = _add_orchestrator_message(
             session, text, kind="vote_result",
-            extra={"vote_kind": "yesno", "tally": tally, "motion": motion},
+            extra={
+                "vote_kind": "yesno",
+                "tally": tally,
+                "motion": motion,
+                "ballots": ballots,
+            },
         )
         yield _sse("orchestrator", _msg_payload(msg))
 
@@ -226,6 +231,7 @@ class MajorityRulesDecision(DecisionMethod):
                 "vote_kind": "plurality",
                 "tally": tally,
                 "options": options,
+                "ballots": ballots,
             },
         )
         yield _sse("orchestrator", _msg_payload(msg))

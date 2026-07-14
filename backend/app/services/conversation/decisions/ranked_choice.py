@@ -169,6 +169,6 @@ class RankedChoiceDecision(DecisionMethod):
         }
         msg = _add_orchestrator_message(
             session, text, kind="ranked_choice_result",
-            extra={"options": options, "irv": irv},
+            extra={"options": options, "irv": irv, "ballots": ballots},
         )
         yield _sse("orchestrator", _msg_payload(msg))

@@ -160,6 +160,33 @@ async def _call_neon_direct_vllm(
     )
     msgs = [dict(m) for m in messages]
     if builtin_sp:
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            from app.services.context_budget import estimate_messages_tokens, context_window_for
+            _est_pre = estimate_messages_tokens(msgs)
+            with open(
+                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
+                "a", encoding="utf-8",
+            ) as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "62da73",
+                    "runId": "pre-fix",
+                    "hypothesisId": "B",
+                    "location": "llm_router.py:_call_neon_direct_vllm",
+                    "message": "hana_persona_base_prepend",
+                    "data": {
+                        "model_id": resolved.get("model_id"),
+                        "persona_name": resolved.get("persona_name"),
+                        "builtin_sp_chars": len(builtin_sp),
+                        "est_before_prepend": _est_pre,
+                        "window": context_window_for(resolved.get("model_id") or ""),
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
         if msgs and msgs[0].get("role") == "system":
             msgs[0] = {
                 "role": "system",

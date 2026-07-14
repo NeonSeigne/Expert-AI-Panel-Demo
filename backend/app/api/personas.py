@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from app.clients.hana_client import hana_client
 from app.services.extra_personas import list_extra_personas
-from app.services.persona_naming import reformat_neon_names
+from app.services.persona_naming import reformat_neon_names_bounded
 
 router = APIRouter()
 LOG = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ async def get_personas():
     # Pass 2: batch-reformat display names via the orchestrator LLM
     # (cached). One call covers every uncached pair.
     pairs = [(r["model_short"], r["persona_name"]) for r in raw_neon]
-    name_map = await reformat_neon_names(pairs)
+    name_map = await reformat_neon_names_bounded(pairs)
 
     neon_personas = []
     for r in raw_neon:

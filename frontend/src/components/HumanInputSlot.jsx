@@ -1,21 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, SkipForward } from 'lucide-react';
+import { SkipForward } from 'lucide-react';
+import NeonDesignRoot from './NeonDesignRoot';
+import NeonComposer from '../neon/NeonComposer';
 
 /**
  * Inline input slot rendered in the chat stream when it's the human
  * participant's turn. Replaces what would otherwise be the LLM's
  * message bubble. Visually distinct via a thick green left-edge
  * accent and a pulsing border so it's obvious "we're waiting on you".
- *
- * Props:
- *   awaiting   - the awaiting_human payload from the most recent
- *                human_turn_needed SSE event:
- *                  { speaker_id, speaker_name, phase,
- *                    addressed_to?, asker_name?, prompt_context? }
- *   onSubmit   - async (text) => void
- *   onSkip     - async ()      => void   (only when allowSkip)
- *   allowSkip  - bool, defaults true
- *   sending    - bool: disable the buttons while a submit is in flight
  */
 export default function HumanInputSlot({
   awaiting,
@@ -25,17 +17,12 @@ export default function HumanInputSlot({
   sending = false,
 }) {
   const [text, setText] = useState('');
-  const taRef = useRef(null);
+  const inputRef = useRef(null);
 
-  // Auto-focus when the slot first appears, so the user can start
-  // typing immediately without hunting for the textarea.
   useEffect(() => {
-    if (awaiting && taRef.current) {
-      taRef.current.focus();
+    if (awaiting && inputRef.current) {
+      inputRef.current.focus();
     }
-    // We intentionally narrow the dep list to the identity of the
-    // pending turn (speaker + phase). Re-focusing on every awaiting
-    // mutation would steal focus from the user mid-type.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [awaiting?.speaker_id, awaiting?.phase]);
 
@@ -54,7 +41,6 @@ export default function HumanInputSlot({
   };
 
   const handleKeyDown = (e) => {
-    // Ctrl/Cmd+Enter submits; plain Enter inserts a newline (textarea default).
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       handleSubmit();
@@ -75,44 +61,37 @@ export default function HumanInputSlot({
         {askerLine && (
           <div className="ccai-human-slot-context">{askerLine}</div>
         )}
-        <textarea
-          ref={taRef}
-          className="ccai-human-slot-textarea"
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={4}
-          placeholder={`${name} please type your response here`}
-          disabled={sending}
-        />
-        <div className="ccai-human-slot-actions">
-          <span className="ccai-human-slot-hint">
-            Ctrl+Enter to submit
-          </span>
-          <div className="ccai-human-slot-actions-right">
-            {allowSkip && (
-              <button
-                type="button"
-                className="btn-sm btn-outline ccai-human-slot-skip"
-                onClick={() => onSkip?.()}
-                disabled={sending}
-                title="Skip my turn this round"
-              >
-                <SkipForward size={14} style={{ marginRight: 4 }} />
-                Skip my turn
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-primary btn-sm ccai-human-slot-submit"
-              onClick={handleSubmit}
-              disabled={sending || !text.trim()}
-            >
-              <Send size={14} style={{ marginRight: 4 }} />
-              {sending ? 'Sending…' : 'Submit'}
-            </button>
-          </div>
-        </div>
+        <NeonDesignRoot>
+          <NeonComposer
+            inputRef={inputRef}
+            value={text}
+            onChange={setText}
+            onSend={handleSubmit}
+            onKeyDown={handleKeyDown}
+            placeholder={`${name}, please type your response here`}
+            disabled={sending}
+            sendDisabled={sending || !text.trim()}
+            showMic={false}
+            showAttach={false}
+            toolbar={
+              <div className="ccai-human-slot-toolbar">
+                <span className="ccai-human-slot-hint">Ctrl+Enter to submit</span>
+                {allowSkip && (
+                  <button
+                    type="button"
+                    className="btn-sm btn-outline ccai-human-slot-skip"
+                    onClick={() => onSkip?.()}
+                    disabled={sending}
+                    title="Skip my turn this round"
+                  >
+                    <SkipForward size={14} style={{ marginRight: 4 }} />
+                    Skip my turn
+                  </button>
+                )}
+              </div>
+            }
+          />
+        </NeonDesignRoot>
       </div>
     </div>
   );

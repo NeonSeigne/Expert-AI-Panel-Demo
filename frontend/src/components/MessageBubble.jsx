@@ -1,44 +1,11 @@
 import React, { useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { ArrowRight } from 'lucide-react';
-
-const PALETTE = [
-  { color: '#6366F1', bg: '#EEF2FF' },   // indigo
-  { color: '#059669', bg: '#ECFDF5' },   // emerald
-  { color: '#D97706', bg: '#FFFBEB' },   // amber
-  { color: '#DC2626', bg: '#FEE2E2' },   // red
-  { color: '#0891B2', bg: '#ECFEFF' },   // cyan
-  { color: '#7C3AED', bg: '#F5F3FF' },   // violet
-  { color: '#0D9488', bg: '#F0FDFA' },   // teal
-  { color: '#DB2777', bg: '#FDF2F8' },   // pink
-  { color: '#65A30D', bg: '#F7FEE7' },   // lime
-];
+import NeonChatBubble from '../neon/NeonChatBubble';
+import { HUMAN_TONE, PARTICIPANT_PALETTE } from '../constants/brandColors';
 
 function colorForIdx(idx) {
-  return PALETTE[idx % PALETTE.length];
+  return PARTICIPANT_PALETTE[idx % PARTICIPANT_PALETTE.length];
 }
-
-/**
- * Generic participant bubble. The CCAI demo can have up to 9 active
- * participants, so we colorize by their index in the active roster
- * rather than the original A/B scheme.
- *
- * Conversation-tracking enhancements:
- *   - "→ Addressee" arrow chip in the speaker line when this message
- *     is aimed at a specific other participant. The chip is clickable
- *     and scrolls the chat to the addressee's most recent message
- *     before this one (with a brief flash highlight).
- *   - "Replying to: X, Y" pill above the bubble whenever the orchestrator
- *     told this participant they had open threads owed before they spoke.
- *   - Light left-indent + thread line when a message is a direct reply to
- *     the immediately previous bubble - cheap visual threading without
- *     full nesting.
- */
-// Green tone used for in-the-loop human participants. Overrides the
-// rotating palette so a human's bubble always reads as "the human
-// one" no matter where they fall in the active roster ordering.
-const HUMAN_TONE = { color: '#16A34A', bg: '#F0FDF4' };
 
 export default function MessageBubble({
   message,
@@ -47,6 +14,8 @@ export default function MessageBubble({
   prevMessage,
   participantNameById,
   showResponseTime,
+  expandToggle = null,
+  contentClamped = false,
 }) {
   const isHuman = message.kind === 'human'
     || (message.model_display === 'Human participant');
@@ -63,8 +32,6 @@ export default function MessageBubble({
     .map((pid) => participantNameById?.[pid])
     .filter(Boolean);
 
-  // Direct reply to the immediately previous participant message gets
-  // a light indent + thread line. Skips orchestrator messages.
   const isDirectReply =
     !!addresseeId &&
     prevMessage &&
@@ -95,69 +62,74 @@ export default function MessageBubble({
     }
   }, [addresseeId, messageIdx]);
 
-  const rowClassName =
-    'message-row ccai-message-row' +
-    (isDirectReply ? ' ccai-message-row-reply' : '') +
-    (isHuman ? ' ccai-message-row-human' : '');
+  const rowClassName = [
+    'ccai-message-row',
+    isDirectReply ? 'ccai-message-row-reply' : '',
+    isHuman ? 'ccai-message-row-human' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const headerExtra = replyingToNames.length > 0 ? (
+    <div
+      className="ccai-replying-to-pill"
+      style={{
+        borderColor: `${tone.color}66`,
+        color: tone.color,
+      }}
+    >
+      Replying to: {replyingToNames.join(', ')}
+    </div>
+  ) : null;
+
+  const nameExtra = (
+    <>
+      {expandToggle}
+      {addresseeName ? (
+        <span className="ccai-addressee-wrap">
+          <ArrowRight
+            size={12}
+            strokeWidth={2.5}
+            className="ccai-addressee-arrow"
+          />
+          <button
+            type="button"
+            className="ccai-addressee-link"
+            style={{ color: tone.color }}
+            onClick={onAddresseeClick}
+            title={`Jump to ${addresseeName}'s most recent message`}
+          >
+            {addresseeName}
+          </button>
+        </span>
+      ) : null}
+    </>
+  );
+
+  const footerExtra = showResponseTime && elapsed > 0 ? (
+    <div className="ccai-message-elapsed">{elapsed.toFixed(1)}s</div>
+  ) : null;
 
   return (
-    <div
-      className={rowClassName}
-      data-msg-idx={messageIdx}
-      data-speaker-id={message.speaker_id || ''}
-    >
-      <div
-        className="avatar"
-        style={{ background: tone.color, borderRadius: '50%' }}
-      >
-        {initial}
-      </div>
-      <div
-        className="message-bubble ccai-bubble"
-        style={{
-          background: tone.bg,
-          border: `1px solid ${tone.color}33`,
-        }}
-      >
-        {replyingToNames.length > 0 && (
-          <div
-            className="ccai-replying-to-pill"
-            style={{
-              borderColor: `${tone.color}66`,
-              color: tone.color,
-            }}
-          >
-            Replying to: {replyingToNames.join(', ')}
-          </div>
-        )}
-        <div className="message-speaker" style={{ color: tone.color }}>
-          <span>{message.speaker_name}</span>
-          {addresseeName && (
-            <span className="ccai-addressee-wrap">
-              <ArrowRight
-                size={12}
-                strokeWidth={2.5}
-                className="ccai-addressee-arrow"
-              />
-              <button
-                type="button"
-                className="ccai-addressee-link"
-                style={{ color: tone.color }}
-                onClick={onAddresseeClick}
-                title={`Jump to ${addresseeName}'s most recent message`}
-              >
-                {addresseeName}
-              </button>
-            </span>
-          )}
-        </div>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {message.text}
-        </ReactMarkdown>
-        {showResponseTime && elapsed > 0 && (
-          <div className="message-elapsed">{elapsed.toFixed(1)}s</div>
-        )}
-      </div>
-    </div>
+    <NeonChatBubble
+      side={isHuman ? 'User' : 'Agent'}
+      senderName={message.speaker_name}
+      content={message.text || ''}
+      loading={Boolean(message.streaming && !message.text)}
+      bubbleColor={tone.bg}
+      avatarKind={isHuman ? 'user' : 'initial'}
+      avatarLabel={initial}
+      avatarColor={tone.color}
+      accentColor={tone.color}
+      headerExtra={headerExtra}
+      nameExtra={nameExtra}
+      footerExtra={footerExtra}
+      rowClassName={rowClassName}
+      contentClassName={contentClamped ? 'ccai-bubble-content-clamped' : ''}
+      rowProps={{
+        'data-msg-idx': messageIdx,
+        'data-speaker-id': message.speaker_id || '',
+      }}
+    />
   );
 }
