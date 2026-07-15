@@ -256,7 +256,14 @@ export default function ChatArea({ showCenteredComposer = false }) {
     >
       {showCenteredComposer && (
         <div className="chat-empty">
-          <h2 className="chat-empty-headline md-typescale-headline-medium">Ask Anything....</h2>
+          <img
+            src="/neon-logo.png"
+            alt="Neon.ai"
+            className="chat-empty-logo"
+          />
+          <h2 className="chat-empty-headline md-typescale-headline-medium">
+            Ask A Panel of Experts Anything....
+          </h2>
           <WelcomeParticipantPills />
           <div className="chat-empty-composer">
             <ChatControls centered />
@@ -331,6 +338,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
             voteDecision={voteDecision}
             rows={savedRows}
             speakerIdxFor={speakerIdxFor}
+            participantNameById={participantNameById}
             showChatStats={showChatStats}
             onOpenCredentials={handleShowCredentials}
           />

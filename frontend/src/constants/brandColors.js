@@ -1,8 +1,8 @@
 /** Neon brand palette — mirrors frontend/src/styles/brand-tokens.css */
 
-/** Primary accent — Google / Material blue (token name kept for compatibility) */
-export const BRAND_PURPLE = '#0B57D0';
-export const BRAND_PERIWINKLE = '#D3E3FD';
+/** Primary accent — Material purple */
+export const BRAND_PURPLE = '#6750A4';
+export const BRAND_PERIWINKLE = '#EADDFF';
 export const BRAND_CRIMSON = '#FF3B30';
 export const BRAND_NEON_BLUE = '#2EC4F2';
 

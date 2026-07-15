@@ -19,20 +19,9 @@ export async function fetchModels() {
 }
 
 export async function fetchPersonas() {
-  const url = `${API_BASE}/api/personas`;
-  // #region agent log
-  fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'api.js:fetchPersonas:start',message:'fetchPersonas called',data:{apiBase:API_BASE,url},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-  const resp = await fetch(url, { cache: 'no-store' });
-  // #region agent log
-  fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'api.js:fetchPersonas:response',message:'fetchPersonas response',data:{ok:resp.ok,status:resp.status},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
+  const resp = await fetch(`${API_BASE}/api/personas`, { cache: 'no-store' });
   if (!resp.ok) throw new Error(`Failed to fetch personas: ${resp.status}`);
-  const data = await resp.json();
-  // #region agent log
-  fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'api.js:fetchPersonas:data',message:'fetchPersonas parsed',data:{neonCount:(data?.neon||[]).length,extraCount:(data?.extra||[]).length,extraIds:(data?.extra||[]).slice(0,3).map(p=>p.participant_id),keys:Object.keys(data||{})},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
-  return data;
+  return resp.json();
 }
 
 export async function fetchDemoQuestions() {

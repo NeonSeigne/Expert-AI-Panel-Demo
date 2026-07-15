@@ -1,9 +1,9 @@
-/* Neon brand palette — Contacts-inspired Google blue / white */
+/* Neon brand palette — Material purple / white */
 
 :root {
-  /* Primary accent — Google / Material blue (token name kept for compatibility) */
-  --brand-purple: #0B57D0;
-  --brand-periwinkle: #D3E3FD;
+  /* Primary accent — Material purple */
+  --brand-purple: #6750A4;
+  --brand-periwinkle: #EADDFF;
   --brand-crimson: #FF3B30;
   --brand-neon-blue: #2EC4F2;
   --brand-orchestration-gradient: var(--brand-purple);

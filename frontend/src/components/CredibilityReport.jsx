@@ -1,4 +1,5 @@
 import React from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { AVATAR_PALETTE } from '../constants/brandColors';
 import '../neon/neon-material.register.js';
 
@@ -50,7 +51,10 @@ export default function CredibilityReport({
       aria-label="Credibility report"
     >
       <div className="ccai-wrap-up-section-head">
-        <h3 className="ccai-wrap-up-section-title ccai-bento-kicker">Credibility</h3>
+        <h3 className="ccai-wrap-up-section-title ccai-bento-kicker">
+          <ShieldCheck size={18} strokeWidth={2.25} className="ccai-bento-kicker-icon" aria-hidden />
+          <span>Credibility</span>
+        </h3>
         {onOpenFullReport ? (
           <button
             type="button"

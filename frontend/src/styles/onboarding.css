@@ -1098,19 +1098,19 @@ md-dialog.onboarding-md-dialog--tall .onboarding-card-slide {
   padding: 10px 22px;
   border: none;
   border-radius: 999px;
-  background: var(--accent-primary, #0b57d0);
+  background: var(--accent-primary, #6750a4);
   color: #fff;
   font-size: 0.9375rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent-primary, #0b57d0) 35%, transparent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent-primary, #6750a4) 35%, transparent);
   transition: background 0.15s, box-shadow 0.15s;
 }
 
 .onboarding-finish-btn:hover {
-  background: color-mix(in srgb, var(--accent-primary, #0b57d0) 88%, #000);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-primary, #0b57d0) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-primary, #6750a4) 88%, #000);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-primary, #6750a4) 45%, transparent);
 }
 
 /* Go CTA in the next-arrow slot (last step) — circular check */
@@ -1127,7 +1127,7 @@ md-dialog.onboarding-md-dialog--tall .onboarding-card-slide {
   padding: 0;
   gap: 0;
   font-size: 0;
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-primary, #0b57d0) 40%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-primary, #6750a4) 40%, transparent);
 }
 
 /* Dots */

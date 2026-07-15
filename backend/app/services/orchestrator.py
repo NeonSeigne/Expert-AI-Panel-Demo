@@ -45,8 +45,6 @@ from app.services.context_budget import (
     KEEP_RECENT_MESSAGES,
     build_compressed_transcript_block,
     cap_max_tokens_for_window,
-    context_window_for,
-    estimate_messages_tokens,
     replace_embedded_transcript,
     run_summarize,
     select_summarizer_model_id,
@@ -67,6 +65,7 @@ from app.services.orchestrator_speed import (
     run_roster_ai_turns_parallel,
 )
 from app.services.resilience import run_resilient_turn
+from app.services.live_sse import iter_resilient_turn_sse
 from app.services.models import (
     DEFAULT_MAX_PARTICIPANTS,
     MAX_MAX_PARTICIPANTS,
@@ -548,43 +547,6 @@ async def _call_participant(
         {"role": "user", "content": user_prompt},
     ]
 
-    # #region agent log
-    def _dbg(hyp: str, msg: str, data: dict) -> None:
-        try:
-            import json as _json, time as _time
-            with open(
-                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
-                "a", encoding="utf-8",
-            ) as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "62da73",
-                    "runId": "pre-fix",
-                    "hypothesisId": hyp,
-                    "location": "orchestrator.py:_call_participant",
-                    "message": msg,
-                    "data": data,
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-    # #endregion
-
-    est_before = estimate_messages_tokens(api_messages)
-    # #region agent log
-    _dbg("A", "turn_start", {
-        "participant_id": participant.participant_id,
-        "model_id": participant.model_id,
-        "label": label,
-        "phase": getattr(session.phase, "value", str(session.phase)),
-        "est_before": est_before,
-        "window": context_window_for(participant.model_id),
-        "msg_count": len(session.messages),
-        "requested_max_tokens": max_tokens,
-        "sys_chars": len(system_text),
-        "user_chars": len(user_prompt),
-        "has_summary": participant.summary.is_active(),
-    })
-    # #endregion
 
     await _maybe_summarize_for_participant(session, participant, api_messages)
 
@@ -594,9 +556,6 @@ async def _call_participant(
 
     # CCAI embeds the transcript inside the user prompt. When over budget,
     # swap that block for summary + recent tail (AskJerry pattern).
-    compress_applied = False
-    header_matched = False
-    last_resort_trim = False
     if needs_sum or needs_trim:
         recent_transcript = _format_history(
             session.messages[-KEEP_RECENT_MESSAGES:],
@@ -607,10 +566,7 @@ async def _call_participant(
             recent_transcript,
         )
         if compressed_block:
-            new_prompt = replace_embedded_transcript(user_prompt, compressed_block)
-            header_matched = new_prompt != user_prompt
-            compress_applied = True
-            user_prompt = new_prompt
+            user_prompt = replace_embedded_transcript(user_prompt, compressed_block)
             api_messages[1] = {"role": "user", "content": user_prompt}
         elif len(user_prompt) > input_budget * 4:
             # Last-resort: keep prompt head + tail if no transcript header matched.
@@ -621,30 +577,10 @@ async def _call_participant(
                 + user_prompt[-keep:]
             )
             api_messages[1] = {"role": "user", "content": user_prompt}
-            last_resort_trim = True
 
     max_tokens = cap_max_tokens_for_window(
         participant.model_id, api_messages, max_tokens,
     )
-    est_after = estimate_messages_tokens(api_messages)
-    # #region agent log
-    _dbg("B", "after_compress_cap", {
-        "participant_id": participant.participant_id,
-        "model_id": participant.model_id,
-        "label": label,
-        "needs_sum": needs_sum,
-        "needs_trim": needs_trim,
-        "has_summary": participant.summary.is_active(),
-        "compress_applied": compress_applied,
-        "header_matched": header_matched,
-        "last_resort_trim": last_resort_trim,
-        "est_before": est_before,
-        "est_after": est_after,
-        "input_budget": input_budget,
-        "capped_max_tokens": max_tokens,
-        "user_chars_after": len(user_prompt),
-    })
-    # #endregion
 
     resolved = {
         "model_id": participant.model_id,
@@ -705,17 +641,6 @@ async def _call_participant(
 
     if result.get("error"):
         participant.consecutive_failures += 1
-        # #region agent log
-        _dbg("D", "turn_error", {
-            "participant_id": participant.participant_id,
-            "model_id": participant.model_id,
-            "label": label,
-            "error_kind": result.get("error_kind"),
-            "error_status": result.get("error_status"),
-            "response_snip": str(result.get("response", ""))[:200],
-            "is_neon": participant.is_neon,
-        })
-        # #endregion
         return (
             "",
             result.get("elapsed_seconds", 0),
@@ -725,21 +650,6 @@ async def _call_participant(
 
     text = strip_thinking(result.get("response", ""))
     elapsed = float(result.get("elapsed_seconds", 0) or 0)
-    # #region agent log
-    _tail = (text or "")[-80:]
-    _dbg("A", "turn_result", {
-        "participant_id": participant.participant_id,
-        "model_id": participant.model_id,
-        "label": label,
-        "ok": True,
-        "elapsed": elapsed,
-        "finish_reason": result.get("finish_reason"),
-        "text_chars": len(text or ""),
-        "capped_max_tokens": max_tokens,
-        "ends_mid_sentence": bool(text) and text.rstrip()[-1:] not in ".!?\"'`",
-        "text_tail": _tail,
-    })
-    # #endregion
     if not text.strip():
         # 200 OK but the model returned nothing usable. Worth one
         # retry / substitute attempt before we surface participant_error.
@@ -1214,19 +1124,21 @@ async def _phase_status_assessment(session: Session) -> AsyncIterator[str]:
                     credential_summary=cred_block,
                     targeted_question=question_text,
                 )
-            stream_events: list[str] = []
             stream_msg_id = str(uuid.uuid4())
-            turn = await run_resilient_turn(
+            turn = None
+            async for item in iter_resilient_turn_sse(
                 session=session, participant=target,
                 user_prompt=prompt2,
                 label="targeted_followup",
                 max_tokens=600,
                 call_participant=_call_participant,
-                stream_events=stream_events,
                 stream_message_id=stream_msg_id,
-            )
-            for ev in stream_events:
-                yield ev
+            ):
+                if isinstance(item, tuple) and item and item[0] == "turn":
+                    _, turn, stream_msg_id = item
+                else:
+                    yield item
+            assert turn is not None
             for ev in turn.sse_events:
                 yield ev
             if not turn.ok:
@@ -1443,19 +1355,21 @@ async def _phase_consensus(session: Session) -> AsyncIterator[str]:
         # message records who this turn was supposed to be replying to.
         pending = _pending_addressed_for(session, speaker)
 
-        stream_events: list[str] = []
         stream_msg_id = str(uuid.uuid4())
-        turn = await run_resilient_turn(
+        turn = None
+        async for item in iter_resilient_turn_sse(
             session=session, participant=speaker,
             user_prompt=prompt,
             label="consensus",
             max_tokens=700,
             call_participant=_call_participant,
-            stream_events=stream_events,
             stream_message_id=stream_msg_id,
-        )
-        for ev in stream_events:
-            yield ev
+        ):
+            if isinstance(item, tuple) and item and item[0] == "turn":
+                _, turn, stream_msg_id = item
+            else:
+                yield item
+        assert turn is not None
         for ev in turn.sse_events:
             yield ev
         if not turn.ok:
@@ -1823,60 +1737,10 @@ async def run_conversation(session: Session) -> AsyncIterator[str]:
             yield chunk
     except Exception as exc:
         LOG.exception("Conversation crashed: %s", exc)
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            with open(
-                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
-                "a", encoding="utf-8",
-            ) as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "62da73",
-                    "runId": "pre-fix",
-                    "hypothesisId": "E",
-                    "location": "orchestrator.py:run_conversation",
-                    "message": "conversation_crashed",
-                    "data": {
-                        "session_id": session.session_id,
-                        "phase": getattr(session.phase, "value", str(session.phase)),
-                        "error": str(exc)[:300],
-                        "msg_count": len(session.messages),
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
         yield _sse("error", {"message": f"Internal error: {exc}"})
     finally:
         session.finished = True
         session.phase = Phase.FINISHED
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            with open(
-                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
-                "a", encoding="utf-8",
-            ) as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "62da73",
-                    "runId": "pre-fix",
-                    "hypothesisId": "E",
-                    "location": "orchestrator.py:run_conversation",
-                    "message": "conversation_finished",
-                    "data": {
-                        "session_id": session.session_id,
-                        "msg_count": len(session.messages),
-                        "has_final_report": bool(session.final_report),
-                        "final_report_kind": (session.final_report or {}).get("kind"),
-                        "orch_calls": session.orchestrator_call_count,
-                        "paused_for_continue": session.paused_for_continue,
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
         # Drop the human-input slot (if any) so its asyncio.Event
         # doesn't outlive the session in the module-level registry.
         human_io.drop_session(session.session_id)

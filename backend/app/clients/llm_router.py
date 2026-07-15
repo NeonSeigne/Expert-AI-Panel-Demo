@@ -49,7 +49,10 @@ async def chat_completion(
 ) -> dict[str, Any]:
     """Unified LLM call that routes Neon models through HANA and others through OpenAI-compat."""
     if resolved.get("is_neon"):
-        return await _call_hana(resolved, messages, temperature, max_tokens)
+        return await _call_hana(
+            resolved, messages, temperature, max_tokens,
+            on_text_delta=on_text_delta,
+        )
 
     # Streaming uses a single request path (no model racing).
     if on_text_delta is not None:
@@ -63,6 +66,40 @@ async def chat_completion(
         return await _racing_openai(resolved, messages, temperature, max_tokens, timeout)
 
     return await _plain_openai(resolved, messages, temperature, max_tokens, timeout)
+
+
+def _chunk_text_for_sse(text: str, size: int = 28) -> list[str]:
+    """Split completed text into word-ish pieces for synthetic SSE deltas."""
+    if not text:
+        return []
+    chunks: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        end = min(i + size, n)
+        if end < n:
+            sp = text.rfind(" ", i, end + 1)
+            if sp > i:
+                end = sp + 1
+        chunks.append(text[i:end])
+        i = end
+    return chunks
+
+
+async def _pump_text_deltas(text: str, on_text_delta: Any | None) -> int:
+    """Emit text via on_text_delta in small chunks, yielding to the event loop.
+
+    Used when the underlying provider has no token stream (HANA get_inference)
+    so Neon personas still animate in the UI alongside OpenAI-compat streams.
+    """
+    if not on_text_delta or not text:
+        return 0
+    count = 0
+    for piece in _chunk_text_for_sse(text):
+        on_text_delta(piece)
+        count += 1
+        await asyncio.sleep(0)
+    return count
 
 
 async def _plain_openai(
@@ -153,6 +190,7 @@ async def _call_neon_direct_vllm(
     messages: list[dict[str, str]],
     temperature: float,
     max_tokens: int,
+    on_text_delta: Any | None = None,
 ) -> dict[str, Any]:
     """BrainForge/Security on 4090-x1-3: OpenAI-compatible vLLM; still use HANA persona base when cached."""
     builtin_sp = hana_client.get_persona_system_prompt(
@@ -160,33 +198,6 @@ async def _call_neon_direct_vllm(
     )
     msgs = [dict(m) for m in messages]
     if builtin_sp:
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            from app.services.context_budget import estimate_messages_tokens, context_window_for
-            _est_pre = estimate_messages_tokens(msgs)
-            with open(
-                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
-                "a", encoding="utf-8",
-            ) as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "62da73",
-                    "runId": "pre-fix",
-                    "hypothesisId": "B",
-                    "location": "llm_router.py:_call_neon_direct_vllm",
-                    "message": "hana_persona_base_prepend",
-                    "data": {
-                        "model_id": resolved.get("model_id"),
-                        "persona_name": resolved.get("persona_name"),
-                        "builtin_sp_chars": len(builtin_sp),
-                        "est_before_prepend": _est_pre,
-                        "window": context_window_for(resolved.get("model_id") or ""),
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
         if msgs and msgs[0].get("role") == "system":
             msgs[0] = {
                 "role": "system",
@@ -202,6 +213,7 @@ async def _call_neon_direct_vllm(
         messages=msgs,
         temperature=temperature,
         max_tokens=max_tokens,
+        on_text_delta=on_text_delta,
     )
     return {
         "response": strip_thinking(result.get("response", "")),
@@ -218,9 +230,13 @@ async def _call_hana(
     messages: list[dict[str, str]],
     temperature: float,
     max_tokens: int,
+    on_text_delta: Any | None = None,
 ) -> dict[str, Any]:
     if resolved.get("neon_direct_vllm"):
-        return await _call_neon_direct_vllm(resolved, messages, temperature, max_tokens)
+        return await _call_neon_direct_vllm(
+            resolved, messages, temperature, max_tokens,
+            on_text_delta=on_text_delta,
+        )
 
     system_context = ""
     query = ""
@@ -255,6 +271,9 @@ async def _call_hana(
         cleaned = strip_thinking(raw)
         if response_has_thinking(raw):
             LOG.info("Stripped thinking content from HANA %s response", resolved["model_id"])
+        # HANA get_inference is non-streaming — synth deltas so Neon
+        # personas animate in mixed OpenAI/Neon parallel batches.
+        await _pump_text_deltas(cleaned, on_text_delta)
         return {
             "response": cleaned,
             "elapsed_seconds": result.get("elapsed_seconds", 0),

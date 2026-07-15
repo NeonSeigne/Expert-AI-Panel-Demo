@@ -4,16 +4,17 @@ import '../neon/neon-material.register.js';
 import { useChatSession } from '../context/ChatSessionContext';
 
 const ACTIONS = [
-  { value: 'table', label: 'Summary table…', needsChat: true },
-  { value: 'txt', label: 'Chat as .txt', needsChat: true },
-  { value: 'md', label: 'Chat as .md', needsChat: true },
-  { value: 'csv', label: 'Summary table as .csv', needsChat: true },
-  { value: 'api', label: 'Full API history', needsApi: true },
+  { value: 'table', label: 'Summary table…', shortLabel: 'Summary table', needsChat: true },
+  { value: 'txt', label: 'Chat as .txt', shortLabel: '.txt', needsChat: true },
+  { value: 'md', label: 'Chat as .md', shortLabel: '.md', needsChat: true },
+  { value: 'csv', label: 'Summary table as .csv', shortLabel: 'CSV table', needsChat: true },
+  { value: 'api', label: 'Full API history', shortLabel: 'API history', needsApi: true },
 ];
 
 /**
  * Shared export / downloads control.
- * - variant "button": native <select> (matches main-page Structure/Decision/Rounds)
+ * - variant "button": native <select> (legacy)
+ * - variant "buttons": outlined action buttons (wrap-up bento)
  * - variant "icon": compact header md-menu
  */
 export default function ExportMenu({
@@ -66,6 +67,32 @@ export default function ExportMenu({
         break;
     }
   };
+
+  if (variant === 'buttons') {
+    return (
+      <div
+        className={`ccai-export-menu ccai-export-menu--buttons${className ? ` ${className}` : ''}`}
+        role="group"
+        aria-label="Export conversation"
+      >
+        {ACTIONS.map((opt) => {
+          const disabled = (opt.needsChat && !hasChat)
+            || (opt.needsApi && !hasApiLog);
+          return (
+            <md-outlined-button
+              key={opt.value}
+              type="button"
+              className="ccai-export-menu-btn"
+              disabled={disabled || undefined}
+              onClick={() => runAction(opt.value)}
+            >
+              {opt.shortLabel || opt.label}
+            </md-outlined-button>
+          );
+        })}
+      </div>
+    );
+  }
 
   if (variant === 'button') {
     const handleNativeChange = (e) => {
@@ -161,3 +188,4 @@ export default function ExportMenu({
     </div>
   );
 }
+

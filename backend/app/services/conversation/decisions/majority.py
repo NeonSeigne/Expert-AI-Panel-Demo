@@ -28,7 +28,7 @@ from typing import Any, AsyncIterator
 from app.services.conversation.decisions.base import DecisionMethod
 from app.services.conversation.voting import (
     cast_vote_single,
-    gather_votes_parallel,
+    iter_votes_parallel,
     cast_vote_yesno,
     extract_candidate_options,
     tally_single_votes,
@@ -87,7 +87,7 @@ class MajorityRulesDecision(DecisionMethod):
         yield _sse("orchestrator", _msg_payload(msg))
 
         ballots: list[dict[str, Any]] = []
-        for p, result in await gather_votes_parallel(
+        async for p, result in iter_votes_parallel(
             voters,
             cast_vote_yesno,
             session=session,
@@ -171,7 +171,7 @@ class MajorityRulesDecision(DecisionMethod):
         yield _sse("orchestrator", _msg_payload(msg))
 
         ballots: list[dict[str, Any]] = []
-        for p, result in await gather_votes_parallel(
+        async for p, result in iter_votes_parallel(
             voters,
             cast_vote_single,
             session=session,

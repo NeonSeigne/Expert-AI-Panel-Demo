@@ -211,30 +211,6 @@ class HanaClient:
                 added += 1
             if added:
                 LOG.info("Merged %s model(s) from direct vLLM %s", added, base)
-            # region agent log
-            try:
-                with open(r"c:\Users\dream\CCAI-Demo-FEAT_Config\debug-c86901.log", "a", encoding="utf-8") as _df:
-                    _df.write(
-                        json.dumps(
-                            {
-                                "sessionId": "c86901",
-                                "hypothesisId": "H5",
-                                "location": "LLMChats3/hana_client._merge_direct_vllm",
-                                "message": "direct_vllm_models",
-                                "data": {
-                                    "app": "LLMChats3",
-                                    "url": url,
-                                    "http_status": resp.status_code,
-                                    "added_count": added,
-                                },
-                                "timestamp": int(time.time() * 1000),
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # endregion
         except Exception as exc:
             LOG.warning("Neon direct vLLM model merge failed: %s", exc)
 
@@ -329,31 +305,6 @@ class HanaClient:
         await self._append_supplement_models(models)
         await self._enrich_security_personas_from_hana(models)
         await self._ensure_security_model_stub_if_missing(models)
-        # region agent log
-        try:
-            mids = [m.get("model_id", "") for m in models]
-            with open(r"c:\Users\dream\CCAI-Demo-FEAT_Config\debug-c86901.log", "a", encoding="utf-8") as _df:
-                _df.write(
-                    json.dumps(
-                        {
-                            "sessionId": "c86901",
-                            "hypothesisId": "H3",
-                            "location": "LLMChats3/hana_client.get_models",
-                            "message": "merged_models",
-                            "data": {
-                                "app": "LLMChats3",
-                                "model_count": len(models),
-                                "has_security_in_list": any("security" in (x or "").lower() for x in mids),
-                                "model_ids_tail": mids[-8:],
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # endregion
         return models
 
     async def get_personas(self, model_id: str) -> list[dict[str, Any]]:

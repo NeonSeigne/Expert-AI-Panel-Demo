@@ -40,6 +40,7 @@ class _AiTurnResult:
     participant: "Participant"
     turn: ResilientTurnResult
     pending: list[tuple[str, str, str]] = field(default_factory=list)
+    stream_message_id: str | None = None
 
 
 def orchestrator_fast_model_id(session: "Session") -> str:
@@ -127,10 +128,14 @@ async def _execute_ai_turn(
     session: "Session",
     spec: _AiTurnSpec,
     call_participant: CallParticipantFn,
+    stream_events: Any | None = None,
 ) -> _AiTurnResult:
+    import uuid
+
     from app.services.orchestrator import _pending_addressed_for
 
     pending = _pending_addressed_for(session, spec.participant)
+    stream_msg_id = str(uuid.uuid4()) if stream_events is not None else None
     turn = await run_resilient_turn(
         session=session,
         participant=spec.participant,
@@ -138,11 +143,14 @@ async def _execute_ai_turn(
         label=spec.label,
         max_tokens=spec.max_tokens,
         call_participant=call_participant,
+        stream_events=stream_events,
+        stream_message_id=stream_msg_id,
     )
     return _AiTurnResult(
         participant=spec.participant,
         turn=turn,
         pending=pending,
+        stream_message_id=stream_msg_id,
     )
 
 
@@ -190,13 +198,31 @@ async def run_roster_ai_turns_parallel(
             return
         specs = ai_batch
         ai_batch = []
-        results = await asyncio.gather(
-            *[
-                _execute_ai_turn(session, spec, call_participant)
-                for spec in specs
-            ],
-            return_exceptions=True,
-        )
+        # Drain token deltas live while the parallel batch runs so the
+        # UI streams instead of buffering until gather() returns.
+        from app.services.live_sse import LiveSseBridge
+
+        bridge = LiveSseBridge()
+
+        async def _run_batch():
+            try:
+                return await asyncio.gather(
+                    *[
+                        _execute_ai_turn(
+                            session, spec, call_participant,
+                            stream_events=bridge,
+                        )
+                        for spec in specs
+                    ],
+                    return_exceptions=True,
+                )
+            finally:
+                bridge.close()
+
+        batch_task = asyncio.create_task(_run_batch())
+        async for ev in bridge:
+            yield ev
+        results = await batch_task
         for spec, item in zip(specs, results):
             if isinstance(item, BaseException):
                 LOG.exception(
@@ -213,6 +239,8 @@ async def run_roster_ai_turns_parallel(
             extra: dict[str, Any] | None = None
             if post_process is not None:
                 extra = await post_process(item) or {}
+            if item.stream_message_id:
+                extra = {**(extra or {}), "message_id": item.stream_message_id}
             async for chunk in _emit_ai_turn_result(
                 session, item, phase=phase, extra=extra,
             ):
@@ -281,6 +309,9 @@ async def run_initial_opinions_roster(
             yield chunk
         return
 
+    from app.services.live_sse import LiveSseBridge
+
+    bridge = LiveSseBridge()
     pending: dict[str, asyncio.Task[_AiTurnResult]] = {}
     for p in actives:
         if p.kind == "human":
@@ -289,51 +320,86 @@ async def run_initial_opinions_roster(
         if spec is None:
             continue
         pending[p.participant_id] = asyncio.create_task(
-            _execute_ai_turn(session, spec, call_participant),
+            _execute_ai_turn(
+                session, spec, call_participant, stream_events=bridge,
+            ),
             name=f"prefetch_initial:{p.participant_id}",
         )
 
-    for p in actives:
-        if p.kind == "human":
-            async for chunk in on_human_turn(p):
+    async def _drain_available() -> AsyncIterator[str]:
+        while True:
+            item = bridge.get_nowait()
+            if item is None and bridge.empty():
+                break
+            if item is None:
+                # close sentinel — surface as end of drain
+                break
+            yield item
+
+    async def _await_task_live(task: asyncio.Task[_AiTurnResult]) -> AsyncIterator[str]:
+        while not task.done():
+            get = asyncio.create_task(bridge.get())
+            done, _pending_wait = await asyncio.wait(
+                {task, get}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            if get in done:
+                item = get.result()
+                if item is not None:
+                    yield item
+            else:
+                get.cancel()
+        async for item in _drain_available():
+            yield item
+
+    try:
+        for p in actives:
+            if p.kind == "human":
+                async for chunk in on_human_turn(p):
+                    async for ev in _drain_available():
+                        yield ev
+                    yield chunk
+                if _participant_msg_cap_hit(session):
+                    async for chunk in _wait_for_continue(session, "messages"):
+                        yield chunk
+                continue
+
+            task = pending.pop(p.participant_id, None)
+            if task is None:
+                continue
+            async for ev in _await_task_live(task):
+                yield ev
+            try:
+                result = task.result()
+            except BaseException as exc:
+                LOG.exception(
+                    "Prefetched initial opinion failed for %s: %s",
+                    p.participant_id,
+                    exc,
+                )
+                yield _sse("participant_error", {
+                    "participant_id": p.participant_id,
+                    "name": p.name,
+                    "phase": phase.value,
+                })
+                continue
+
+            extra: dict[str, Any] | None = None
+            if post_process is not None:
+                extra = await post_process(result) or {}
+            if result.stream_message_id:
+                extra = {**(extra or {}), "message_id": result.stream_message_id}
+            async for chunk in _emit_ai_turn_result(
+                session, result, phase=phase, extra=extra,
+            ):
                 yield chunk
             if _participant_msg_cap_hit(session):
                 async for chunk in _wait_for_continue(session, "messages"):
                     yield chunk
-            continue
-
-        task = pending.pop(p.participant_id, None)
-        if task is None:
-            continue
-        try:
-            result = await task
-        except BaseException as exc:
-            LOG.exception(
-                "Prefetched initial opinion failed for %s: %s",
-                p.participant_id,
-                exc,
-            )
-            yield _sse("participant_error", {
-                "participant_id": p.participant_id,
-                "name": p.name,
-                "phase": phase.value,
-            })
-            continue
-
-        extra: dict[str, Any] | None = None
-        if post_process is not None:
-            extra = await post_process(result) or {}
-        async for chunk in _emit_ai_turn_result(
-            session, result, phase=phase, extra=extra,
-        ):
-            yield chunk
-        if _participant_msg_cap_hit(session):
-            async for chunk in _wait_for_continue(session, "messages"):
-                yield chunk
-
-    for pid, task in pending.items():
-        if not task.done():
-            task.cancel()
+    finally:
+        bridge.close()
+        for pid, task in pending.items():
+            if not task.done():
+                task.cancel()
 
 
 async def _emit_ai_turn_result(

@@ -27,9 +27,9 @@
 /* ── Create / add control (Contacts-style tonal button) ───────── */
 
 .neon-participant-sidebar__create-btn {
-  --md-filled-tonal-button-container-color: var(--md-sys-color-primary-container, #d3e3fd);
-  --md-filled-tonal-button-label-text-color: var(--md-sys-color-on-primary-container, #041e49);
-  --md-filled-tonal-button-icon-color: var(--md-sys-color-primary, #0b57d0);
+  --md-filled-tonal-button-container-color: var(--md-sys-color-primary-container, #eaddff);
+  --md-filled-tonal-button-label-text-color: var(--md-sys-color-on-primary-container, #21005d);
+  --md-filled-tonal-button-icon-color: var(--md-sys-color-primary, #6750a4);
   --md-filled-tonal-button-container-shape: 24px;
   --md-filled-tonal-button-container-height: 48px;
   width: 100%;
@@ -43,7 +43,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  flex: 0 1 auto;
+  /* Participants: size to content; Chats overrides to fill + scroll */
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -187,8 +188,8 @@
   padding: 0;
   border: none;
   border-radius: var(--radius-neon-full, 9999px);
-  background: var(--md-sys-color-primary-container, #d3e3fd);
-  color: var(--md-sys-color-primary, #0b57d0);
+  background: var(--md-sys-color-primary-container, #eaddff);
+  color: var(--md-sys-color-primary, #6750a4);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -211,9 +212,9 @@
 
 .neon-participant-sidebar__add-participant-btn {
   --md-text-button-container-height: 40px;
-  --md-text-button-label-text-color: var(--md-sys-color-primary, #0b57d0);
-  --md-text-button-hover-state-layer-color: var(--md-sys-color-primary, #0b57d0);
-  --md-text-button-icon-color: var(--md-sys-color-primary, #0b57d0);
+  --md-text-button-label-text-color: var(--md-sys-color-primary, #6750a4);
+  --md-text-button-hover-state-layer-color: var(--md-sys-color-primary, #6750a4);
+  --md-text-button-icon-color: var(--md-sys-color-primary, #6750a4);
   width: 100%;
   margin-top: 0.25rem;
   justify-content: flex-start;
@@ -247,11 +248,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  max-height: min(52vh, 28rem);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -261,26 +260,48 @@
   align-items: center;
   gap: 0.35rem;
   width: 100%;
-  max-height: none;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* ── Chats history ────────────────────────────────────────────── */
 
 .neon-chat-history.neon-sidebar-section {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   margin-top: 0.15rem;
   padding-top: 0.35rem;
   border-top: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+  min-height: 0;
+}
+
+/* Open Chats fills leftover sidebar height; the list scrolls inside. */
+.neon-chat-history--open.neon-sidebar-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.neon-chat-history .neon-sidebar-section__toggle {
+  flex-shrink: 0;
+}
+
+.neon-chat-history--open .neon-sidebar-section__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .neon-chat-history__list {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: min(36vh, 16rem);
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   margin: 0;

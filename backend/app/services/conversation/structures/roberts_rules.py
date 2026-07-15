@@ -41,7 +41,7 @@ from app.services.conversation.types import DecisionInput
 from app.services.credential import build_credential_summary
 from app.services.json_calls import orchestrator_call
 from app.services.models import Participant, Phase
-from app.services.resilience import run_resilient_turn
+from app.services.live_sse import iter_resilient_turn_sse
 
 
 RR_OPENING_TEMPLATE = (
@@ -161,13 +161,20 @@ class RobertsRulesDiscussion(ConversationStructure):
                 question=session.question,
                 speaker_name=p.name,
             )
-            turn = await run_resilient_turn(
+            turn = None
+            stream_msg_id = None
+            async for item in iter_resilient_turn_sse(
                 session=session, participant=p,
                 user_prompt=prompt,
                 label="rr_initial_remarks",
                 max_tokens=400,
                 call_participant=_call_participant,
-            )
+            ):
+                if isinstance(item, tuple) and item and item[0] == "turn":
+                    _, turn, stream_msg_id = item
+                else:
+                    yield item
+            assert turn is not None
             for ev in turn.sse_events:
                 yield ev
             if not turn.ok:
@@ -183,6 +190,7 @@ class RobertsRulesDiscussion(ConversationStructure):
             msg = _add_participant_message(
                 session, speaker, turn.text,
                 phase=session.phase, elapsed=turn.elapsed,
+                message_id=stream_msg_id,
             )
             remarks[speaker.participant_id] = turn.text
             session.initial_opinions[speaker.participant_id] = turn.text
@@ -300,13 +308,20 @@ class RobertsRulesDiscussion(ConversationStructure):
                     question=session.question,
                     transcript=_format_history(session.messages),
                 )
-                turn = await run_resilient_turn(
+                turn = None
+                stream_msg_id = None
+                async for item in iter_resilient_turn_sse(
                     session=session, participant=p,
                     user_prompt=prompt,
                     label=f"rr_debate_round_{round_n}",
                     max_tokens=600,
                     call_participant=_call_participant,
-                )
+                ):
+                    if isinstance(item, tuple) and item and item[0] == "turn":
+                        _, turn, stream_msg_id = item
+                    else:
+                        yield item
+                assert turn is not None
                 for ev in turn.sse_events:
                     yield ev
                 if not turn.ok:
@@ -322,6 +337,7 @@ class RobertsRulesDiscussion(ConversationStructure):
                 msg = _add_participant_message(
                     session, speaker, turn.text,
                     phase=session.phase, elapsed=turn.elapsed,
+                    message_id=stream_msg_id,
                 )
                 last_remark_per_member[speaker.participant_id] = turn.text
                 yield _sse("message", _msg_payload(msg))

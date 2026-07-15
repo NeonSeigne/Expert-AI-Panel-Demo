@@ -23,7 +23,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from app.clients.llm_router import chat_completion
 from app.services.json_calls import (
@@ -203,26 +203,68 @@ async def gather_votes_parallel(
     default_mode: str = "single",
     **cast_kwargs: Any,
 ) -> list[tuple[Participant, dict[str, Any]]]:
-    """Run ballot calls concurrently; roster order is preserved."""
+    """Run ballot calls concurrently; roster order is preserved.
+
+    Prefer ``iter_votes_parallel`` when the caller can yield SSE as each
+    ballot lands — this helper still gathers everything first (legacy).
+    """
+    out: list[tuple[Participant, dict[str, Any]]] = []
+    async for p, result in iter_votes_parallel(
+        voters,
+        cast_fn,
+        session=session,
+        default_mode=default_mode,
+        preserve_roster_order=True,
+        **cast_kwargs,
+    ):
+        out.append((p, result))
+    return out
+
+
+async def iter_votes_parallel(
+    voters: list[Participant],
+    cast_fn: Callable[..., Awaitable[dict[str, Any]]],
+    *,
+    session: Session,
+    default_mode: str = "single",
+    preserve_roster_order: bool = False,
+    **cast_kwargs: Any,
+) -> AsyncIterator[tuple[Participant, dict[str, Any]]]:
+    """Yield ``(participant, ballot)`` as each vote completes.
+
+    When ``preserve_roster_order`` is True, results are buffered and
+    emitted in roster order after all votes finish (same UX as the old
+    gather). Default is completion order so the ballot UI fills in live.
+    """
     if not voters:
-        return []
+        return
 
     async def _one(p: Participant) -> tuple[Participant, dict[str, Any]]:
         result = await cast_fn(session=session, participant=p, **cast_kwargs)
         return p, result
 
-    gathered = await asyncio.gather(
-        *[_one(p) for p in voters],
-        return_exceptions=True,
-    )
-    out: list[tuple[Participant, dict[str, Any]]] = []
-    for p, item in zip(voters, gathered):
-        if isinstance(item, BaseException):
-            LOG.exception("Parallel vote failed for %s: %s", p.participant_id, item)
-            out.append((p, _vote_default(default_mode)))
-        else:
-            out.append(item)
-    return out
+    tasks = [
+        asyncio.create_task(_one(p), name=f"vote:{p.participant_id}")
+        for p in voters
+    ]
+
+    if preserve_roster_order:
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
+        for p, item in zip(voters, gathered):
+            if isinstance(item, BaseException):
+                LOG.exception("Parallel vote failed for %s: %s", p.participant_id, item)
+                yield p, _vote_default(default_mode)
+            else:
+                yield item
+        return
+
+    for fut in asyncio.as_completed(tasks):
+        try:
+            item = await fut
+        except BaseException as exc:
+            LOG.exception("Parallel vote failed: %s", exc)
+            continue
+        yield item
 
 
 async def cast_vote_single(

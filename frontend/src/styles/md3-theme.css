@@ -1,7 +1,7 @@
 /**
  * Material Design 3 theme — single source of truth on html[data-theme].
  *
- * Key colors: primary #0B57D0 (Google blue), secondary/tertiary from neon-blue,
+ * Key colors: primary #6750A4 (Material purple), secondary/tertiary from neon-blue,
  * error from brand crimson. Dark scheme uses lighter primary for contrast.
  * Legacy aliases (--bg-*, --text-*, etc.) map onto these roles so existing CSS
  * keeps working during migration.
@@ -12,14 +12,14 @@
   color-scheme: light;
 
   /* Key / brand */
-  --md-sys-color-primary: #0b57d0;
+  --md-sys-color-primary: #6750a4;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #d3e3fd;
-  --md-sys-color-on-primary-container: #041e49;
-  --md-sys-color-secondary: #545f71;
+  --md-sys-color-primary-container: #eaddff;
+  --md-sys-color-on-primary-container: #21005d;
+  --md-sys-color-secondary: #625b71;
   --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #d8e3f8;
-  --md-sys-color-on-secondary-container: #111c2b;
+  --md-sys-color-secondary-container: #e8def8;
+  --md-sys-color-on-secondary-container: #1d192b;
   --md-sys-color-tertiary: #0891b2;
   --md-sys-color-on-tertiary: #ffffff;
   --md-sys-color-tertiary-container: #cffafe;
@@ -45,7 +45,7 @@
   --md-sys-color-outline-variant: #c3c6cf;
   --md-sys-color-inverse-surface: #2f3036;
   --md-sys-color-inverse-on-surface: #f0f0f7;
-  --md-sys-color-inverse-primary: #a8c7ff;
+  --md-sys-color-inverse-primary: #d0bcff;
   --md-sys-color-scrim: #000000;
   --md-sys-color-shadow: #000000;
 
@@ -54,7 +54,7 @@
   --color-neon-composer-on-surface: #1a1b21;
   --color-neon-composer-border: rgba(0, 0, 0, 0.12);
   --color-neon-composer-placeholder: #74777f;
-  --color-neon-action-emphasis: #0b57d0;
+  --color-neon-action-emphasis: #6750a4;
   --neon-composer-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 
   /* Shape scale */
@@ -200,14 +200,14 @@
   color-scheme: dark;
 
   /* Lighter primary for dark surfaces */
-  --md-sys-color-primary: #a8c7ff;
-  --md-sys-color-on-primary: #003063;
-  --md-sys-color-primary-container: #00468c;
-  --md-sys-color-on-primary-container: #d3e3fd;
-  --md-sys-color-secondary: #bcc7dc;
-  --md-sys-color-on-secondary: #263141;
-  --md-sys-color-secondary-container: #3c4758;
-  --md-sys-color-on-secondary-container: #d8e3f8;
+  --md-sys-color-primary: #d0bcff;
+  --md-sys-color-on-primary: #381e72;
+  --md-sys-color-primary-container: #4f378b;
+  --md-sys-color-on-primary-container: #eaddff;
+  --md-sys-color-secondary: #ccc2dc;
+  --md-sys-color-on-secondary: #332d41;
+  --md-sys-color-secondary-container: #4a4458;
+  --md-sys-color-on-secondary-container: #e8def8;
   --md-sys-color-tertiary: #2ec4f2;
   --md-sys-color-on-tertiary: #003543;
   --md-sys-color-tertiary-container: #004e61;
@@ -233,7 +233,7 @@
   --md-sys-color-outline-variant: #43474e;
   --md-sys-color-inverse-surface: #e2e2e9;
   --md-sys-color-inverse-on-surface: #2f3036;
-  --md-sys-color-inverse-primary: #0b57d0;
+  --md-sys-color-inverse-primary: #6750a4;
   --md-sys-color-scrim: #000000;
   --md-sys-color-shadow: #000000;
 
@@ -241,7 +241,7 @@
   --color-neon-composer-on-surface: #e2e2e9;
   --color-neon-composer-border: rgba(195, 198, 207, 0.16);
   --color-neon-composer-placeholder: #c3c6cf;
-  --color-neon-action-emphasis: #a8c7ff;
+  --color-neon-action-emphasis: #d0bcff;
   --neon-composer-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 
   --bg-gradient: linear-gradient(

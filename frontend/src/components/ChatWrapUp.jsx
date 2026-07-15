@@ -1,4 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import {
+  Clock,
+  Download,
+  Flag,
+  MessagesSquare,
+  Vote,
+} from 'lucide-react';
 import ExportMenu from './ExportMenu';
 import CredibilityReport from './CredibilityReport';
 import DecisionSummaryPanel from './decision/DecisionSummaryPanel';
@@ -9,7 +16,6 @@ import {
 import { isVoteDecision } from '../utils/voteUi';
 import '../neon/neon-material.register.js';
 
-const NEON_CONTACT_URL = 'https://www.neon.ai/contact';
 const REPORT_PREVIEW_LEN = 220;
 
 function clip(text, max) {
@@ -17,6 +23,21 @@ function clip(text, max) {
   if (!t) return '';
   if (t.length <= max) return t;
   return `${t.slice(0, max).trim()}…`;
+}
+
+function resolvePerson(value, participantNameById) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Voter';
+  return participantNameById?.[raw] || raw;
+}
+
+function BentoKicker({ icon: Icon, children }) {
+  return (
+    <p className="ccai-bento-kicker">
+      {Icon ? <Icon size={18} strokeWidth={2.25} className="ccai-bento-kicker-icon" aria-hidden /> : null}
+      <span>{children}</span>
+    </p>
+  );
 }
 
 function BentoCell({ className = '', children, label }) {
@@ -27,25 +48,35 @@ function BentoCell({ className = '', children, label }) {
   );
 }
 
-function ShareBarList({ bars }) {
+function ShareBarList({ bars, participantNameById = {} }) {
   if (!bars || bars.length === 0) return null;
   const maxShare = Math.max(0.01, ...bars.map((b) => b.share || 0));
   return (
     <ul className="ccai-wrap-up-bar-list">
-      {bars.map((bar) => (
-        <li key={bar.label} className="ccai-wrap-up-bar-row">
-          <div className="ccai-wrap-up-bar-label">
-            <span>{bar.label}</span>
-            <strong>{bar.count}</strong>
-          </div>
-          <div className="ccai-wrap-up-bar" aria-hidden>
-            <div
-              className="ccai-wrap-up-bar-fill"
-              style={{ width: `${Math.round(((bar.share || 0) / maxShare) * 100)}%` }}
-            />
-          </div>
-        </li>
-      ))}
+      {bars.map((bar) => {
+        const voters = (bar.voters || [])
+          .map((v) => resolvePerson(v, participantNameById))
+          .filter(Boolean);
+        return (
+          <li key={bar.label} className="ccai-wrap-up-bar-row">
+            <div className="ccai-wrap-up-bar-label">
+              <span className="ccai-wrap-up-bar-label-text">{bar.label}</span>
+              <strong>{bar.count}</strong>
+            </div>
+            <div className="ccai-wrap-up-bar" aria-hidden>
+              <div
+                className="ccai-wrap-up-bar-fill"
+                style={{ width: `${Math.round(((bar.share || 0) / maxShare) * 100)}%` }}
+              />
+            </div>
+            <p className="ccai-wrap-up-bar-voters">
+              {voters.length > 0
+                ? voters.join(' · ')
+                : 'No votes'}
+            </p>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -65,7 +96,7 @@ function ResultCell({ decision, rows, voteDecision }) {
 
   return (
     <BentoCell className="ccai-bento-cell--result" label="Session result">
-      <p className="ccai-bento-kicker">Result</p>
+      <BentoKicker icon={Flag}>Result</BentoKicker>
 
       {consensus ? (
         <DecisionSummaryPanel decision={decision} rows={rows} />
@@ -109,10 +140,10 @@ function ResultCell({ decision, rows, voteDecision }) {
   );
 }
 
-function MetricCell({ value, label, className = '' }) {
+function MetricCell({ value, label, icon, className = '' }) {
   return (
     <BentoCell className={`ccai-bento-cell--metric ${className}`.trim()} label={label}>
-      <p className="ccai-bento-kicker">{label}</p>
+      <BentoKicker icon={icon}>{label}</BentoKicker>
       <span className="ccai-bento-metric-value">{value}</span>
     </BentoCell>
   );
@@ -127,6 +158,7 @@ export default function ChatWrapUp({
   voteDecision,
   rows,
   speakerIdxFor = {},
+  participantNameById = {},
   showChatStats = true,
   onOpenCredentials,
 }) {
@@ -145,6 +177,12 @@ export default function ChatWrapUp({
   const shareTitle = stats?.shareBars ? 'Vote share' : 'Alliance sizes';
   const hasShare = Boolean(shareBars && shareBars.length > 0);
   const hasCred = Array.isArray(rows) && rows.length > 0;
+  const bentoClass = [
+    'ccai-bento',
+    showChatStats ? 'has-metrics' : null,
+    hasShare ? 'has-share' : null,
+    hasCred ? 'has-cred' : null,
+  ].filter(Boolean).join(' ');
 
   return (
     <div className="ccai-wrap-up md-chat-wrap-up" aria-label="End of chat summary">
@@ -153,52 +191,38 @@ export default function ChatWrapUp({
         <p className="ccai-wrap-up-subtitle">Outcome, stats, and credibility at a glance</p>
       </header>
 
-      <div
-        className={[
-          'ccai-bento',
-          showChatStats ? 'has-metrics' : '',
-          hasShare ? 'has-share' : '',
-          hasCred ? 'has-cred' : '',
-        ].filter(Boolean).join(' ')}
-      >
+      <div className={bentoClass}>
         <ResultCell
           decision={decision}
           rows={rows}
           voteDecision={voteDecision || decision}
         />
-
         {showChatStats ? (
-          <>
-            <MetricCell
-              className="ccai-bento-cell--msg"
-              value={stats.messageCount}
-              label="Messages"
-            />
-            <MetricCell
-              className="ccai-bento-cell--time"
-              value={`${stats.totalTime}s`}
-              label="Gen time"
-            />
-            <MetricCell
-              className="ccai-bento-cell--avg"
-              value={stats.avgCredibility == null ? '—' : stats.avgCredibility.toFixed(2)}
-              label="Avg credibility"
-            />
-            <MetricCell
-              className="ccai-bento-cell--fail"
-              value={stats.failureCount}
-              label="With failures"
-            />
-          </>
+          <MetricCell
+            className="ccai-bento-cell--msg"
+            value={stats.messageCount}
+            label="Messages"
+            icon={MessagesSquare}
+          />
+        ) : null}
+        {showChatStats ? (
+          <MetricCell
+            className="ccai-bento-cell--time"
+            value={`${stats.totalTime}s`}
+            label="Gen time"
+            icon={Clock}
+          />
         ) : null}
 
         {hasShare ? (
           <BentoCell className="ccai-bento-cell--share" label={shareTitle}>
-            <p className="ccai-bento-kicker">{shareTitle}</p>
-            <ShareBarList bars={shareBars} />
+            <BentoKicker icon={Vote}>{shareTitle}</BentoKicker>
+            <ShareBarList
+              bars={shareBars}
+              participantNameById={participantNameById}
+            />
           </BentoCell>
         ) : null}
-
         {hasCred ? (
           <BentoCell className="ccai-bento-cell--cred" label="Credibility report">
             <CredibilityReport
@@ -210,21 +234,12 @@ export default function ChatWrapUp({
           </BentoCell>
         ) : null}
 
-        <BentoCell className="ccai-bento-cell--actions" label="Export and next steps">
+        <BentoCell className="ccai-bento-cell--actions" label="Export">
+          <BentoKicker icon={Download}>Export</BentoKicker>
           <ExportMenu
-            variant="button"
+            variant="buttons"
             className="ccai-wrap-up-export"
           />
-          <p className="chat-end-cta ccai-wrap-up-cta">
-            Want this on your infra?{' '}
-            <a
-              href={NEON_CONTACT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Talk to Neon
-            </a>
-          </p>
         </BentoCell>
       </div>
     </div>

@@ -126,7 +126,8 @@
 .md-chat-bubble--assistant {
   background: var(--md-sys-color-surface-container-high, var(--neon-surface));
   border: 1px solid var(--md-sys-color-outline-variant, transparent);
-  border-radius: 4px 20px 20px 20px;
+  /* Sharp corner bottom-left toward the avatar (row is flex-end) */
+  border-radius: 20px 20px 20px 4px;
   color: var(--md-sys-color-on-surface, var(--neon-text));
   box-shadow: none;
 }
@@ -156,13 +157,14 @@
   background: var(--md-sys-color-primary-container, var(--neon-purple));
   color: var(--md-sys-color-on-primary-container, #fff);
   border: 1px solid transparent;
-  border-radius: 20px 4px 20px 20px;
+  /* Sharp corner bottom-right toward the avatar (row is flex-end) */
+  border-radius: 20px 20px 4px 20px;
   white-space: pre-wrap;
   box-shadow: none;
 }
 
 .md-chat-bubble--user.md-chat-bubble--colored {
-  border-radius: 20px 4px 20px 20px;
+  border-radius: 20px 20px 4px 20px;
 }
 
 .neon-chat-bubble--assistant {

@@ -48,7 +48,13 @@ export default function ChatHistoryList({
   if (!entries.length) return null;
 
   return (
-    <section className="neon-chat-history neon-sidebar-section" aria-label="Chats">
+    <section
+      className={
+        'neon-chat-history neon-sidebar-section'
+        + (open ? ' neon-chat-history--open' : '')
+      }
+      aria-label="Chats"
+    >
       <button
         type="button"
         className="neon-sidebar-section__toggle"

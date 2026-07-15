@@ -7,7 +7,6 @@ with a minimal chat completion via llm_router.chat_completion.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -21,10 +20,6 @@ SMOKE_MESSAGES = [
 ]
 SMOKE_MAX_TOKENS = 32
 SMOKE_TIMEOUT = 90.0
-DEBUG_LOG_PATH = os.environ.get(
-    "MODEL_HEALTH_DEBUG_LOG",
-    "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-60ed80.log",
-)
 
 
 @dataclass
@@ -61,23 +56,6 @@ class SmokeResult:
             "response_preview": self.response_preview,
             "detail": self.detail,
         }
-
-
-def _debug_log(message: str, data: dict[str, Any], *, hypothesis_id: str = "H0") -> None:
-    """Append one NDJSON line for debug-mode analysis."""
-    payload = {
-        "sessionId": "60ed80",
-        "hypothesisId": hypothesis_id,
-        "location": "model_health.py",
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
 
 
 def provider_model_targets() -> list[ModelTarget]:
@@ -211,8 +189,8 @@ async def collect_all_targets() -> list[ModelTarget]:
     try:
         await hana_client.authenticate()
         neon_models = await hana_client.get_models()
-    except Exception as exc:
-        _debug_log("hana_models_fetch_failed", {"error": str(exc)}, hypothesis_id="H4")
+    except Exception:
+        pass
     targets.extend(neon_model_targets(neon_models))
     return targets
 
@@ -227,24 +205,11 @@ async def run_smoke_tests(
     filter_substr = filter_substr or os.environ.get("MODEL_TEST_FILTER") or None
     targets = filter_targets(await collect_all_targets(), filter_substr=filter_substr, kinds=kinds)
 
-    _debug_log(
-        "smoke_test_start",
-        {"target_count": len(targets), "filter": filter_substr, "kinds": sorted(kinds or [])},
-        hypothesis_id="H0",
-    )
-
     sem = asyncio.Semaphore(max(1, concurrency))
-    results: list[SmokeResult] = []
 
     async def _run_one(target: ModelTarget) -> SmokeResult:
         async with sem:
-            res = await smoke_test_target(target)
-            _debug_log(
-                "smoke_test_result",
-                res.to_dict(),
-                hypothesis_id="H1" if res.ok else "H2",
-            )
-            return res
+            return await smoke_test_target(target)
 
     results = await asyncio.gather(*[_run_one(t) for t in targets])
     return list(results)

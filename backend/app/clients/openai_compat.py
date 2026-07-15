@@ -146,33 +146,6 @@ async def openai_chat_completion(
             model, max_tokens, mult, max_tokens * mult, input_estimate, window,
             effective_max,
         )
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            with open(
-                "/Users/pierceseigne/Desktop/10 Projects/CCAI-Demo-Pierce/.cursor/debug-62da73.log",
-                "a", encoding="utf-8",
-            ) as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "62da73",
-                    "runId": "pre-fix",
-                    "hypothesisId": "C",
-                    "location": "openai_compat.py:_resolve_effective_max",
-                    "message": "max_tokens_capped",
-                    "data": {
-                        "model": model,
-                        "requested": max_tokens,
-                        "multiplier": mult,
-                        "input_estimate": input_estimate,
-                        "window": window,
-                        "effective_max": effective_max,
-                        "tight": effective_max <= 128,
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
     effective_timeout = max(timeout * 2, 120) if timeout else timeout
 
     body: dict[str, Any] = {

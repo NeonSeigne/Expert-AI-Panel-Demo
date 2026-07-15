@@ -756,7 +756,15 @@ async def api_start_chat(req: StartChatRequest, request: Request):
         async for chunk in run_conversation(session):
             yield chunk
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/chat/{session_id}/continue")

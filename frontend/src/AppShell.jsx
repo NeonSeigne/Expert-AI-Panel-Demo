@@ -127,7 +127,7 @@ export default function AppShell() {
   const navExpanded = compactNav ? navOpen : !sidebarCollapsed;
 
   return (
-    <div className="app flex h-full min-h-[100dvh] w-full flex-col overflow-hidden">
+    <div className="app flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden">
       <Header
         navExpanded={navExpanded}
         compactNav={compactNav}

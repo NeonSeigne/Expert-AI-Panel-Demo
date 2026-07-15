@@ -63,15 +63,9 @@ export default function useParticipants() {
     fetchPersonas()
       .then((data) => {
         setCatalog(data);
-        // #region agent log
-        fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'useParticipants.js:catalogLoaded',message:'catalog set in state',data:{neonCount:(data?.neon||[]).length,extraCount:(data?.extra||[]).length},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
       })
       .catch((err) => {
         console.error('Failed to load personas:', err);
-        // #region agent log
-        fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'useParticipants.js:catalogError',message:'fetchPersonas failed',data:{error:String(err?.message||err)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
       });
     fetchDemoQuestions().then(d => setDemoQuestions(d.questions || []))
       .catch(err => console.error('Failed to load demo questions:', err));
@@ -109,12 +103,8 @@ export default function useParticipants() {
     const fromCatalog = selectedIds
       .map(id => allCatalogParticipants[id] || stubParticipantFromId(id))
       .filter(Boolean);
-    const result = humanCatalogEntry ? [humanCatalogEntry, ...fromCatalog] : fromCatalog;
-    // #region agent log
-    fetch('http://127.0.0.1:7471/ingest/46f7b04f-cea8-4c9b-b3f0-f4cf4c9eb0d3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'91ff0a'},body:JSON.stringify({sessionId:'91ff0a',location:'useParticipants.js:selectedParticipants',message:'selectedParticipants computed',data:{selectedIdsCount:selectedIds.length,selectedIds,catalogMapSize:Object.keys(allCatalogParticipants).length,resolvedCount:fromCatalog.length,displayCount:result.length,autoSelectMode,missingIds:selectedIds.filter(id=>!allCatalogParticipants[id])},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
-    return result;
-  }, [selectedIds, allCatalogParticipants, humanCatalogEntry, autoSelectMode]);
+    return humanCatalogEntry ? [humanCatalogEntry, ...fromCatalog] : fromCatalog;
+  }, [selectedIds, allCatalogParticipants, humanCatalogEntry]);
 
   const expertDefaultModelId = useMemo(() => {
     if (orchestratorModel && allModelsFlat.some(m => m.id === orchestratorModel)) {
