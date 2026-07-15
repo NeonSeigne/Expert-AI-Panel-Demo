@@ -5,7 +5,7 @@ export default function NeonAvatar({
   kind = 'persona',
   size = 'md',
   personaSrc = '/neon-ai-persona.png',
-  personaAlt = 'Neon AI persona',
+  personaAlt = 'Co-Panel persona',
   label = '',
   backgroundColor,
   className = '',

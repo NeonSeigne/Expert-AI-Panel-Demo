@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.clients.hana_client import hana_client
 from app.clients.openai_compat import close_shared_client
-from app.api import models, chat, personas
+from app.api import models, chat, personas, knowledge
 from app.middleware.rate_limit import (
     DAILY_LIMIT, get_oauth_username, is_org_member, get_remaining,
     check_rate_limit, record_conversation,
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Collaborative Conversational AI (CCAI) Demo",
+    title="Co-Panel",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -71,6 +71,7 @@ except Exception as exc:
 app.include_router(models.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(personas.router, prefix="/api")
+app.include_router(knowledge.router, prefix="/api")
 
 
 @app.get("/api/health")

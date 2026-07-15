@@ -21,9 +21,12 @@ import {
   saveActiveChatToSession,
   clearActiveChatSession,
   loadActiveChatFromSession,
+  normalizeProjectDocuments,
+  canAddProjectDocument,
 } from '../utils/chatHistory';
 import { useSettings } from '../context/SettingsContext';
 import { useParticipants } from '../context/ParticipantsContext';
+import { getTeamById } from '../config/teams';
 
 export default function useChatSession() {
   const {
@@ -48,8 +51,10 @@ export default function useChatSession() {
     allCatalogParticipants,
     humanCatalogEntry,
     humanParticipant,
+    activeTeamId,
     enabledMap,
     modelAssignments,
+    knowledgePrefs,
     humanCredentialGenRef,
     getDraftQuestionRef,
     setHumanParticipant,
@@ -66,6 +71,8 @@ export default function useChatSession() {
   const [sessionParticipants, setSessionParticipants] = useState([]);
   const [pause, setPause] = useState(null);
   const [activeQuestion, setActiveQuestion] = useState('');
+  const [activeAttachments, setActiveAttachments] = useState([]);
+  const activeAttachmentsRef = useRef(activeAttachments);
   const [tableData, setTableData] = useState(null);
   const [tableOpen, setTableOpen] = useState(false);
   const [credentialsData, setCredentialsData] = useState(null);
@@ -74,6 +81,11 @@ export default function useChatSession() {
   const [humanSubmitting, setHumanSubmitting] = useState(false);
   const [chatHistory, setChatHistory] = useState(() => loadChatHistory());
   const [activeHistoryId, setActiveHistoryId] = useState(null);
+  /** History id for the live / welcome project (highlight in sidebar list). */
+  const [projectHistoryId, setProjectHistoryId] = useState(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectDocuments, setProjectDocuments] = useState([]);
+  const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
   /** Offline wrap-up payload (from finished snapshot or live table fetch). */
   const [savedDecision, setSavedDecision] = useState(null);
   const [savedRows, setSavedRows] = useState(null);
@@ -89,25 +101,45 @@ export default function useChatSession() {
   const savedRowsRef = useRef(savedRows);
   const tableDataRef = useRef(tableData);
   const credentialsDataRef = useRef(credentialsData);
+  const projectNameRef = useRef(projectName);
+  const projectDocumentsRef = useRef(projectDocuments);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { systemMessagesRef.current = systemMessages; }, [systemMessages]);
   useEffect(() => { activeQuestionRef.current = activeQuestion; }, [activeQuestion]);
+  useEffect(() => { activeAttachmentsRef.current = activeAttachments; }, [activeAttachments]);
   useEffect(() => { sessionParticipantsRef.current = sessionParticipants; }, [sessionParticipants]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { savedDecisionRef.current = savedDecision; }, [savedDecision]);
   useEffect(() => { savedRowsRef.current = savedRows; }, [savedRows]);
   useEffect(() => { tableDataRef.current = tableData; }, [tableData]);
   useEffect(() => { credentialsDataRef.current = credentialsData; }, [credentialsData]);
+  useEffect(() => { projectNameRef.current = projectName; }, [projectName]);
+  useEffect(() => { projectDocumentsRef.current = projectDocuments; }, [projectDocuments]);
 
   // Restore a finished snapshot from sessionStorage after tab refresh.
   useEffect(() => {
     const snap = loadActiveChatFromSession();
-    if (!snap?.finished || !snap.question) return;
+    if (!snap) return;
+    // Welcome-only restore: project name/docs with no transcript yet.
+    if (!snap.finished || !snap.question) {
+      if (snap.projectName || (snap.projectDocuments || []).length > 0) {
+        setProjectName(snap.projectName || '');
+        setProjectDocuments(normalizeProjectDocuments(snap.projectDocuments));
+        if (snap.id) {
+          historyEntryIdRef.current = snap.id;
+          setProjectHistoryId(snap.id);
+        }
+      }
+      return;
+    }
     if ((snap.messages?.length || 0) + (snap.systemMessages?.length || 0) === 0) return;
     setMessages(snap.messages || []);
     setSystemMessages(snap.systemMessages || []);
     setActiveQuestion(snap.question || '');
+    setActiveAttachments(Array.isArray(snap.attachments) ? snap.attachments : []);
+    setProjectName(snap.projectName || '');
+    setProjectDocuments(normalizeProjectDocuments(snap.projectDocuments));
     setSessionParticipants(snap.sessionParticipants || []);
     setSavedDecision(snap.decision ?? null);
     setSavedRows(Array.isArray(snap.rows) ? snap.rows : null);
@@ -117,6 +149,7 @@ export default function useChatSession() {
     setSessionId(null);
     if (snap.id) {
       setActiveHistoryId(snap.id);
+      setProjectHistoryId(snap.id);
       historyEntryIdRef.current = snap.id;
     }
   }, []);
@@ -128,6 +161,13 @@ export default function useChatSession() {
   const buildSnapshotPartial = useCallback((overrides = {}) => ({
     id: overrides.id || historyEntryIdRef.current || null,
     question: overrides.question ?? activeQuestionRef.current ?? '',
+    projectName: overrides.projectName !== undefined
+      ? overrides.projectName
+      : (projectNameRef.current ?? ''),
+    projectDocuments: overrides.projectDocuments !== undefined
+      ? overrides.projectDocuments
+      : (projectDocumentsRef.current ?? []),
+    attachments: overrides.attachments ?? activeAttachmentsRef.current ?? [],
     messages: overrides.messages ?? messagesRef.current ?? [],
     systemMessages: overrides.systemMessages ?? systemMessagesRef.current ?? [],
     sessionParticipants: overrides.sessionParticipants
@@ -145,10 +185,11 @@ export default function useChatSession() {
     savedAt: overrides.savedAt || Date.now(),
   }), []);
 
-  /** Mirror live transcript into sessionStorage for tab restore. */
+  /** Mirror live transcript / project welcome into sessionStorage for tab restore. */
   useEffect(() => {
     const question = (activeQuestion || '').trim();
-    if (!question && messages.length === 0 && systemMessages.length === 0) {
+    const hasProjectMeta = Boolean(projectName.trim()) || projectDocuments.length > 0;
+    if (!question && messages.length === 0 && systemMessages.length === 0 && !hasProjectMeta) {
       return undefined;
     }
     if (activeHistoryId) {
@@ -169,6 +210,8 @@ export default function useChatSession() {
     messages,
     systemMessages,
     activeQuestion,
+    projectName,
+    projectDocuments,
     sessionParticipants,
     savedDecision,
     savedRows,
@@ -212,6 +255,9 @@ export default function useChatSession() {
     setSessionId(null);
     setSessionParticipants([]);
     setActiveQuestion('');
+    setActiveAttachments([]);
+    setProjectName('');
+    setProjectDocuments([]);
     setAwaitingHuman(null);
     setHumanSubmitting(false);
     setTableData(null);
@@ -221,14 +267,30 @@ export default function useChatSession() {
     setSavedDecision(null);
     setSavedRows(null);
     setActiveHistoryId(null);
+    setProjectHistoryId(null);
     historyEntryIdRef.current = null;
     clearActiveChatSession();
   }, []);
 
+  /** Persist name/docs for the live project entry (welcome, before first chat). */
+  const syncProjectHistoryMeta = useCallback((overrides = {}) => {
+    const id = overrides.id || historyEntryIdRef.current;
+    if (!id) return null;
+    const entry = saveChatToHistory(buildSnapshotPartial({
+      id,
+      finished: false,
+      ...overrides,
+    }));
+    historyEntryIdRef.current = entry.id;
+    setProjectHistoryId(entry.id);
+    refreshChatHistory();
+    return entry;
+  }, [buildSnapshotPartial, refreshChatHistory]);
+
   const loadHistoryChat = useCallback((id) => {
     const entry = getChatById(id);
     if (!entry) return;
-    if (activeHistoryId !== id) {
+    if (activeHistoryId !== id && projectHistoryId !== id) {
       archiveCurrentChat({ skipIfViewingHistory: true });
     }
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
@@ -241,6 +303,9 @@ export default function useChatSession() {
     setMessages(entry.messages || []);
     setSystemMessages(entry.systemMessages || []);
     setActiveQuestion(entry.question || '');
+    setActiveAttachments(Array.isArray(entry.attachments) ? entry.attachments : []);
+    setProjectName(entry.projectName || '');
+    setProjectDocuments(normalizeProjectDocuments(entry.projectDocuments));
     setSessionParticipants(entry.sessionParticipants || []);
     setSavedDecision(entry.decision ?? null);
     setSavedRows(Array.isArray(entry.rows) ? entry.rows : null);
@@ -258,30 +323,46 @@ export default function useChatSession() {
     setTableOpen(false);
     setCredentialsData(entry.credentials || null);
     setCredentialsOpen(false);
-    setActiveHistoryId(entry.id);
     historyEntryIdRef.current = entry.id;
+    setProjectHistoryId(entry.id);
+
+    const msgCount = (entry.messages?.length || 0) + (entry.systemMessages?.length || 0);
+    const isWelcomeOnly = !entry.question && msgCount === 0;
+    if (isWelcomeOnly) {
+      // Restore as live welcome so the user can ask the first question.
+      setActiveHistoryId(null);
+      saveActiveChatToSession({ ...entry, finished: false });
+      return;
+    }
+
+    setActiveHistoryId(entry.id);
     saveActiveChatToSession({ ...entry, finished: true });
-  }, [activeHistoryId, archiveCurrentChat]);
+  }, [activeHistoryId, projectHistoryId, archiveCurrentChat]);
 
   const deleteHistoryChat = useCallback((id) => {
     const next = removeChatFromHistory(id);
     setChatHistory(next);
-    if (activeHistoryId === id) {
+    if (activeHistoryId === id || projectHistoryId === id) {
       clearLiveSessionUi();
     }
-  }, [activeHistoryId, clearLiveSessionUi]);
+  }, [activeHistoryId, projectHistoryId, clearLiveSessionUi]);
 
-  const buildStartPayload = useCallback((theQuestion, participantsOverride, humanOverride) => {
+  const buildStartPayload = useCallback((theQuestion, participantsOverride, humanOverride, attachments) => {
     const sourceList = participantsOverride ?? selectedParticipants;
     const baseList = sourceList.filter(p => enabledMap[p.participant_id] !== false);
-    const participants = baseList.map(p => ({
-      participant_id: p.participant_id,
-      kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
-        : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
-      name: p.name,
-      role_prompt: p.kind === 'human' ? null : (p.role_prompt || null),
-      model_id_override: p.kind === 'human' ? null : (modelAssignments[p.participant_id] || null),
-    }));
+    const participants = baseList.map(p => {
+      const prefs = knowledgePrefs[p.participant_id] || {};
+      return {
+        participant_id: p.participant_id,
+        kind: p.kind || (p.participant_id.startsWith('neon:') ? 'neon'
+          : (p.participant_id.startsWith('extra_') ? 'extra' : 'expert')),
+        name: p.name,
+        role_prompt: p.kind === 'human' ? null : (p.role_prompt || null),
+        model_id_override: p.kind === 'human' ? null : (modelAssignments[p.participant_id] || null),
+        web_search_enabled: p.kind === 'human' ? false : !!prefs.webSearch,
+        documents_enabled: p.kind === 'human' ? false : !!prefs.documents,
+      };
+    });
     const expert_payload = baseList
       .filter(p => (p.kind || '').startsWith('expert'))
       .map(p => ({
@@ -305,6 +386,18 @@ export default function useChatSession() {
         bias_to_watch: cs.bias_to_watch || '',
       };
     }
+    const team = activeTeamId ? getTeamById(activeTeamId) : null;
+    const rosterCap = Math.max(
+      maxParticipants,
+      participants.length,
+      team?.participantIds?.length || 0,
+    );
+    const cleanedAttachments = (attachments || [])
+      .filter((a) => a && (a.text || '').trim())
+      .map((a) => ({
+        name: (a.name || 'document').trim().slice(0, 200) || 'document',
+        text: a.text,
+      }));
     return {
       question: theQuestion,
       participants,
@@ -312,17 +405,22 @@ export default function useChatSession() {
       model_assignments: modelAssignments,
       orchestrator_model_id: orchestratorModel,
       summarizer_model_id: summarizerModel,
-      max_participants: maxParticipants,
+      max_participants: rosterCap,
       limits: limitsOverrides,
       human_credential,
-      conversation_structure_id: conversationStructureId,
-      decision_method_id: decisionMethodId,
+      conversation_structure_id: team?.conversationStructureId
+        || conversationStructureId
+        || 'collaborative',
+      decision_method_id: team?.decisionMethodId
+        || decisionMethodId
+        || 'consensus',
+      attachments: cleanedAttachments,
     };
   }, [
-    selectedParticipants, enabledMap, modelAssignments,
+    selectedParticipants, enabledMap, modelAssignments, knowledgePrefs,
     orchestratorModel, summarizerModel, maxParticipants,
     limitsOverrides, humanParticipant,
-    conversationStructureId, decisionMethodId,
+    conversationStructureId, decisionMethodId, activeTeamId,
   ]);
 
   const downloadFile = useCallback((filename, content, mime = 'text/plain;charset=utf-8') => {
@@ -454,10 +552,77 @@ export default function useChatSession() {
     setSystemMessages(prev => [...prev, { text: 'Chat stopped by user.' }]);
   }, []);
 
-  const handleStartNewChat = useCallback(() => {
+  const openNewProjectModal = useCallback(() => {
+    setNewProjectModalOpen(true);
+  }, []);
+
+  const closeNewProjectModal = useCallback(() => {
+    setNewProjectModalOpen(false);
+  }, []);
+
+  /** Archive current run (if any), then land on welcome with name + project docs. */
+  const createNewProject = useCallback(({ name, documents = [] } = {}) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return { ok: false, reason: 'Project name is required.' };
+    const docs = normalizeProjectDocuments(documents);
     archiveCurrentChat({ skipIfViewingHistory: true });
     clearLiveSessionUi();
-  }, [archiveCurrentChat, clearLiveSessionUi]);
+    const id = createHistoryEntryId();
+    historyEntryIdRef.current = id;
+    setProjectHistoryId(id);
+    setProjectName(trimmed);
+    setProjectDocuments(docs);
+    projectNameRef.current = trimmed;
+    projectDocumentsRef.current = docs;
+    const entry = saveChatToHistory({
+      id,
+      projectName: trimmed,
+      projectDocuments: docs,
+      finished: false,
+      question: '',
+      messages: [],
+      systemMessages: [],
+      messageCount: 0,
+      savedAt: Date.now(),
+    });
+    refreshChatHistory();
+    saveActiveChatToSession({
+      ...entry,
+      finished: false,
+    });
+    setNewProjectModalOpen(false);
+    return { ok: true };
+  }, [archiveCurrentChat, clearLiveSessionUi, refreshChatHistory]);
+
+  const removeProjectDocument = useCallback((docId) => {
+    const existing = projectDocumentsRef.current || [];
+    const next = existing.filter((d) => d.id !== docId);
+    projectDocumentsRef.current = next;
+    setProjectDocuments(next);
+    if (historyEntryIdRef.current) {
+      syncProjectHistoryMeta({ projectDocuments: next });
+    }
+  }, [syncProjectHistoryMeta]);
+
+  const addProjectDocument = useCallback((doc) => {
+    const existing = projectDocumentsRef.current || [];
+    const check = canAddProjectDocument(existing, doc);
+    if (!check.ok) {
+      return check;
+    }
+    const next = [...existing, check.doc];
+    projectDocumentsRef.current = next;
+    setProjectDocuments(next);
+    if (historyEntryIdRef.current) {
+      syncProjectHistoryMeta({ projectDocuments: next });
+    }
+    return { ok: true, doc: check.doc };
+  }, [syncProjectHistoryMeta]);
+
+  /** Open New Project modal (sidebar / start-new). Does not clear until modal finishes. */
+  const handleStartNewChat = useCallback(() => {
+    openNewProjectModal();
+  }, [openNewProjectModal]);
 
   const handleContinuePause = useCallback(async (reason) => {
     if (!sessionId) return;
@@ -492,7 +657,7 @@ export default function useChatSession() {
     }
   }, [sessionId, awaitingHuman]);
 
-  const handleStart = useCallback(async (theQuestion) => {
+  const handleStart = useCallback(async (theQuestion, attachments = []) => {
     if (!theQuestion || !theQuestion.trim()) return;
     if (isRateLimitedUser(auth) && auth.remaining_conversations === 0) {
       setRateLimitNotice('exhausted');
@@ -500,11 +665,40 @@ export default function useChatSession() {
     }
     if (!autoSelectMode && enabledSelectedCount < 2) return;
 
+    const composerAttachments = (attachments || [])
+      .filter((a) => a && (a.text || '').trim())
+      .slice(0, 5)
+      .map((a) => ({
+        name: (a.name || 'document').trim().slice(0, 200) || 'document',
+        text: a.text,
+      }));
+    // Project docs first (size-gated at add time), then up to 5 session-only attaches.
+    const projectAtts = (projectDocumentsRef.current || [])
+      .filter((a) => a && (a.text || '').trim())
+      .map((a) => ({
+        name: (a.name || 'document').trim().slice(0, 200) || 'document',
+        text: a.text,
+      }));
+    const startAttachments = [...projectAtts, ...composerAttachments];
+    const attachmentNames = startAttachments.map((a) => ({ name: a.name }));
+
+    // Reuse the welcome project's history id so it updates in place after the first run.
+    const continuingWelcomeProject = Boolean(
+      historyEntryIdRef.current
+      && !activeHistoryId
+      && (messagesRef.current || []).length === 0
+      && (systemMessagesRef.current || []).length === 0
+      && !(activeQuestionRef.current || '').trim(),
+    );
+
     archiveCurrentChat({ skipIfViewingHistory: true });
 
     const controller = new AbortController();
     abortRef.current = controller;
-    historyEntryIdRef.current = createHistoryEntryId();
+    if (!continuingWelcomeProject) {
+      historyEntryIdRef.current = createHistoryEntryId();
+    }
+    setProjectHistoryId(historyEntryIdRef.current);
     setActiveHistoryId(null);
     setIsRunning(true);
     setMessages([]);
@@ -514,6 +708,7 @@ export default function useChatSession() {
     setSessionParticipants([]);
     setPause(null);
     setActiveQuestion(theQuestion.trim());
+    setActiveAttachments(attachmentNames);
     setCredentialsData(null);
     setSavedDecision(null);
     setSavedRows(null);
@@ -614,11 +809,14 @@ export default function useChatSession() {
 
     try {
       await startChat(
-        buildStartPayload(theQuestion, resolvedParticipants, humanForStart),
+        buildStartPayload(theQuestion, resolvedParticipants, humanForStart, startAttachments),
         {
           onSession: (data) => {
             setSessionId(data.session_id);
             setSessionParticipants(data.participants || []);
+            if (Array.isArray(data.attachments) && data.attachments.length) {
+              setActiveAttachments(data.attachments.map((a) => ({ name: a.name || 'document' })));
+            }
           },
           onMessage: (data) => {
             setMessages(prev => {
@@ -707,6 +905,7 @@ export default function useChatSession() {
                 });
                 if (entry?.id) {
                   setActiveHistoryId(entry.id);
+                  setProjectHistoryId(entry.id);
                   saveActiveChatToSession({ ...entry, finished: true });
                 }
               })();
@@ -845,6 +1044,7 @@ export default function useChatSession() {
     enabledMap, humanParticipant, humanCatalogEntry, runHumanCredentialGeneration,
     humanCredentialGenRef, setHumanParticipant, setSelectedIds, setEnabledMap,
     archiveCurrentChat,
+    activeHistoryId,
   ]);
 
   const startDisabled = isRunning || !hasEnoughParticipantsToStart;
@@ -868,6 +1068,10 @@ export default function useChatSession() {
     rosterParticipants,
     pause,
     activeQuestion,
+    activeAttachments,
+    projectName,
+    projectDocuments,
+    newProjectModalOpen,
     tableData,
     tableOpen,
     setTableOpen,
@@ -878,6 +1082,7 @@ export default function useChatSession() {
     humanSubmitting,
     chatHistory,
     activeHistoryId,
+    projectHistoryId,
     savedDecision,
     savedRows,
     hasEnoughParticipantsToStart,
@@ -892,6 +1097,11 @@ export default function useChatSession() {
     handleStart,
     handleStop,
     handleStartNewChat,
+    openNewProjectModal,
+    closeNewProjectModal,
+    createNewProject,
+    removeProjectDocument,
+    addProjectDocument,
     loadHistoryChat,
     deleteHistoryChat,
     handleContinuePause,

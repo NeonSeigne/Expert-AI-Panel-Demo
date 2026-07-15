@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"
 
-echo "Starting CCAI-Vibe-Demo local dev (hot reload enabled)"
+echo "Starting Co-Panel local dev (hot reload enabled)"
 echo "Project root: $ROOT"
 echo ""
 

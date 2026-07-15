@@ -50,7 +50,7 @@ _PROMPTS_BY_NAME: dict[str, tuple[str, str]] = {
     "PARTICIPANT_BASE_DIRECTIVE": (
         PARTICIPANT_BASE_DIRECTIVE,
         "Appended to every participant's role prompt so they know they "
-        "are in a CCAI forum, who the other participants are, and that "
+        "are in a Co-Panel forum, who the other participants are, and that "
         "the orchestrator (not them) controls the floor.",
     ),
     "NO_REASONING_DIRECTIVE": (

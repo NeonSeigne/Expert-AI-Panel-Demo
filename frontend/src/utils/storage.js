@@ -1,5 +1,5 @@
 /**
- * Tiny localStorage shim for the CCAI demo.
+ * Tiny localStorage shim for Co-Panel.
  *
  * Single namespace `ccai-vibe-demo` so we never collide with anything else
  * the host page is doing. Schema-versioned so we can migrate if/when the
@@ -9,7 +9,7 @@
 const NS = 'ccai-vibe-demo';
 const SCHEMA_VERSION = 1;
 
-/** Demo trio — ids/names mirror backend/app/services/extra_personas.py */
+/** Demo trio — ids/names mirror backend/persona_config.yaml */
 export const DEFAULT_DEMO_PERSONAS = [
   {
     participant_id: 'extra_elena_financial_strategist',
@@ -85,6 +85,10 @@ const DEFAULTS = {
   // alongside the catalog so the UI can highlight them.
   conversation_structure_id: null,
   decision_method_id: null,
+  // Per-persona knowledge toggles: { [participantId]: { webSearch, documents } }
+  knowledge_prefs: {},
+  // Active team preset id (see config/teams.js). null = custom / unknown.
+  active_team_id: 'default_strategy',
 };
 
 function readAll() {
@@ -172,4 +176,12 @@ export function setConversationStructureId(id) {
 
 export function setDecisionMethodId(id) {
   return patchState({ decision_method_id: id || null });
+}
+
+export function setKnowledgePrefs(map) {
+  return patchState({ knowledge_prefs: map || {} });
+}
+
+export function setActiveTeamId(teamId) {
+  return patchState({ active_team_id: teamId || null });
 }

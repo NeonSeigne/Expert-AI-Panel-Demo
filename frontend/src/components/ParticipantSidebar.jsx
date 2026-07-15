@@ -31,6 +31,8 @@ export default function ParticipantSidebar({
   const {
     chatHistory,
     activeHistoryId,
+    projectHistoryId,
+    projectName,
     loadHistoryChat,
     deleteHistoryChat,
     handleStartNewChat,
@@ -47,6 +49,8 @@ export default function ParticipantSidebar({
   const showAutoPlaceholder = showExpanded && autoSelectMode && participants.length === 0;
   const showEmptyHelp = showExpanded && !showAutoPlaceholder && participants.length === 0;
   const showHistory = showExpanded && Array.isArray(chatHistory) && chatHistory.length > 0;
+  const currentProjectLabel = (projectName || '').trim();
+  const sidebarActiveId = activeHistoryId || projectHistoryId;
 
   const enabledCount = useMemo(
     () => participants.filter((p) => enabledMap[p.participant_id] !== false).length,
@@ -135,8 +139,23 @@ export default function ParticipantSidebar({
             }}
           >
             <md-icon slot="icon">edit</md-icon>
-            New Chat
+            New Project
           </md-filled-tonal-button>
+        )}
+
+        {showExpanded && currentProjectLabel && (
+          <div
+            className="neon-participant-sidebar__current-project"
+            title={currentProjectLabel}
+            aria-label={`Current project: ${currentProjectLabel}`}
+          >
+            <md-icon className="neon-participant-sidebar__current-project-icon" aria-hidden>
+              folder
+            </md-icon>
+            <span className="neon-participant-sidebar__current-project-name">
+              {currentProjectLabel}
+            </span>
+          </div>
         )}
 
         {railMode && (
@@ -144,8 +163,8 @@ export default function ParticipantSidebar({
             type="button"
             className="neon-participant-sidebar__add-btn neon-participant-sidebar__add-btn--rail"
             onClick={handleStartNewChat}
-            aria-label="New chat"
-            title="New Chat"
+            aria-label="New project"
+            title={currentProjectLabel ? `New Project (${currentProjectLabel})` : 'New Project'}
           >
             <md-icon>edit</md-icon>
           </button>
@@ -263,7 +282,7 @@ export default function ParticipantSidebar({
         {showHistory && (
           <ChatHistoryList
             entries={chatHistory}
-            activeHistoryId={activeHistoryId}
+            activeHistoryId={sidebarActiveId}
             open={chatsOpen}
             onToggle={() => setChatsOpen((v) => !v)}
             onSelect={(id) => {

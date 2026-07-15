@@ -41,6 +41,12 @@ class Phase(str, Enum):
     # RankedChoiceDecision, and RobertsRulesVote so the frontend can
     # render an appropriate phase label.
     VOTING = "voting"
+    # Document-pipeline structure (Marketing Team preset): ideation,
+    # drafting, revise, final review — no formal ballot phase.
+    PIPELINE_IDEATION = "pipeline_ideation"
+    PIPELINE_DRAFTING = "pipeline_drafting"
+    PIPELINE_REVISE = "pipeline_revise"
+    PIPELINE_FINAL_REVIEW = "pipeline_final_review"
 
 
 # How many participants a session may include (overridable by the user
@@ -281,6 +287,10 @@ class Participant:
     # Robustness counter: 3 consecutive failures auto-disables.
     consecutive_failures: int = 0
 
+    # Knowledge tools (session flags; RAG corpus lives in per-persona Chroma)
+    web_search_enabled: bool = False
+    documents_enabled: bool = False
+
     # Set by the resilience layer when this participant's backing LLM
     # had to be substituted mid-chat after the original model failed.
     # The persona's name and role_prompt stay the same; only the model
@@ -296,6 +306,10 @@ class Session:
 
     question: str = ""
     participants: list[Participant] = field(default_factory=list)
+
+    # Session-scoped docs attached on /chat/start (name + extracted text).
+    # Injected into every AI participant turn; not written to persona RAG.
+    attached_documents: list[dict[str, Any]] = field(default_factory=list)
 
     # Both fall through to settings.orchestrator_model when None. The
     # summarizer additionally falls through to the orchestrator's id when
@@ -428,3 +442,8 @@ class Session:
     # work is already done. `Any` rather than `asyncio.Task` to avoid the
     # import-time dependency on a running loop.
     contribution_summary_task: Any = None
+
+    # Document-pipeline working artifacts (Marketing Team / document_pipeline).
+    # Later phases prefer these over re-ingesting the full ideation transcript.
+    pipeline_ideation_brief: str = ""
+    pipeline_sections: dict[str, str] = field(default_factory=dict)

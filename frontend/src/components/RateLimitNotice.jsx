@@ -10,7 +10,7 @@ const COPY = {
       <>
         You have one chat left for today. Contact us at{' '}
         <a href="mailto:info@neon.ai">info@neon.ai</a> if you would like to do
-        more with CCAI.
+        more with Co-Panel.
       </>
     ),
   },
@@ -20,7 +20,7 @@ const COPY = {
       <>
         You have used all of your chats for today. Contact us at{' '}
         <a href="mailto:info@neon.ai">info@neon.ai</a> if you would like to do
-        more with CCAI.
+        more with Co-Panel.
       </>
     ),
   },

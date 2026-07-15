@@ -1,17 +1,23 @@
 /**
- * Client-side chat history for the CCAI demo.
+ * Client-side chat / project history for Co-Panel.
  *
  * Separate localStorage key from prefs (`ccai-vibe-demo`) so large
  * transcripts don't risk corrupting settings on quota pressure.
  *
- * Finished chats are stored as self-contained JSON snapshots so the
+ * Finished projects are stored as self-contained JSON snapshots so the
  * UI (transcript + wrap-up) can restore without a live backend session.
  */
 
 const NS = 'ccai-chat-history';
 const ACTIVE_NS = 'ccai-active-chat';
 const MAX_ENTRIES = 20;
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
+
+/** Cap extracted text stored per project document (chars). */
+export const MAX_PROJECT_DOC_CHARS = 50_000;
+
+/** Soft total budget for serialized projectDocuments (~2.5MB). */
+export const PROJECT_DOCS_SOFT_BUDGET_BYTES = Math.floor(2.5 * 1024 * 1024);
 
 function newId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -35,9 +41,73 @@ function readAll() {
 function writeAll(entries) {
   try {
     window.localStorage.setItem(NS, JSON.stringify(entries));
+    return { ok: true };
   } catch (err) {
     console.warn('chat history write failed:', err);
+    return { ok: false, error: err };
   }
+}
+
+/**
+ * Truncate document text to the per-doc storage cap.
+ */
+export function capDocumentText(text, max = MAX_PROJECT_DOC_CHARS) {
+  const raw = typeof text === 'string' ? text : '';
+  if (raw.length <= max) return raw;
+  return raw.slice(0, max);
+}
+
+/**
+ * Normalize a project document for snapshots / attachment injection.
+ */
+export function normalizeProjectDocument(doc = {}) {
+  const name = (doc.name || 'document').trim().slice(0, 200) || 'document';
+  const text = capDocumentText(doc.text || '');
+  const id = doc.id || `pdoc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return { id, name, text };
+}
+
+/**
+ * Estimate serialized size of projectDocuments (bytes).
+ */
+export function estimateProjectDocumentsBytes(docs) {
+  try {
+    return new Blob([JSON.stringify(docs || [])]).size;
+  } catch {
+    return (docs || []).reduce(
+      (n, d) => n + ((d.text || '').length + (d.name || '').length + 32),
+      0,
+    );
+  }
+}
+
+/**
+ * Check whether adding `nextDoc` stays under the soft project-docs budget.
+ */
+export function canAddProjectDocument(existing, nextDoc) {
+  const normalized = normalizeProjectDocument(nextDoc);
+  const candidate = [...(existing || []), normalized];
+  const bytes = estimateProjectDocumentsBytes(candidate);
+  if (bytes > PROJECT_DOCS_SOFT_BUDGET_BYTES) {
+    return {
+      ok: false,
+      reason:
+        'Project documents are at the ~2.5MB limit. '
+        + 'Remove a document before adding more.',
+      bytes,
+    };
+  }
+  return { ok: true, doc: normalized, bytes };
+}
+
+/**
+ * Normalize projectDocuments list from a snapshot / modal.
+ */
+export function normalizeProjectDocuments(docs) {
+  if (!Array.isArray(docs)) return [];
+  return docs
+    .filter((d) => d && (d.text || '').trim())
+    .map((d) => normalizeProjectDocument(d));
 }
 
 /**
@@ -63,6 +133,10 @@ export function buildChatSnapshot(partial = {}) {
   const credentials = partial.credentials && typeof partial.credentials === 'object'
     ? partial.credentials
     : null;
+  const projectName = typeof partial.projectName === 'string'
+    ? partial.projectName.trim()
+    : '';
+  const projectDocuments = normalizeProjectDocuments(partial.projectDocuments);
 
   return {
     version: SNAPSHOT_VERSION,
@@ -70,6 +144,8 @@ export function buildChatSnapshot(partial = {}) {
     savedAt: partial.savedAt || Date.now(),
     finished: Boolean(partial.finished),
     question: (partial.question || '').trim(),
+    projectName,
+    projectDocuments,
     messages,
     systemMessages,
     sessionParticipants,
@@ -101,7 +177,18 @@ export function saveChatToHistory(partial) {
 
   const without = list.filter((e) => e.id !== id);
   const next = [entry, ...without].slice(0, MAX_ENTRIES);
-  writeAll(next);
+  const result = writeAll(next);
+  if (!result.ok) {
+    // Retry once without bulky project doc text if quota pressure.
+    const slimDocs = (entry.projectDocuments || []).map((d) => ({
+      ...d,
+      text: capDocumentText(d.text, Math.min(MAX_PROJECT_DOC_CHARS, 8_000)),
+    }));
+    const slimEntry = { ...entry, projectDocuments: slimDocs };
+    const slimNext = [slimEntry, ...without].slice(0, MAX_ENTRIES);
+    writeAll(slimNext);
+    return slimEntry;
+  }
   return entry;
 }
 

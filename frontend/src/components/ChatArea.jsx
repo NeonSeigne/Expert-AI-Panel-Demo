@@ -67,6 +67,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
     statusText,
     pause,
     activeQuestion,
+    activeAttachments,
     handleContinuePause: onContinuePause,
     rosterParticipants: participants,
     awaitingHuman,
@@ -80,6 +81,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
     activeHistoryId,
     savedDecision,
     savedRows,
+    projectName,
   } = useChatSession();
   const { humanParticipant } = useParticipants();
 
@@ -258,12 +260,17 @@ export default function ChatArea({ showCenteredComposer = false }) {
         <div className="chat-empty">
           <img
             src="/neon-logo.png"
-            alt="Neon.ai"
+            alt="Co-Panel"
             className="chat-empty-logo"
           />
-          <h2 className="chat-empty-headline md-typescale-headline-medium">
-            Ask A Panel of Experts Anything....
-          </h2>
+          <div className="chat-empty-heading-block">
+            <h2 className="chat-empty-headline md-typescale-headline-medium">
+              {projectName?.trim() || 'Untitled project'}
+            </h2>
+            <p className="chat-empty-subtitle md-typescale-body-large">
+              Ask a Panel of Experts...
+            </p>
+          </div>
           <WelcomeParticipantPills />
           <div className="chat-empty-composer">
             <ChatControls centered />
@@ -273,18 +280,29 @@ export default function ChatArea({ showCenteredComposer = false }) {
       <NeonDesignRoot className="chat-area-md">
         <div className="chat-area-messages">
           {activeQuestion && (
-            <NeonChatBubble
-              side="User"
-              senderName={questionSpeakerName}
-              content={activeQuestion}
-              markdown={false}
-              bubbleColor={HUMAN_TONE.bg}
-              accentColor={HUMAN_TONE.color}
-              avatarKind="user"
-              avatarLabel={questionSpeakerName.charAt(0).toUpperCase()}
-              avatarColor={HUMAN_TONE.color}
-              rowClassName="ccai-question-bubble"
-            />
+            <>
+              <NeonChatBubble
+                side="User"
+                senderName={questionSpeakerName}
+                content={activeQuestion}
+                markdown={false}
+                bubbleColor={HUMAN_TONE.bg}
+                accentColor={HUMAN_TONE.color}
+                avatarKind="user"
+                avatarLabel={questionSpeakerName.charAt(0).toUpperCase()}
+                avatarColor={HUMAN_TONE.color}
+                rowClassName="ccai-question-bubble"
+              />
+              {activeAttachments?.length > 0 && (
+                <ul className="ccai-question-attachments" aria-label="Attached documents">
+                  {activeAttachments.map((a, i) => (
+                    <li key={`${a.name || 'doc'}-${i}`} className="ccai-question-attachment-chip">
+                      {a.name || 'document'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
           {completedRounds.map((round) => (
             isOrchestratorOnlyRound(round)
@@ -345,7 +363,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
         )}
         {activeHistoryId && !isRunning && (
           <div className="system-message md-chat-system">
-            Viewing a saved chat. Start a new chat to ask another question.
+            Viewing a saved project. Start a new project to ask another question.
           </div>
         )}
         {!isRunning && hasContent && (
@@ -355,7 +373,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
               className="chat-start-new-btn"
               onClick={handleStartNewChat}
             >
-              Start new chat
+              Start new project
             </md-filled-button>
           </div>
         )}

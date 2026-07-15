@@ -1,4 +1,4 @@
-# CCAI Demo — Complete Feature Inventory
+# Co-Panel — Complete Feature Inventory
 
 Use this checklist when migrating the UI. It covers every user-facing capability in the frontend and the backend behaviors the new UI must still wire up to.
 
@@ -8,7 +8,7 @@ Use this checklist when migrating the UI. It covers every user-facing capability
 
 ## 1. App shell & layout
 
-- [ ] **Header bar** — Neon.ai logo + title (both link to https://www.neon.ai/)
+- [ ] **Header bar** — Co-Panel logo + title (logo links to https://www.neon.ai/)
 - [ ] **Participant sidebar** (left) — active roster with enable/disable, expand details, remove
 - [ ] **Main chat column** (right) — question controls + conversation feed
 - [ ] **Footer** — copyright + link to https://www.neon.ai/contact (Patents and licensing)
@@ -39,7 +39,7 @@ Use this checklist when migrating the UI. It covers every user-facing capability
   - When OFF: restores prior manual selection snapshot
   - Label shows `Participants Auto Selected` vs `Participants (n/max)`
 - [ ] **Create Expert Persona…** (top of list + bottom of Expert section)
-- [ ] **Neon.ai Personas** section — checkbox list from `/api/personas` (neon)
+- [ ] **Neon Personas** section — checkbox list from `/api/personas` (neon)
   - Empty state: *"Neon personas unavailable - check HANA auth."*
 - [ ] **Extra Personas** section — 7 bundled demo personas (checkbox list)
 - [ ] **Expert Personas** section — user-created personas (checkbox list)
@@ -236,7 +236,7 @@ Use this checklist when migrating the UI. It covers every user-facing capability
   - Chat as .txt / .md
   - Summary table as .csv
   - Full API log
-- [ ] **"Talk to Neon" CTA** — links to https://www.neon.ai/contact
+- [ ] **"Talk to Co-Panel" CTA** — links to https://www.neon.ai/contact
 - [ ] **Start new chat** button centered below the summary / download bar
 - [ ] Download bar stacks vertically on narrow viewports (≤480px)
 
@@ -520,7 +520,7 @@ Exports return `{ filename, content }` JSON; frontend triggers browser download.
 ## 20. Theming & branding
 
 - [ ] Light/dark themes via CSS variables on `[data-theme]`
-- [ ] Neon.ai logo in header (`/neon-logo.png`)
+- [ ] Co-Panel logo in header (`/neon-logo.png`; alt text Co-Panel)
 - [ ] Indigo/purple accent gradient (LLMChats3 heritage)
 - [ ] Per-participant bubble color palette (9 colors by roster index)
 - [ ] Human participant always green

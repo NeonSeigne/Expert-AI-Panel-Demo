@@ -1,11 +1,8 @@
 """Participant catalog API.
 
-`GET /api/personas` returns three sections - Neon HANA personas (with
-vanilla/RAG personas filtered out and display names reformatted via an
-LLM), the bundled extra personas, and the user-supplied expert
-personas (which are local-only on the frontend but echoed here for
-completeness so the API can act as the source of truth for participant
-choices when needed).
+`GET /api/personas` returns Neon HANA personas (vanilla/RAG filtered,
+tagged Neon), YAML-configured extra personas (with tags), and a
+deduped `tags` list for selector tabs.
 """
 from __future__ import annotations
 
@@ -15,11 +12,13 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.clients.hana_client import hana_client
-from app.services.extra_personas import list_extra_personas
+from app.services.extra_personas import list_extra_personas, list_tags
 from app.services.persona_naming import reformat_neon_names_bounded
 
 router = APIRouter()
 LOG = logging.getLogger(__name__)
+
+NEON_TAG = "Neon"
 
 
 def _is_vanilla_or_rag(persona_name: str) -> bool:
@@ -29,7 +28,7 @@ def _is_vanilla_or_rag(persona_name: str) -> bool:
 
 @router.get("/personas")
 async def get_personas():
-    """Return the participant catalog the frontend dropdown shows."""
+    """Return the participant catalog the frontend directory shows."""
     try:
         neon_models = await hana_client.get_models()
     except Exception as exc:
@@ -70,6 +69,7 @@ async def get_personas():
         neon_personas.append({
             "participant_id": participant_id,
             "kind": "neon",
+            "tag": NEON_TAG,
             "name": display,
             "model_display": r["model_short"],
             "default_model_id": participant_id,
@@ -80,11 +80,15 @@ async def get_personas():
     extras = list_extra_personas()
     for e in extras:
         e["model_display"] = e["default_model_id"]
+        e.setdefault("tag", "General")
+
+    tags = sorted(set(list_tags()) | ({NEON_TAG} if neon_personas else set()))
 
     return JSONResponse(
         content={
             "neon": neon_personas,
             "extra": extras,
+            "tags": tags,
         },
         headers={"Cache-Control": "no-store"},
     )

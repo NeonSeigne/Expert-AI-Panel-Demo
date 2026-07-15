@@ -1,5 +1,5 @@
 ---
-description: Docker build cache conventions for CCAI-Vibe-Demo
+description: Docker build cache conventions for Co-Panel
 globs: Dockerfile,docker-compose*.yml,.dockerignore,backend/requirements.txt,frontend/package*.json
 alwaysApply: false
 ---

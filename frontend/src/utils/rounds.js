@@ -8,6 +8,7 @@ export const REPORT_KINDS = new Set([
   'no_consensus_report',
   'vote_result',
   'ranked_choice_result',
+  'document',
 ]);
 
 const PHASE_LABELS = {
@@ -24,6 +25,10 @@ const PHASE_LABELS = {
   rr_motion: "Robert's Rules · Motion",
   rr_debate: "Robert's Rules · Debate",
   rr_move_the_question: "Robert's Rules · Call the Question",
+  pipeline_ideation: 'Ideation',
+  pipeline_drafting: 'Drafting',
+  pipeline_revise: 'Revise',
+  pipeline_final_review: 'Final Review',
 };
 
 /**

@@ -12,12 +12,6 @@ import '../../neon/neon-material.register.js';
 
 /** Material Symbols ligatures keyed by option value id. */
 const OPTION_ICONS = {
-  collaborative: 'groups',
-  roberts_rules: 'gavel',
-  consensus: 'handshake',
-  majority: 'how_to_vote',
-  ranked_choice: 'format_list_numbered',
-  roberts_rules_vote: 'gavel',
   model: 'tune',
   speed: 'bolt',
   light: 'light_mode',
@@ -35,6 +29,8 @@ function withIcons(options) {
  * Shared preferences body for onboarding + Settings modal.
  * when showExtended is true, also render theme / panel size / prompts
  * inside Advanced Preferences.
+ *
+ * Discussion structure / decision method are owned by Team Presets.
  */
 export default function PreferencesForm({
   showExtended = false,
@@ -51,11 +47,6 @@ export default function PreferencesForm({
     handleSummarizerChange,
     speedPriority,
     handleSpeedPriorityChange,
-    conversationFormats,
-    conversationStructureId,
-    handleConversationStructureChange,
-    decisionMethodId,
-    handleDecisionMethodChange,
     showResponseTime,
     setShowResponseTime,
     showChatStats,
@@ -88,21 +79,6 @@ export default function PreferencesForm({
     if (!advancedOpen || limitsSchema) return;
     loadLimitsSchema?.();
   }, [advancedOpen, limitsSchema, loadLimitsSchema]);
-
-  const structures = useMemo(
-    () => (Array.isArray(conversationFormats?.structures) ? conversationFormats.structures : []),
-    [conversationFormats],
-  );
-  const decisions = useMemo(
-    () => (Array.isArray(conversationFormats?.decisions) ? conversationFormats.decisions : []),
-    [conversationFormats],
-  );
-  const effectiveStruct = conversationStructureId
-    || conversationFormats?.default_structure_id
-    || null;
-  const effectiveDec = decisionMethodId
-    || conversationFormats?.default_decision_id
-    || null;
 
   const modelOptions = useMemo(
     () => (allModels || []).map((m) => ({
@@ -139,28 +115,6 @@ export default function PreferencesForm({
   return (
     <NeonDesignRoot className="onboarding-form-root">
       <div className={`onboarding-form onboarding-form--preferences ${className}`.trim()}>
-        <PreferenceChoiceCards
-          label="Discussion structure"
-          value={effectiveStruct}
-          onChange={(id) => handleConversationStructureChange?.(id)}
-          options={withIcons(structures.map((s) => ({
-            value: s.id,
-            label: s.name,
-            description: s.description || '',
-          })))}
-        />
-
-        <PreferenceChoiceCards
-          label="Decision method"
-          value={effectiveDec}
-          onChange={(id) => handleDecisionMethodChange?.(id)}
-          options={withIcons(decisions.map((d) => ({
-            value: d.id,
-            label: d.name,
-            description: d.description || '',
-          })))}
-        />
-
         <PreferenceChoiceCards
           label="Response priority"
           value={speedPriority ? 'speed' : 'model'}

@@ -159,7 +159,7 @@ export default function AppShell() {
       </main>
       <footer className="app-footer md-typescale-label-small">
         <span className="app-footer-desktop">
-          Copyright Neon.ai. All rights reserved.{' '}
+          Copyright Co-Panel. All rights reserved.{' '}
           <a
             href="https://www.neon.ai/contact"
             target="_blank"
@@ -174,7 +174,7 @@ export default function AppShell() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Neon.ai · Patents &amp; licensing
+            Co-Panel · Patents &amp; licensing
           </a>
         </span>
       </footer>

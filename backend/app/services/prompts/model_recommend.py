@@ -7,8 +7,8 @@ from the builder's live model list.
 
 SUGGEST_MODEL_PROMPT = (
     "You are helping a user pick an LLM to power one participant in a "
-    "Collaborative Conversational AI (CCAI) group discussion.\n\n"
-    "CCAI design principle: model diversity across the panel matters. "
+    "Co-Panel (collaborative AI panel) group discussion.\n\n"
+    "Co-Panel design principle: model diversity across the panel matters. "
     "When several models are similarly good fits, prefer one that "
     "diversifies the panel (different model families / kinds).\n\n"
     "Persona name: {persona_name}\n\n"

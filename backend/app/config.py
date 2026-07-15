@@ -120,6 +120,14 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
 
+    # Knowledge tools (Web-Search + per-persona RAG)
+    tavily_api_key: str = ""
+    web_search_max_results: int = 5
+    rag_top_k: int = 4
+    rag_max_chars: int = 6000
+    # Relative to backend/ when not absolute
+    persona_rag_dir: str = "data/persona_rag"
+
     model_config = SettingsConfigDict(
         env_file=_settings_env_files(),
         env_file_encoding="utf-8",

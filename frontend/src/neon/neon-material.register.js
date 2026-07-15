@@ -1,5 +1,5 @@
 /**
- * @material/web custom elements used by Neon.ai / CCAI demo.
+ * @material/web custom elements used by Co-Panel.
  * @see https://github.com/material-components/material-web
  */
 import '@material/web/button/elevated-button.js';

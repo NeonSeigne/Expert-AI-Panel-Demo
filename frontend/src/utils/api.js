@@ -24,6 +24,85 @@ export async function fetchPersonas() {
   return resp.json();
 }
 
+export async function fetchKnowledgeStatus() {
+  const resp = await fetch(`${API_BASE}/api/knowledge/status`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`Failed to fetch knowledge status: ${resp.status}`);
+  return resp.json();
+}
+
+function encodeParticipantPath(participantId) {
+  return encodeURIComponent(participantId);
+}
+
+export async function listPersonaDocuments(participantId) {
+  const resp = await fetch(
+    `${API_BASE}/api/personas/${encodeParticipantPath(participantId)}/documents`,
+    { cache: 'no-store' },
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Failed to list documents');
+  }
+  return resp.json();
+}
+
+export async function uploadPersonaDocument(participantId, file) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('name', file.name || 'upload');
+  const resp = await fetch(
+    `${API_BASE}/api/personas/${encodeParticipantPath(participantId)}/documents`,
+    { method: 'POST', body: form },
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Upload failed');
+  }
+  return resp.json();
+}
+
+export async function addPersonaDocumentText(participantId, { name, text }) {
+  const resp = await fetch(
+    `${API_BASE}/api/personas/${encodeParticipantPath(participantId)}/documents/json`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, text }),
+    },
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Failed to add document');
+  }
+  return resp.json();
+}
+
+export async function deletePersonaDocument(participantId, docId) {
+  const resp = await fetch(
+    `${API_BASE}/api/personas/${encodeParticipantPath(participantId)}/documents/${encodeURIComponent(docId)}`,
+    { method: 'DELETE' },
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Delete failed');
+  }
+  return resp.json();
+}
+
+export async function extractAttachment(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const resp = await fetch(`${API_BASE}/api/attachments/extract`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Failed to extract document text');
+  }
+  return resp.json();
+}
+
 export async function fetchDemoQuestions() {
   const resp = await fetch(`${API_BASE}/api/demo-questions`, { cache: 'no-store' });
   if (!resp.ok) throw new Error(`Failed to fetch demo questions: ${resp.status}`);

@@ -53,7 +53,7 @@ export default function ChatHistoryList({
         'neon-chat-history neon-sidebar-section'
         + (open ? ' neon-chat-history--open' : '')
       }
-      aria-label="Chats"
+      aria-label="Projects"
     >
       <button
         type="button"
@@ -63,10 +63,10 @@ export default function ChatHistoryList({
       >
         <span className="neon-sidebar-section__heading">
           <MessagesSquare size={16} strokeWidth={2.5} className="neon-sidebar-section__icon" aria-hidden />
-          <span className="neon-sidebar-section__title">Chats</span>
+          <span className="neon-sidebar-section__title">Projects</span>
         </span>
         <span className="neon-sidebar-section__meta">
-          <span className="neon-sidebar-section__count" aria-label="Saved chats">
+          <span className="neon-sidebar-section__count" aria-label="Saved projects">
             {entries.length}
           </span>
           <ChevronRight
@@ -95,11 +95,13 @@ export default function ChatHistoryList({
                     type="button"
                     className="neon-chat-history__select"
                     onClick={() => handleSelect(entry.id)}
-                    title={entry.question}
+                    title={entry.projectName || entry.question}
                     aria-current={active ? 'true' : undefined}
                   >
                     <span className="neon-chat-history__question">
-                      {truncateQuestion(entry.question) || 'Untitled chat'}
+                      {truncateQuestion(entry.projectName)
+                        || truncateQuestion(entry.question)
+                        || 'Untitled project'}
                     </span>
                     <span className="neon-chat-history__meta">
                       {formatRelativeTime(entry.savedAt)}

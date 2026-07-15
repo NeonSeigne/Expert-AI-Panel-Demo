@@ -547,6 +547,40 @@ async def _call_participant(
         {"role": "user", "content": user_prompt},
     ]
 
+    if participant.web_search_enabled or participant.documents_enabled:
+        from app.services.knowledge.enrich import (
+            build_retrieval_query,
+            build_retrieved_context,
+        )
+        query = build_retrieval_query(session.question, session.messages)
+        if stream_events is not None:
+            stream_events.append(_sse("status", {
+                "message": f"Retrieving sources for {participant.name}…",
+            }))
+        try:
+            retrieved = await build_retrieved_context(
+                participant_id=participant.participant_id,
+                query=query,
+                documents_enabled=participant.documents_enabled,
+                web_search_enabled=participant.web_search_enabled,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning(
+                "Knowledge enrich failed for %s: %s",
+                participant.participant_id, exc,
+            )
+            retrieved = ""
+        if retrieved:
+            user_prompt = f"{user_prompt}\n\n{retrieved}"
+            api_messages[1] = {"role": "user", "content": user_prompt}
+
+    if session.attached_documents:
+        from app.services.knowledge.enrich import build_attachment_context
+
+        attached = build_attachment_context(session.attached_documents)
+        if attached:
+            user_prompt = f"{user_prompt}\n\n{attached}"
+            api_messages[1] = {"role": "user", "content": user_prompt}
 
     await _maybe_summarize_for_participant(session, participant, api_messages)
 

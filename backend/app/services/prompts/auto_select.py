@@ -6,7 +6,7 @@ candidate persona for relevance to the question and returns the top N.
 """
 
 AUTO_SELECT_PARTICIPANTS_PROMPT = (
-    "You are helping pick the most relevant participants for a CCAI "
+    "You are helping pick the most relevant participants for a Co-Panel "
     "group discussion. The user has asked the following question:\n\n"
     "<<<\n{question}\n>>>\n\n"
     "Here are the candidate participants. Each has a `participant_id`, "

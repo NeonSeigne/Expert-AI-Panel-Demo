@@ -37,6 +37,40 @@
   font-family: var(--font-app);
 }
 
+/* ── Current project name ─────────────────────────────────────── */
+
+.neon-participant-sidebar__current-project {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+.neon-participant-sidebar__current-project-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--md-sys-color-primary, #6750a4);
+}
+
+.neon-participant-sidebar__current-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+}
+
 /* ── Section headers (Participants / Chats) ───────────────────── */
 
 .neon-sidebar-section {

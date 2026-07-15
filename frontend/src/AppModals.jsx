@@ -6,6 +6,8 @@ import ConversationLimitsModal from './components/ConversationLimitsModal';
 import PromptCatalogModal from './components/PromptCatalogModal';
 import HumanParticipantModal from './components/HumanParticipantModal';
 import AddParticipantsModal from './components/AddParticipantsModal';
+import ManageDocumentsModal from './components/ManageDocumentsModal';
+import NewProjectModal from './components/NewProjectModal';
 import RateLimitNotice from './components/RateLimitNotice';
 import OnboardingModal from './components/onboarding/OnboardingModal';
 import { useSettings } from './context/SettingsContext';
@@ -39,6 +41,9 @@ export default function AppModals({
     closeHumanModal,
     handleSaveHuman,
     handleRemoveHuman,
+    manageDocsOpen,
+    manageDocsParticipant,
+    closeManageDocuments,
   } = useParticipants();
 
   const {
@@ -51,6 +56,9 @@ export default function AppModals({
     handleRefreshCredentials,
     handleEditHumanCredential,
     handleDownloadCsvTable,
+    newProjectModalOpen,
+    closeNewProjectModal,
+    createNewProject,
   } = useChatSession();
 
   const { humanParticipant } = useParticipants();
@@ -103,6 +111,16 @@ export default function AppModals({
         onClose={() => setPromptCatalogOpen(false)}
       />
       <AddParticipantsModal />
+      <ManageDocumentsModal
+        isOpen={manageDocsOpen}
+        participant={manageDocsParticipant}
+        onClose={closeManageDocuments}
+      />
+      <NewProjectModal
+        isOpen={newProjectModalOpen}
+        onClose={closeNewProjectModal}
+        onCreate={createNewProject}
+      />
       <RateLimitNotice />
     </>
   );

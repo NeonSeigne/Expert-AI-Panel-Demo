@@ -27,7 +27,7 @@ from app.services.credential import (
     build_human_credential_from_profile,
     normalize_one_credential,
 )
-from app.services.extra_personas import EXTRA_PERSONAS, get_extra_persona
+from app.services.extra_personas import get_extra_persona, get_extra_personas
 from app.services.json_calls import orchestrator_call
 from app.services.resilience import build_substitution_chain
 from app.services.prompts import (
@@ -61,6 +61,9 @@ from app.services.persona import (
 
 router = APIRouter()
 LOG = logging.getLogger(__name__)
+
+# Soft total budget for attached documents (aligned with frontend ~2.5MB).
+MAX_ATTACHMENTS_BUDGET_BYTES = int(2.5 * 1024 * 1024)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +149,8 @@ class ParticipantSelectionPayload(BaseModel):
     name: str
     role_prompt: str | None = None
     model_id_override: str | None = None
+    web_search_enabled: bool = False
+    documents_enabled: bool = False
 
 
 class AutoSelectCandidate(BaseModel):
@@ -185,6 +190,13 @@ class HumanCredentialPayload(BaseModel):
     bias_to_watch: str = ""
 
 
+class AttachmentPayload(BaseModel):
+    """Extracted text from a composer-uploaded document (session-scoped)."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    text: str = Field(..., min_length=1)
+
+
 class StartChatRequest(BaseModel):
     question: str | None = None
 
@@ -211,6 +223,10 @@ class StartChatRequest(BaseModel):
     # to the defaults (collaborative + consensus) at start time.
     conversation_structure_id: str | None = None
     decision_method_id: str | None = None
+
+    # Composer / project documents (extracted text). Capacity is a ~2.5MB
+    # total text budget (not a document count); enforced at start.
+    attachments: list[AttachmentPayload] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +577,8 @@ def _build_participant(
         neon_direct_vllm=resolved.get("neon_direct_vllm", False),
         vllm_base_url=resolved.get("vllm_base_url", ""),
         vllm_api_key=resolved.get("vllm_api_key", ""),
+        web_search_enabled=bool(sel.web_search_enabled),
+        documents_enabled=bool(sel.documents_enabled),
     )
 
 
@@ -627,6 +645,20 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     session.orchestrator_model_id = req.orchestrator_model_id
     session.summarizer_model_id = req.summarizer_model_id
     session.max_participants = max_p
+    if req.attachments:
+        cleaned = [
+            {"name": a.name.strip()[:200] or "document", "text": a.text}
+            for a in req.attachments
+            if (a.text or "").strip()
+        ]
+        budget_bytes = len(json.dumps(cleaned).encode("utf-8"))
+        if budget_bytes > MAX_ATTACHMENTS_BUDGET_BYTES:
+            raise HTTPException(
+                400,
+                "Attachments exceed the ~2.5MB limit. "
+                "Remove a document before adding more.",
+            )
+        session.attached_documents = cleaned
     # Attach the user-tunable limits and seed the runtime failsafe
     # caps from them. clamp_conversation_limits silently coerces any
     # missing or out-of-range values back to the defaults / bounds.
@@ -644,7 +676,7 @@ async def api_start_chat(req: StartChatRequest, request: Request):
     candidate_pool: list[Participant] = []
     # Extra personas first (general-purpose lenses; resolvable as
     # long as the matching API key is configured).
-    for spec in EXTRA_PERSONAS:
+    for spec in get_extra_personas():
         if spec.participant_id in selected_ids:
             continue
         resolved = settings.resolve_model(spec.default_model_id)
@@ -750,6 +782,10 @@ async def api_start_chat(req: StartChatRequest, request: Request):
                 "max_participants": session.max_participants,
                 "orchestrator_model_id": session.orchestrator_model_id or settings.orchestrator_model,
                 "summarizer_model_id": session.summarizer_model_id,
+                "attachments": [
+                    {"name": d.get("name") or "document"}
+                    for d in (session.attached_documents or [])
+                ],
             })
             + "\n\n"
         )
@@ -1293,7 +1329,7 @@ def _format_credibility_score(value: object) -> str:
 
 
 def _export_txt(session: Session) -> dict:
-    lines = ["CCAI Conversation Log", "=" * 40, ""]
+    lines = ["Co-Panel Conversation Log", "=" * 40, ""]
     lines.append("Question:")
     lines.append(session.question)
     lines.append("")
@@ -1317,7 +1353,7 @@ def _export_txt(session: Session) -> dict:
 
 
 def _export_md(session: Session) -> dict:
-    lines = ["# CCAI Conversation Log", ""]
+    lines = ["# Co-Panel Conversation Log", ""]
     lines.append("## Question")
     lines.append("")
     lines.append(f"> {session.question}")

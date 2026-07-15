@@ -51,7 +51,7 @@ export default function NeonChatBubble({
   bubbleColor,
   textColor,
   personaSrc = '/neon-ai-persona.png',
-  personaAlt = 'Neon AI persona',
+  personaAlt = 'Co-Panel persona',
   avatarKind,
   avatarLabel,
   avatarColor,

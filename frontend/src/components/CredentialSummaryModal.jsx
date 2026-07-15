@@ -300,7 +300,7 @@ function renderCredentialsAsText(question, credentials) {
   const lines = [];
   const banner = '═'.repeat(64);
   lines.push(banner);
-  lines.push('Collaborative Conversational AI (CCAI) Demo — Credential Summary');
+  lines.push('Co-Panel — Credential Summary');
   lines.push(`Generated: ${now}`);
   lines.push(banner);
   lines.push('');

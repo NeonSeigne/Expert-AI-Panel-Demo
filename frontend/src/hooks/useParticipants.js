@@ -3,6 +3,11 @@ import { fetchPersonas, fetchDemoQuestions, generateHumanCredentialFromProfile }
 import * as storage from '../utils/storage';
 import { DEFAULT_DEMO_PERSONAS } from '../utils/storage';
 import { useSettings } from '../context/SettingsContext';
+import {
+  DEFAULT_TEAM_ID,
+  getTeamById,
+  inferTeamIdFromSelection,
+} from '../config/teams';
 
 function stubParticipantFromId(id) {
   const demo = DEFAULT_DEMO_PERSONAS.find((p) => p.participant_id === id);
@@ -33,6 +38,8 @@ export default function useParticipants() {
     orchestratorModel,
     allModelsFlat,
     handleMaxParticipantsChange: settingsMaxParticipantsChange,
+    handleConversationStructureChange,
+    handleDecisionMethodChange,
   } = useSettings();
 
   const persisted = useMemo(() => storage.loadState(), []);
@@ -41,12 +48,13 @@ export default function useParticipants() {
     [persisted],
   );
 
-  const [catalog, setCatalog] = useState({ neon: [], extra: [] });
+  const [catalog, setCatalog] = useState({ neon: [], extra: [], tags: [] });
   const [demoQuestions, setDemoQuestions] = useState([]);
   const [expertPersonas, setExpertPersonas] = useState(persisted.expert_personas || []);
   const [selectedIds, setSelectedIds] = useState(initialParticipants.selectedIds);
   const [enabledMap, setEnabledMap] = useState(initialParticipants.enabledMap);
   const [modelAssignments, setModelAssignments] = useState(persisted.model_assignments || {});
+  const [knowledgePrefs, setKnowledgePrefs] = useState(persisted.knowledge_prefs || {});
   const [autoSelectMode, setAutoSelectMode] = useState(!!persisted.auto_select_mode);
   const [priorManualSelection, setPriorManualSelection] = useState(null);
   const [expertModalOpen, setExpertModalOpen] = useState(false);
@@ -56,6 +64,12 @@ export default function useParticipants() {
   const [humanEditing, setHumanEditing] = useState(null);
   const [participantDirectoryOpen, setParticipantDirectoryOpen] = useState(false);
   const [directoryFocusParticipantId, setDirectoryFocusParticipantId] = useState(null);
+  const [manageDocsOpen, setManageDocsOpen] = useState(false);
+  const [manageDocsParticipant, setManageDocsParticipant] = useState(null);
+  const [activeTeamId, setActiveTeamIdState] = useState(() => {
+    if (persisted.active_team_id) return persisted.active_team_id;
+    return inferTeamIdFromSelection(initialParticipants.selectedIds) || DEFAULT_TEAM_ID;
+  });
   const humanCredentialGenRef = useRef(null);
   const getDraftQuestionRef = useRef(null);
 
@@ -76,6 +90,41 @@ export default function useParticipants() {
   useEffect(() => { storage.setParticipantsEnabled(enabledMap); }, [enabledMap]);
   useEffect(() => { storage.setModelAssignments(modelAssignments); }, [modelAssignments]);
   useEffect(() => { storage.setHumanParticipant(humanParticipant); }, [humanParticipant]);
+  useEffect(() => { storage.setKnowledgePrefs(knowledgePrefs); }, [knowledgePrefs]);
+  useEffect(() => { storage.setActiveTeamId(activeTeamId); }, [activeTeamId]);
+
+  const applyTeamPreset = useCallback((teamId) => {
+    const team = getTeamById(teamId);
+    if (!team) return;
+    const ids = [...team.participantIds];
+    const humanReserved = humanParticipant ? 1 : 0;
+    const needed = ids.length + humanReserved;
+    if (needed > maxParticipants) {
+      settingsMaxParticipantsChange(needed);
+    }
+    setSelectedIds(ids);
+    setEnabledMap(() => {
+      const next = {};
+      ids.forEach((id) => { next[id] = true; });
+      return next;
+    });
+    setActiveTeamIdState(team.id);
+    storage.setActiveTeamId(team.id);
+    if (autoSelectMode) {
+      setAutoSelectMode(false);
+      setPriorManualSelection(null);
+      storage.setAutoSelectMode(false);
+    }
+    handleConversationStructureChange?.(team.conversationStructureId);
+    handleDecisionMethodChange?.(team.decisionMethodId);
+  }, [
+    humanParticipant,
+    maxParticipants,
+    settingsMaxParticipantsChange,
+    autoSelectMode,
+    handleConversationStructureChange,
+    handleDecisionMethodChange,
+  ]);
 
   const allCatalogParticipants = useMemo(() => {
     const map = {};
@@ -145,6 +194,28 @@ export default function useParticipants() {
     });
   }, []);
 
+  const setKnowledgePref = useCallback((participantId, key, value) => {
+    setKnowledgePrefs((prev) => {
+      const cur = prev[participantId] || { webSearch: false, documents: false };
+      const field = key === 'webSearch' ? 'webSearch' : 'documents';
+      return {
+        ...prev,
+        [participantId]: { ...cur, [field]: !!value },
+      };
+    });
+  }, []);
+
+  const openManageDocuments = useCallback((participant) => {
+    if (!participant?.participant_id) return;
+    setManageDocsParticipant(participant);
+    setManageDocsOpen(true);
+  }, []);
+
+  const closeManageDocuments = useCallback(() => {
+    setManageDocsOpen(false);
+    setManageDocsParticipant(null);
+  }, []);
+
   const handleToggleParticipant = useCallback((participant) => {
     const id = participant.participant_id;
     const humanReserved = humanParticipant ? 1 : 0;
@@ -172,7 +243,13 @@ export default function useParticipants() {
       setHumanParticipant(null);
       return;
     }
-    setSelectedIds(prev => prev.filter(x => x !== participantId));
+    setSelectedIds(prev => {
+      const next = prev.filter(x => x !== participantId);
+      const inferred = inferTeamIdFromSelection(next);
+      setActiveTeamIdState(inferred);
+      storage.setActiveTeamId(inferred);
+      return next;
+    });
     setEnabledMap(em => {
       const next = { ...em };
       delete next[participantId];
@@ -312,6 +389,9 @@ export default function useParticipants() {
       confirmed.forEach((id) => { next[id] = true; });
       return next;
     });
+    const inferred = inferTeamIdFromSelection(confirmed);
+    setActiveTeamIdState(inferred);
+    storage.setActiveTeamId(inferred);
     if (autoSelectMode) {
       setAutoSelectMode(false);
       setPriorManualSelection(null);
@@ -346,6 +426,8 @@ export default function useParticipants() {
     enabledSelectedCount,
     hasEnoughParticipantsToStart,
     autoSelectReady,
+    activeTeamId,
+    applyTeamPreset,
     handleToggleParticipant,
     handleSidebarToggleEnabled,
     handleSidebarRemove,
@@ -368,6 +450,12 @@ export default function useParticipants() {
     setHumanParticipant,
     setSelectedIds,
     setEnabledMap,
+    knowledgePrefs,
+    setKnowledgePref,
+    manageDocsOpen,
+    manageDocsParticipant,
+    openManageDocuments,
+    closeManageDocuments,
     runHumanCredentialGeneration,
   };
 }

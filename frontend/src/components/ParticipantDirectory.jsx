@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useParticipants } from '../context/ParticipantsContext';
 import ParticipantDirectoryCard from './ParticipantDirectoryCard';
 import { avatarColorForParticipant } from '../utils/participantAvatar';
+import { fetchKnowledgeStatus } from '../utils/api';
 import '../neon/neon-material.register.js';
 
 function useMediaQuery(query) {
@@ -20,13 +21,8 @@ function useMediaQuery(query) {
   return matches;
 }
 
-const TABS = [
-  { id: 'core', label: 'Core Assistants' },
-  { id: 'extra', label: 'Extra Personas' },
-  { id: 'all', label: 'All' },
-];
-
 const AUTO_PICK_COUNT = 5;
+const NEON_TAG = 'Neon';
 
 function pickRandomParticipantIds(pool, count) {
   const ids = pool.map((p) => p.participant_id);
@@ -43,6 +39,7 @@ function matchesSearch(participant, query) {
   const q = query.toLowerCase();
   const haystack = [
     participant.name,
+    participant.tag,
     participant.model_display,
     participant.default_model_id,
     participant.participant_id,
@@ -68,6 +65,10 @@ function ParticipantDetailPane({
   colorIndex = 0,
   modelAssignments,
   allModelsFlat,
+  knowledgePrefs,
+  onToggleKnowledge,
+  onManageDocuments,
+  tavilyConfigured,
   onBack,
   showBack,
 }) {
@@ -83,6 +84,10 @@ function ParticipantDetailPane({
   const description = (participant.description || '').trim();
   const initial = (participant.name || '?').charAt(0).toUpperCase();
   const modelLabel = modelLabelFor(participant, modelAssignments, allModelsFlat);
+  const tag = participant.tag || (participant.kind === 'neon' ? NEON_TAG : null);
+  const pid = participant.participant_id;
+  const prefs = knowledgePrefs?.[pid] || { webSearch: false, documents: false };
+  const isHuman = participant.kind === 'human';
 
   return (
     <div className="participant-directory-detail">
@@ -108,9 +113,18 @@ function ParticipantDetailPane({
             </div>
             <h3 className="participant-directory-detail-name">{participant.name}</h3>
             <p className="participant-directory-detail-subtitle">{modelLabel}</p>
+            {tag && (
+              <span className="participant-directory-tag-chip">{tag}</span>
+            )}
           </div>
           <div className="participant-directory-detail-content">
             <div className="participant-directory-detail-group">
+              {tag && (
+                <div className="participant-directory-detail-row">
+                  <span className="participant-directory-detail-label">Tag</span>
+                  <span className="participant-directory-detail-value">{tag}</span>
+                </div>
+              )}
               <div className="participant-directory-detail-row">
                 <span className="participant-directory-detail-label">Model</span>
                 <span className="participant-directory-detail-value">{modelLabel}</span>
@@ -127,6 +141,42 @@ function ParticipantDetailPane({
                 <div className="participant-directory-detail-row">
                   <span className="participant-directory-detail-label">Description</span>
                   <span className="participant-directory-detail-value">{description}</span>
+                </div>
+              </div>
+            )}
+            {!isHuman && (
+              <div className="participant-directory-detail-group">
+                <div className="participant-directory-detail-row participant-directory-detail-row--tools">
+                  <span className="participant-directory-detail-label">Knowledge tools</span>
+                  <label className="participant-directory-tool-check">
+                    <input
+                      type="checkbox"
+                      checked={!!prefs.webSearch}
+                      onChange={(e) => onToggleKnowledge?.(pid, 'webSearch', e.target.checked)}
+                    />
+                    <span>Web-Search</span>
+                    {!tavilyConfigured && (
+                      <span className="participant-directory-tool-hint" title="Set TAVILY_API_KEY on the backend">
+                        (API key needed)
+                      </span>
+                    )}
+                  </label>
+                  <div className="participant-directory-tool-docs-row">
+                    <label className="participant-directory-tool-check">
+                      <input
+                        type="checkbox"
+                        checked={!!prefs.documents}
+                        onChange={(e) => onToggleKnowledge?.(pid, 'documents', e.target.checked)}
+                      />
+                      <span>Documents</span>
+                    </label>
+                    <md-text-button
+                      type="button"
+                      onClick={() => onManageDocuments?.(participant)}
+                    >
+                      Manage
+                    </md-text-button>
+                  </div>
                 </div>
               </div>
             )}
@@ -150,7 +200,7 @@ function ParticipantDetailPane({
 }
 
 /**
- * Searchable persona directory (tabs + grid + detail pane).
+ * Searchable persona directory (tag tabs + grid + detail pane).
  * Controlled selection via stagedIds / onStagedIdsChange.
  */
 export default function ParticipantDirectory({
@@ -170,42 +220,74 @@ export default function ParticipantDirectory({
     modelAssignments,
     autoSelectMode,
     humanParticipant,
+    knowledgePrefs,
+    setKnowledgePref,
+    openManageDocuments,
   } = useParticipants();
 
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
   const [focusedParticipant, setFocusedParticipant] = useState(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [tavilyConfigured, setTavilyConfigured] = useState(false);
   const searchRef = useRef(null);
   const isMobileLayout = useMediaQuery('(max-width: 768px)');
+
+  useEffect(() => {
+    fetchKnowledgeStatus()
+      .then((s) => setTavilyConfigured(!!s.tavily_configured))
+      .catch(() => setTavilyConfigured(false));
+  }, []);
 
   const humanReserved = humanParticipant ? 1 : 0;
   const selectionCap = Math.max(0, maxParticipants - humanReserved);
 
-  const tabLists = useMemo(() => {
-    const core = catalog?.neon || [];
+  const allPersonas = useMemo(() => {
+    const neon = catalog?.neon || [];
     const extra = catalog?.extra || [];
-    const expert = expertPersonas || [];
-    return {
-      core,
-      extra,
-      all: [...core, ...extra, ...expert],
-    };
+    const expert = (expertPersonas || []).map((p) => ({
+      ...p,
+      tag: p.tag || 'Expert',
+      kind: p.kind || 'expert',
+    }));
+    return [...neon, ...extra, ...expert];
   }, [catalog, expertPersonas]);
 
-  const pickInitialTab = useCallback(() => {
-    if ((tabLists.all || []).length > 0) return 'all';
-    if ((tabLists.core || []).length > 0) return 'core';
-    if ((tabLists.extra || []).length > 0) return 'extra';
-    return 'all';
-  }, [tabLists]);
+  const tabs = useMemo(() => {
+    const fromApi = (catalog?.tags || []).filter(Boolean);
+    const fromPersonas = [...new Set(allPersonas.map((p) => p.tag).filter(Boolean))];
+    const tagSet = new Set([...fromApi, ...fromPersonas]);
+    const ordered = [];
+    if (tagSet.has(NEON_TAG)) ordered.push(NEON_TAG);
+    [...tagSet]
+      .filter((t) => t !== NEON_TAG)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((t) => ordered.push(t));
+    return [
+      { id: 'all', label: 'All' },
+      ...ordered.map((t) => ({ id: `tag:${t}`, label: t })),
+    ];
+  }, [catalog, allPersonas]);
 
-  // One-shot init on mount (parent remounts via key when reopening)
+  const tabLists = useMemo(() => {
+    const lists = { all: allPersonas };
+    for (const tab of tabs) {
+      if (tab.id === 'all') continue;
+      const tagName = tab.id.replace(/^tag:/, '');
+      lists[tab.id] = allPersonas.filter(
+        (p) => (p.tag || (p.kind === 'neon' ? NEON_TAG : '')) === tagName,
+      );
+    }
+    return lists;
+  }, [allPersonas, tabs]);
+
+  const pickInitialTab = useCallback(() => 'all', []);
+
   useEffect(() => {
     setActiveTab(pickInitialTab());
 
     if (focusParticipantId) {
-      const participant = (tabLists.all || []).find(
+      const participant = allPersonas.find(
         (p) => p.participant_id === focusParticipantId,
       );
       if (participant) {
@@ -230,11 +312,10 @@ export default function ParticipantDirectory({
   useEffect(() => {
     const currentList = tabLists[activeTab] || [];
     if (currentList.length > 0) return;
-    const fallback = pickInitialTab();
-    if (fallback !== activeTab && (tabLists[fallback] || []).length > 0) {
-      setActiveTab(fallback);
+    if (activeTab !== 'all' && (tabLists.all || []).length > 0) {
+      setActiveTab('all');
     }
-  }, [tabLists, activeTab, pickInitialTab]);
+  }, [tabLists, activeTab]);
 
   const filteredList = useMemo(() => {
     const list = tabLists[activeTab] || [];
@@ -276,20 +357,15 @@ export default function ParticipantDirectory({
 
   const focusedColorIndex = useMemo(() => {
     if (!focusedParticipant) return 0;
-    const idx = (tabLists.all || []).findIndex(
+    const idx = allPersonas.findIndex(
       (p) => p.participant_id === focusedParticipant.participant_id,
     );
     return idx >= 0 ? idx : 0;
-  }, [focusedParticipant, tabLists]);
+  }, [focusedParticipant, allPersonas]);
 
-  const extraCount = (tabLists.extra || []).length;
-  const emptyMessages = {
-    core: extraCount > 0
-      ? 'No core assistants loaded (HANA unavailable). Try the Extra Personas tab.'
-      : 'Neon personas unavailable — check HANA auth.',
-    extra: 'No extra personas in the catalog.',
-    all: 'No personas available.',
-  };
+  const handleToggleKnowledge = useCallback((pid, key, value) => {
+    setKnowledgePref?.(pid, key, value);
+  }, [setKnowledgePref]);
 
   return (
     <div
@@ -325,7 +401,7 @@ export default function ParticipantDirectory({
       >
         <div className="participant-directory-main">
           <div className="participant-directory-tabs" role="tablist" aria-label="Persona categories">
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -348,11 +424,8 @@ export default function ParticipantDirectory({
           </div>
 
           <div className="participant-directory-grid-wrap">
-            {filteredList.length === 0 && activeTab !== 'all' && (
-              <div className="participant-directory-empty">{emptyMessages[activeTab]}</div>
-            )}
-            {filteredList.length === 0 && activeTab === 'all' && !search.trim() && (
-              <div className="participant-directory-empty">{emptyMessages.all}</div>
+            {filteredList.length === 0 && !search.trim() && (
+              <div className="participant-directory-empty">No personas in this category.</div>
             )}
             {filteredList.length === 0 && search.trim() && (
               <div className="participant-directory-empty">No personas match your search.</div>
@@ -389,6 +462,10 @@ export default function ParticipantDirectory({
           colorIndex={focusedColorIndex}
           modelAssignments={modelAssignments}
           allModelsFlat={allModelsFlat}
+          knowledgePrefs={knowledgePrefs}
+          onToggleKnowledge={handleToggleKnowledge}
+          onManageDocuments={openManageDocuments}
+          tavilyConfigured={tavilyConfigured}
           showBack={isMobileLayout && mobileDetailOpen}
           onBack={() => setMobileDetailOpen(false)}
         />

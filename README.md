@@ -1,5 +1,5 @@
 ---
-title: Collaborative Conversational AI (CCAI) Demo
+title: Co-Panel
 emoji: 🤝
 colorFrom: blue
 colorTo: purple
@@ -11,10 +11,10 @@ hf_oauth_scopes:
 pinned: false
 ---
 
-# Collaborative Conversational AI (CCAI) Demo
+# Co-Panel
 
-A demo of **Collaborative Conversational AI (CCAI)** - Neon.ai's patented
-group-discussion technology. Up to 9 participants (any mix of AI personas,
+**Co-Panel** is a collaborative AI panel demo built on Neon.ai's patented
+group-discussion technology (Collaborative Conversational AI). Up to 9 participants (any mix of AI personas,
 human-defined "expert" personas, or - in the future - real humans, agents,
 tools, or sensors) hold a structured group conversation facilitated by a
 neutral **Orchestrator**, with the goal of reaching a real group decision
@@ -22,8 +22,8 @@ the way a thoughtful human meeting would.
 
 This repo descends from
 [NeonClary/LLMChats3](https://github.com/NeonClary/LLMChats3) and reuses
-its color scheme, branding, settings menu structure, and chat formatting
-verbatim. The CCAI multi-participant orchestration, expert-persona modal,
+its color scheme, branding assets, settings menu structure, and chat formatting
+verbatim. The multi-participant orchestration, expert-persona modal,
 participant sidebar, and table view are layered on top.
 
 ## Architecture (one-pager)
@@ -31,10 +31,14 @@ participant sidebar, and table view are layered on top.
 - **Frontend** (React 19, react-markdown, lucide-react) - lives in
   `frontend/`. Talks SSE to the backend.
 - **Backend** (FastAPI, httpx) - lives in `backend/`. Routes:
-  - `GET /api/personas` — Neon HANA personas (vanilla/RAG filtered),
-    bundled extra personas, and (echoed) expert personas.
+  - `GET /api/personas` — Neon HANA personas (vanilla/RAG filtered,
+    tagged Neon), YAML-configured extras from `persona_config.yaml`
+    (with tags), plus a `tags` list for directory tabs.
+  - `GET/POST/DELETE /api/personas/{id}/documents` — per-persona RAG
+    document CRUD (Chroma under `data/persona_rag/`).
+  - `GET /api/knowledge/status` — whether Tavily Web-Search is configured.
   - `GET /api/demo-questions` — the bank of 10 long-context demo prompts.
-  - `POST /api/chat/start` — kicks off a CCAI session and returns SSE.
+  - `POST /api/chat/start` — kicks off a Co-Panel session and returns SSE.
   - `POST /api/chat/{id}/continue?reason=…` — resumes a paused session.
   - `GET  /api/chat/{id}/export?fmt=txt|md|csv-table` — exports.
   - `GET  /api/chat/{id}/table` — JSON for the table view.
@@ -43,7 +47,7 @@ participant sidebar, and table view are layered on top.
   with two failsafes (60+20 messages, 100+50 orchestrator calls) and
   per-participant on-demand context summarization.
 
-## CCAI Phase Overview
+## Co-Panel Phase Overview
 
 1. **Initial Opinions.** Each participant offers an independent first
    opinion. The orchestrator builds a per-participant **Credential
@@ -144,5 +148,12 @@ Required Space Secrets:
   contribution / revised / final columns.
 - **localStorage persistence** for expert personas, participant
   selection, on/off state, model assignments, orchestrator/summarizer
-  picks, and max-participants.
+  picks, max-participants, and per-persona Web-Search / Documents
+  toggles.
+- **Persona config** (`backend/persona_config.yaml`) for tagged
+  non-HANA personas (Finance, Technology, Security, …). HANA personas
+  are tagged **Neon**. Directory tabs follow tags (teams groundwork).
+- **Per-persona RAG** via Chroma under `backend/data/persona_rag/` —
+  Manage documents from the directory detail pane. Set
+  `TAVILY_API_KEY` for optional Web-Search enrichment on turns.
 - **HuggingFace OAuth** with `neongeckocom` org bypass.

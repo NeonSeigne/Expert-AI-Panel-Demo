@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "questions": [
     {
       "id": "build_vs_buy_ai",
@@ -72,6 +72,62 @@
       "category": "civic / nonprofit",
       "title": "Allocating a one-time $180K grant for a small-town park",
       "text": "I'm on the volunteer board for a 4-acre community park in our small Oregon town of about 2,400 residents. The park has aging playground equipment from the late 1990s, a baseball diamond mostly used by the over-50 league, and a wooded picnic area. Our annual operating budget is $35,000. We've just been offered a one-time $180,000 grant from a regional foundation, but it must be committed to a project plan within 18 months and the project must be substantially complete within three years. The board is split three ways: (a) replace all the playground equipment with modern, ADA-compliant structures - the most visibly popular choice with young families, (b) build a small pavilion plus about a dozen community-garden plots, which would attract a different demographic and serve year-round but has more uncertain demand, or (c) install a modest skatepark and pump track that our teens have repeatedly asked for, which would be controversial with our older voters. Whatever we pick, ongoing maintenance comes out of the same $35K annual budget, and the grant doesn't fund staffing. What should we do?"
+    },
+    {
+      "id": "mkt_campaign_brief",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Campaign brief for a B2B product launch",
+      "text": "Help me write a tight campaign brief for launching our B2B analytics SaaS to mid-market ops teams. Positioning: 'decisions in hours, not decks.' Audience is Directors of Operations at 200–2000 employee companies. Goal: 400 qualified demo requests in 90 days. Budget is $85K across paid, content, and email. Constraints: we cannot claim competitors' metrics, legal wants every claim sourced, and brand voice is confident but not hype. Outline: objective, audience insight, single-minded message, proof points, channel mix, KPI ladder, and creative dos/don'ts."
+    },
+    {
+      "id": "mkt_launch_copy",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Homepage + launch email copy",
+      "text": "Draft homepage hero copy and a launch email for our AI writing assistant aimed at startup founders. Product promise: ship clearer customer messaging in one afternoon. Tone: warm, practical, zero buzzwords. Include: H1, subhead, primary CTA, three benefit bullets with proof-style lines, and a 6-paragraph launch email with subject line options. Assume we're pre-Series A and can't lean on big logos yet."
+    },
+    {
+      "id": "mkt_channel_mix",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "90-day channel mix for a DTC skincare brand",
+      "text": "Recommend a 90-day paid + organic channel mix for a DTC clean skincare brand relaunching with one hero serum. Monthly ad budget $40K. Audience: women 28–45 interested in dermatologist-backed routines. Strengths: strong UGC, weak SEO, email list of 18K. Goals: 3.5x ROAS and email growth. Propose channel split, creative testing plan, measurement, and what to kill if week-4 signals are soft."
+    },
+    {
+      "id": "mkt_content_pillars",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Content pillars for a fintech LinkedIn presence",
+      "text": "Design 4–5 LinkedIn content pillars for a Series B fintech selling expense automation to CFOs at growth-stage companies. We need thought leadership without sounding like every other fintech. Include pillar names, audience job-to-be-done each serves, post formats, cadence, and 3 example post angles per pillar. Guardrails: no fake thought leadership, no unbacked ROI claims."
+    },
+    {
+      "id": "mkt_rebrand_messaging",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Messaging house for a category rebrand",
+      "text": "We're renaming and repositioning our HR software from 'payroll add-on' to 'people ops OS' for companies under 500 employees. Build a messaging house: brand narrative (1 paragraph), positioning statement, three proof pillars, objection handling for 'just another HRIS', elevator pitch (15 sec / 60 sec), and taboos. Primary buyer is Head of People; economic buyer is CFO."
+    },
+    {
+      "id": "mkt_event_activation",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Trade-show activation plan under $25K",
+      "text": "Plan a booth + activation for a SaaS security vendor at a mid-size conference. Total budget $25K including booth, gifts, and 2 SDRs on-site. Goal: 120 qualified conversations and 40 pipeline-ready follow-ups. Propose theme, giveaway strategy (no junk), demo flow, badge scanning process, and a 5-day follow-up sequence. Competitors will have bigger booths—how do we win attention without outspending them?"
+    },
+    {
+      "id": "mkt_influencer_brief",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "Micro-influencer brief for product launch",
+      "text": "Write a creator brief for 12 micro-influencers (10k–80k) launching an eco-friendly water bottle. Deliverables: 1 Reel + 1 Story set each. Must feel authentic, disclose sponsorship, and drive code TRACK25. Include: narrative hooks we like, claims they must not make, creative examples, usage rights, and how we'll score which creators get a phase-2 retainer."
+    },
+    {
+      "id": "mkt_ab_landing",
+      "category": "marketing",
+      "tags": ["marketing"],
+      "title": "A/B test plan for a paid landing page",
+      "text": "Design an A/B and multivariate test plan for our paid landing page converting ad traffic to free trials. Current conversion is 6.2%. Primary hypothesis: clarifying time-to-value and social proof above the fold will lift CVR. Propose: test order for 6 weeks, sample-size assumptions, success metrics, variants for hero, form friction, and proof modules, plus kill criteria. Traffic is ~8k visits/week from Google + Meta."
     }
   ]
 }

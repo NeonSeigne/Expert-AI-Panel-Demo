@@ -17,12 +17,14 @@ Built-in choices:
   Structures:
     - "collaborative" → CollaborativeDiscussion (default)
     - "roberts_rules" → RobertsRulesDiscussion
+    - "document_pipeline" → DocumentPipelineDiscussion
 
   Decision methods:
     - "consensus" → ConsensusDecision (default)
     - "majority" → MajorityRulesDecision
     - "ranked_choice" → RankedChoiceDecision
     - "roberts_rules_vote" → RobertsRulesVote
+    - "document_publish" → DocumentPublishDecision
 """
 from __future__ import annotations
 
@@ -30,11 +32,13 @@ from typing import Type
 
 from app.services.conversation.decisions.base import DecisionMethod
 from app.services.conversation.decisions.consensus import ConsensusDecision
+from app.services.conversation.decisions.document_publish import DocumentPublishDecision
 from app.services.conversation.decisions.majority import MajorityRulesDecision
 from app.services.conversation.decisions.ranked_choice import RankedChoiceDecision
 from app.services.conversation.decisions.roberts_rules_vote import RobertsRulesVote
 from app.services.conversation.structures.base import ConversationStructure
 from app.services.conversation.structures.collaborative import CollaborativeDiscussion
+from app.services.conversation.structures.document_pipeline import DocumentPipelineDiscussion
 from app.services.conversation.structures.roberts_rules import RobertsRulesDiscussion
 from app.services.conversation.types import DecisionInput  # noqa: F401  re-export
 
@@ -45,6 +49,7 @@ DEFAULT_DECISION_ID = "consensus"
 STRUCTURE_REGISTRY: dict[str, Type[ConversationStructure]] = {
     "collaborative": CollaborativeDiscussion,
     "roberts_rules": RobertsRulesDiscussion,
+    "document_pipeline": DocumentPipelineDiscussion,
 }
 
 
@@ -53,6 +58,7 @@ DECISION_REGISTRY: dict[str, Type[DecisionMethod]] = {
     "majority": MajorityRulesDecision,
     "ranked_choice": RankedChoiceDecision,
     "roberts_rules_vote": RobertsRulesVote,
+    "document_publish": DocumentPublishDecision,
 }
 
 

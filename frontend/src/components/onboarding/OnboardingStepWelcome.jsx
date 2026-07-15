@@ -7,10 +7,10 @@ import { PARTICIPANT_PALETTE } from '../../constants/brandColors';
 const WELCOME_MESSAGES = [
   {
     side: 'Agent',
-    content: 'Welcome to the Neon Collaborative Conversational AI demo',
+    content: 'Welcome to Co-Panel',
     bubbleColor: PARTICIPANT_PALETTE[0].bg,
     avatarKind: 'initial',
-    avatarLabel: 'N',
+    avatarLabel: 'C',
     avatarColor: PARTICIPANT_PALETTE[0].color,
   },
   {
@@ -29,7 +29,7 @@ export default function OnboardingStepWelcome() {
     <div className="onboarding-step onboarding-step--welcome">
       <img
         src="/neon-logo.png"
-        alt="Neon.ai"
+        alt="Co-Panel"
         className="onboarding-brand-logo"
       />
       <OnboardingStepHeading icon={<Users size={36} strokeWidth={1.75} />}>

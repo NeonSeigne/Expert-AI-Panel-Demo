@@ -14,3 +14,4 @@ venv/
 docker-compose.override.yml
 docker-compose.dev-cursor.yml
 .commit-msg.txt
+backend/data/persona_rag/

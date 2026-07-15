@@ -13,7 +13,7 @@ function BookACallButton() {
       className="header-book-call-btn"
       trailing-icon
       aria-label="Book a Call"
-      title="Book a Call with Neon.ai"
+      title="Book a Call with Co-Panel"
       onClick={() => {
         window.open(BOOK_A_CALL_URL, '_blank', 'noopener,noreferrer');
       }}
@@ -85,9 +85,9 @@ export default function Header({
               <md-icon>{compactNav && navExpanded ? 'close' : 'menu'}</md-icon>
             </md-icon-button>
             <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="header-brand-link">
-              <img src="/neon-logo.png" alt="Neon.ai" className="app-logo" />
+              <img src="/neon-logo.png" alt="Co-Panel" className="app-logo" />
             </a>
-            <h1 className="app-title md-typescale-title-large">CCAI Demo</h1>
+            <h1 className="app-title md-typescale-title-large">Co-Panel</h1>
           </div>
           <div className="header-right">
             <md-text-button
