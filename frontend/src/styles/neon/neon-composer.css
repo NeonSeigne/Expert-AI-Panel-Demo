@@ -1,78 +1,11 @@
-/* Vendored from neon-design@dev-cursor — MD3 bridge + composer-final styles */
+/* Composer + Material Web host styles — colors inherit from md3-theme.css */
 
 .neon-design-root {
-  color-scheme: dark;
-
-  --color-neon-primary: #0b57d0;
-  --color-neon-on-primary: #ffffff;
-  --color-neon-primary-container: #0a2540;
-  --color-neon-on-primary-container: #d3e3fd;
-  --color-neon-secondary: #ccccff;
-  --color-neon-on-secondary: #1a1b22;
-  --color-neon-secondary-container: #1a2e38;
-  --color-neon-on-secondary-container: #ffffff;
-  --color-neon-tertiary: #2ec4f2;
-  --color-neon-on-tertiary: #ffffff;
-  --color-neon-tertiary-container: #123540;
-  --color-neon-on-tertiary-container: #b8eeff;
-  --color-neon-error: #ff3b30;
-  --color-neon-on-error: #ffffff;
-  --color-neon-error-container: #4a1512;
-  --color-neon-on-error-container: #ffdad6;
-  --color-neon-surface-dim: #0d0e12;
-  --color-neon-surface: #12141a;
-  --color-neon-surface-bright: #161820;
-  --color-neon-surface-container-lowest: #0a0b0f;
-  --color-neon-surface-container-low: #161820;
-  --color-neon-surface-container: #0d0d0d;
-  --color-neon-surface-container-high: #22252e;
-  --color-neon-surface-container-highest: #282b36;
-  --color-neon-on-surface: #f8f9fa;
-  --color-neon-on-surface-variant: #ccccff;
-  --color-neon-outline: rgba(255, 255, 255, 0.1);
-  --color-neon-outline-variant: rgba(204, 204, 255, 0.1);
-  --color-neon-composer-surface: #22252e;
-  --color-neon-composer-on-surface: #f8f9fa;
-  --color-neon-composer-border: rgba(204, 204, 255, 0.1);
-  --color-neon-composer-placeholder: #ccccff;
-  --color-neon-action-emphasis: #ffffff;
-
   --font-sans: var(--font-app);
   --md-ref-typeface-brand: var(--font-app);
   --md-ref-typeface-plain: var(--font-app);
-  --radius-neon-full: 9999px;
-  --radius-neon-md: 12px;
-
-  --md-sys-color-primary: var(--color-neon-primary);
-  --md-sys-color-on-primary: var(--color-neon-on-primary);
-  --md-sys-color-primary-container: var(--color-neon-primary-container);
-  --md-sys-color-on-primary-container: var(--color-neon-on-primary-container);
-  --md-sys-color-secondary: var(--color-neon-secondary);
-  --md-sys-color-on-secondary: var(--color-neon-on-secondary);
-  --md-sys-color-secondary-container: var(--color-neon-secondary-container);
-  --md-sys-color-on-secondary-container: var(--color-neon-on-secondary-container);
-  --md-sys-color-tertiary: var(--color-neon-tertiary);
-  --md-sys-color-on-tertiary: var(--color-neon-on-tertiary);
-  --md-sys-color-tertiary-container: var(--color-neon-tertiary-container);
-  --md-sys-color-on-tertiary-container: var(--color-neon-on-tertiary-container);
-  --md-sys-color-error: var(--color-neon-error);
-  --md-sys-color-on-error: var(--color-neon-on-error);
-  --md-sys-color-error-container: var(--color-neon-error-container);
-  --md-sys-color-on-error-container: var(--color-neon-on-error-container);
-  --md-sys-color-background: var(--color-neon-surface-dim);
-  --md-sys-color-on-background: var(--color-neon-on-surface);
-  --md-sys-color-surface: var(--color-neon-surface);
-  --md-sys-color-on-surface: var(--color-neon-on-surface);
-  --md-sys-color-surface-dim: var(--color-neon-surface-dim);
-  --md-sys-color-surface-bright: var(--color-neon-surface-bright);
-  --md-sys-color-surface-container-lowest: var(--color-neon-surface-container-lowest);
-  --md-sys-color-surface-container-low: var(--color-neon-surface-container-low);
-  --md-sys-color-surface-container: var(--color-neon-surface-container);
-  --md-sys-color-surface-container-high: var(--color-neon-surface-container-high);
-  --md-sys-color-surface-container-highest: var(--color-neon-surface-container-highest);
-  --md-sys-color-on-surface-variant: var(--color-neon-on-surface-variant);
-  --md-sys-color-outline: var(--color-neon-outline);
-  --md-sys-color-outline-variant: var(--color-neon-outline-variant);
+  --radius-neon-full: var(--md-sys-shape-corner-full);
+  --radius-neon-md: var(--md-sys-shape-corner-medium);
 
   --md-outlined-icon-button-container-shape: var(--radius-neon-full);
   --md-filled-icon-button-container-shape: var(--radius-neon-full);
@@ -89,53 +22,6 @@
   --md-filled-icon-button-hover-icon-color: var(--md-sys-color-on-primary);
   --md-filled-icon-button-focus-icon-color: var(--md-sys-color-on-primary);
   --md-filled-icon-button-pressed-icon-color: var(--md-sys-color-on-primary);
-}
-
-.neon-design-root[data-theme='light'] {
-  color-scheme: light;
-  --color-neon-primary: #0b57d0;
-  --color-neon-on-primary: #ffffff;
-  --color-neon-primary-container: #d3e3fd;
-  --color-neon-on-primary-container: #041e49;
-  --color-neon-secondary: #d3e3fd;
-  --color-neon-on-secondary: #1f1f1f;
-  --color-neon-secondary-container: #e8f0fe;
-  --color-neon-on-secondary-container: #041e49;
-  --color-neon-tertiary: #2ec4f2;
-  --color-neon-on-tertiary: #ffffff;
-  --color-neon-tertiary-container: #d0f0fa;
-  --color-neon-on-tertiary-container: #0a3d4d;
-  --color-neon-error: #ff3b30;
-  --color-neon-on-error: #ffffff;
-  --color-neon-error-container: #ffdad6;
-  --color-neon-on-error-container: #690005;
-  --color-neon-surface-dim: #f5f5f5;
-  --color-neon-surface: #ffffff;
-  --color-neon-surface-bright: #ffffff;
-  --color-neon-surface-container-lowest: #ffffff;
-  --color-neon-surface-container-low: #f8f8f8;
-  --color-neon-surface-container: #f5f5f5;
-  --color-neon-surface-container-high: #eeeeee;
-  --color-neon-surface-container-highest: #e0e0e0;
-  --color-neon-on-surface: #1f1f1f;
-  --color-neon-on-surface-variant: #444746;
-  --color-neon-outline: #e0e0e0;
-  --color-neon-outline-variant: rgba(0, 0, 0, 0.08);
-  --color-neon-composer-surface: #ffffff;
-  --color-neon-composer-on-surface: #1f1f1f;
-  --color-neon-composer-border: rgba(0, 0, 0, 0.12);
-  --color-neon-composer-placeholder: #80868b;
-  --color-neon-action-emphasis: #0b57d0;
-  --neon-composer-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.neon-design-root[data-theme='dark'] {
-  color-scheme: dark;
-  --color-neon-composer-surface: #22252e;
-  --color-neon-composer-on-surface: #f8f9fa;
-  --color-neon-composer-border: rgba(204, 204, 255, 0.12);
-  --color-neon-composer-placeholder: #ccccff;
-  --neon-composer-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 .neon-design-root .md-icon-button-host {
@@ -175,7 +61,7 @@
   box-sizing: border-box;
 }
 
-.neon-design-root[data-theme='dark'] .neon-composer--final {
+:root[data-theme='dark'] .neon-composer--final {
   --neon-composer-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   --neon-composer-shadow-focus: 0 10px 32px rgba(0, 0, 0, 0.45);
 }
@@ -205,11 +91,11 @@
   box-shadow: var(--neon-composer-shadow-focus);
 }
 
-.neon-design-root[data-theme='dark'] .neon-composer--final .neon-composer-pill {
+:root[data-theme='dark'] .neon-composer--final .neon-composer-pill {
   border-color: #fff;
 }
 
-.neon-design-root[data-theme='dark'] .neon-composer--final .neon-composer-pill:focus-within {
+:root[data-theme='dark'] .neon-composer--final .neon-composer-pill:focus-within {
   border-color: #fff;
 }
 
@@ -274,7 +160,7 @@
   box-shadow: none;
 }
 
-.neon-design-root[data-theme='dark'] .neon-composer--final .md-icon-button-host md-filled-icon-button.neon-composer-send--idle {
+:root[data-theme='dark'] .neon-composer--final .md-icon-button-host md-filled-icon-button.neon-composer-send--idle {
   --md-filled-icon-button-container-color: rgba(255, 255, 255, 0.1);
   --md-filled-icon-button-icon-color: rgba(255, 255, 255, 0.4);
   box-shadow: none;
@@ -470,9 +356,5 @@
     min-height: 0;
     gap: 1rem;
     padding: 1.25rem 0.75rem;
-  }
-
-  .chat-empty-headline {
-    font-size: clamp(1.35rem, 3.5vw, 2rem);
   }
 }

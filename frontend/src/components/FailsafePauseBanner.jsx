@@ -1,5 +1,6 @@
 import React from 'react';
 import { Play } from 'lucide-react';
+import '../neon/neon-material.register.js';
 
 /**
  * Inline banner shown when the orchestrator hits one of the two
@@ -18,10 +19,10 @@ export default function FailsafePauseBanner({ pause, onContinue }) {
         <div className="ccai-failsafe-title">{titleLabel}</div>
         <div className="ccai-failsafe-text">{pause.message}</div>
       </div>
-      <button className="btn-primary" onClick={() => onContinue(pause.reason)}>
-        <Play size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+      <md-filled-button type="button" onClick={() => onContinue(pause.reason)}>
+        <Play size={14} slot="icon" aria-hidden />
         Continue conversation ({incLabel})
-      </button>
+      </md-filled-button>
     </div>
   );
 }

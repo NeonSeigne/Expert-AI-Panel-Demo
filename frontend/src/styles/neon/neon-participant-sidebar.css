@@ -112,6 +112,9 @@
 .neon-sidebar-section__chevron {
   flex-shrink: 0;
   color: var(--md-sys-color-on-surface-variant);
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
   transition: transform 0.15s ease;
 }
 
@@ -387,7 +390,7 @@
   box-shadow: inset 3px 0 0 #2ec4f2;
 }
 
-.neon-design-root[data-theme='dark'] .neon-participant-row--human:not(.neon-participant-row--rail) {
+:root[data-theme='dark'] .neon-participant-row--human:not(.neon-participant-row--rail) {
   box-shadow: inset 3px 0 0 #5dd4f7;
 }
 
@@ -467,7 +470,7 @@
   background: rgba(46, 196, 242, 0.12);
 }
 
-.neon-design-root[data-theme='dark'] .neon-participant-row__human-chip {
+:root[data-theme='dark'] .neon-participant-row__human-chip {
   color: #5dd4f7;
   background: rgba(93, 212, 247, 0.12);
 }
@@ -507,7 +510,7 @@
   background: #ffe5e3;
 }
 
-.neon-design-root[data-theme='dark'] .neon-participant-row__remove-btn:hover {
+:root[data-theme='dark'] .neon-participant-row__remove-btn:hover {
   background: rgba(255, 59, 48, 0.15);
 }
 
@@ -542,44 +545,10 @@
   outline-offset: 1px;
 }
 
-/* ── Tablet/mobile: horizontal scroll strip ───────────────────── */
-
-@media (max-width: 900px) {
-  .neon-participant-sidebar__list {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-    gap: 0.5rem;
-    padding-bottom: 0.25rem;
-    scroll-snap-type: x proximity;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .neon-participant-sidebar--collapsed .neon-participant-sidebar__list {
-    flex-direction: row;
-  }
-
-  .neon-participant-row:not(.neon-participant-row--rail) {
-    flex: 0 0 min(240px, 78vw);
-    scroll-snap-align: start;
-    max-height: 100%;
-  }
-
-  .neon-participant-row--rail {
-    flex: 0 0 auto;
-    width: auto;
-  }
-
-  /* Horizontal participant strip is too short for a second list */
-  .neon-chat-history {
-    display: none;
-  }
-}
+/* Compact: temporary drawer uses standard vertical list */
 
 @media (max-width: 480px) {
   .neon-participant-row:not(.neon-participant-row--rail) {
-    flex: 0 0 min(210px, 85vw);
+    max-width: 100%;
   }
 }

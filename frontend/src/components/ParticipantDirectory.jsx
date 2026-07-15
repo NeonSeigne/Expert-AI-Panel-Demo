@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useParticipants } from '../context/ParticipantsContext';
 import ParticipantDirectoryCard from './ParticipantDirectoryCard';
 import { avatarColorForParticipant } from '../utils/participantAvatar';
+import '../neon/neon-material.register.js';
 
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(
@@ -400,15 +401,14 @@ export default function ParticipantDirectory({
             {stagedIds.length < 2 && embedded ? ' — select at least 2' : ''}
           </span>
           {showAutoPick && (
-            <button
+            <md-outlined-button
               type="button"
-              className="btn-secondary"
               onClick={handleAutoSelectFive}
-              disabled={!canAutoSelect}
+              disabled={!canAutoSelect || undefined}
               title="Randomly pick up to 5 participants from the catalog"
             >
               Select 5 automatically
-            </button>
+            </md-outlined-button>
           )}
         </div>
       )}

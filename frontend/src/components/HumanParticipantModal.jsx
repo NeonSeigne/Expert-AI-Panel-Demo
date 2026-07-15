@@ -1,12 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X } from 'lucide-react';
+import MdDialog from './md/MdDialog';
+import '../neon/neon-material.register.js';
 
 /**
  * Modal for adding (or editing) the in-the-loop human participant.
- *
- * The user enters a name and a freeform self-description (experience,
- * personality, etc.). On Approve the parent saves immediately and
- * generates the structured credential summary in the background.
  */
 export default function HumanParticipantModal({
   isOpen,
@@ -35,92 +32,74 @@ export default function HumanParticipantModal({
     });
   }, [name, profileText, initial, onSave]);
 
-  if (!isOpen) return null;
+  const canApprove = Boolean(name.trim() && profileText.trim());
 
   return (
-    <div className="ccai-credentials-overlay">
-      <div className="ccai-credentials-card ccai-human-modal-card">
-        <div className="ccai-credentials-header">
-          <div>
-            <h2>Add a Human Participant</h2>
-            <div className="ccai-credentials-subtitle">
-              Give yourself (or another human) a seat at the table.
-              The orchestrator will pause for your input when it&apos;s
-              your turn.
-            </div>
-          </div>
-          <div className="ccai-tab-spacer" />
-          <button className="modal-close" onClick={onClose}>&times;</button>
-        </div>
+    <MdDialog
+      open={Boolean(isOpen)}
+      onClose={onClose}
+      size="large"
+      headline="Add a Human Participant"
+      actions={(
+        <>
+          {onRemove && initial?.participant_id ? (
+            <md-text-button type="button" onClick={onRemove}>
+              Remove human
+            </md-text-button>
+          ) : null}
+          <span style={{ flex: 1 }} />
+          <md-text-button type="button" onClick={onClose}>
+            Cancel
+          </md-text-button>
+          <md-filled-button
+            type="button"
+            onClick={handleApprove}
+            disabled={!canApprove || undefined}
+          >
+            Approve
+          </md-filled-button>
+        </>
+      )}
+    >
+      <p className="md-typescale-body-medium" style={{ marginTop: 0 }}>
+        Give yourself (or another human) a seat at the table. The orchestrator
+        will pause for your input when it&apos;s your turn.
+      </p>
+      <div className="ccai-human-modal-body">
+        <label className="ccai-human-field">
+          <span className="ccai-human-field-label md-typescale-label-large">Name</span>
+          <md-outlined-text-field
+            label="Name"
+            value={name}
+            placeholder="e.g. Pat, Dr. Lopez, …"
+            style={{ width: '100%' }}
+            onInput={(e) => setName(e.target.value || '')}
+          />
+        </label>
 
-        <div className="ccai-human-modal-body">
-          <label className="ccai-human-field">
-            <span className="ccai-human-field-label">Name</span>
-            <input
-              type="text"
-              className="ccai-human-input"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Pat, Dr. Lopez, …"
-            />
-          </label>
-
-          <label className="ccai-human-field">
-            <span className="ccai-human-field-label">
-              Experience, personality, …
-            </span>
-            <textarea
-              className="ccai-human-summary"
-              value={profileText}
-              onChange={e => setProfileText(e.target.value)}
-              rows={8}
-              spellCheck
-              placeholder={
-                'Describe your background, how you tend to argue, '
-                + 'and anything the group should know about your perspective…'
-              }
-            />
-            <div className="ccai-human-summary-help">
-              The orchestrator will turn this into a credential summary
-              for the group — the same way it assesses each LLM
-              participant&apos;s persona prompt.
-            </div>
-          </label>
-        </div>
-
-        <div className="ccai-human-modal-footer">
-          <div>
-            {onRemove && initial?.participant_id && (
-              <button
-                type="button"
-                className="btn-sm btn-outline ccai-human-remove"
-                onClick={onRemove}
-                title="Remove the human participant from this session"
-              >
-                <X size={14} style={{ marginRight: 4 }} />
-                Remove human
-              </button>
-            )}
+        <label className="ccai-human-field">
+          <span className="ccai-human-field-label md-typescale-label-large">
+            Experience, personality, …
+          </span>
+          <md-outlined-text-field
+            label="Background"
+            type="textarea"
+            rows={8}
+            value={profileText}
+            style={{ width: '100%' }}
+            placeholder={
+              'Describe your background, how you tend to argue, '
+              + 'and anything the group should know about your perspective…'
+            }
+            onInput={(e) => setProfileText(e.target.value || '')}
+          />
+          <div className="ccai-human-summary-help md-typescale-body-small">
+            The orchestrator will turn this into a credential summary
+            for the group — the same way it assesses each LLM
+            participant&apos;s persona prompt.
           </div>
-          <div className="ccai-human-modal-footer-right">
-            <button
-              type="button"
-              className="btn-sm btn-outline"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={handleApprove}
-              disabled={!name.trim() || !profileText.trim()}
-            >
-              Approve
-            </button>
-          </div>
-        </div>
+        </label>
       </div>
-    </div>
+    </MdDialog>
   );
 }

@@ -1,25 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Check, Download } from 'lucide-react';
+import MdDialog from './md/MdDialog';
+import '../neon/neon-material.register.js';
 
 /**
- * Transparency modal that surfaces every prompt template the
- * orchestrator and participants use during a chat, grouped by phase.
- * Each item shows a humanized title, a 1-2 sentence purpose, the
- * runtime template variables the backend interpolates, and the full
- * template in a copy-able <pre> block. A "Download as .txt" button
- * in the header dumps the whole catalog in a flat human-readable form.
- *
- * Same shell pattern as ConversationLimitsModal / CredentialSummaryModal.
+ * Transparency modal for orchestrator / participant prompt templates.
  */
 export default function PromptCatalogModal({
   isOpen,
   catalog,
   onClose,
 }) {
-  // Note: hooks must run on every render, so this filename memo lives
-  // ABOVE the `if (!isOpen) return null` early return. The dependency
-  // on `isOpen` makes the filename timestamp regenerate each time the
-  // modal opens (i.e. each download gets a fresh stamp).
   const filename = useMemo(() => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -31,8 +22,6 @@ export default function PromptCatalogModal({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const handleDownload = () => {
     if (!catalog) return;
@@ -47,45 +36,46 @@ export default function PromptCatalogModal({
   };
 
   return (
-    <div className="ccai-credentials-overlay">
-      <div className="ccai-credentials-card">
-        <div className="ccai-credentials-header">
-          <div>
-            <h2>Current chat prompts</h2>
-            <div className="ccai-credentials-subtitle">
-              Every prompt template the orchestrator and participants
-              use during a chat, in conversation order. Variables in
-              {' '}<code>{'{braces}'}</code> are filled in at runtime.
-            </div>
-          </div>
-          <div className="ccai-tab-spacer" />
-          <button
-            className="btn-sm btn-outline"
+    <MdDialog
+      open={Boolean(isOpen)}
+      onClose={onClose}
+      size="large"
+      headline="Current chat prompts"
+      actions={(
+        <>
+          <md-outlined-button
+            type="button"
             onClick={handleDownload}
-            disabled={!catalog}
-            title="Download the full catalog as a .txt file"
+            disabled={!catalog || undefined}
           >
-            <Download size={14} style={{ marginRight: 4 }} />
+            <Download size={16} slot="icon" aria-hidden />
             Download as .txt
-          </button>
-          <button className="modal-close" onClick={onClose}>&times;</button>
-        </div>
-
-        <div className="ccai-credentials-body">
-          {!catalog && (
-            <div className="ccai-credentials-empty">Loading prompts...</div>
-          )}
-          {catalog && (catalog.groups || []).map((g) => (
-            <div key={g.title} className="ccai-prompt-group">
-              <div className="ccai-prompt-group-title">{g.title}</div>
-              {(g.items || []).map((item) => (
-                <PromptItem key={item.name} item={item} />
-              ))}
-            </div>
-          ))}
-        </div>
+          </md-outlined-button>
+          <md-filled-button type="button" onClick={onClose}>
+            Close
+          </md-filled-button>
+        </>
+      )}
+    >
+      <p className="md-typescale-body-medium" style={{ marginTop: 0 }}>
+        Every prompt template the orchestrator and participants use during a
+        chat, in conversation order. Variables in{' '}
+        <code>{'{braces}'}</code> are filled in at runtime.
+      </p>
+      <div className="ccai-credentials-body">
+        {!catalog && (
+          <div className="ccai-credentials-empty">Loading prompts...</div>
+        )}
+        {catalog && (catalog.groups || []).map((g) => (
+          <div key={g.title} className="ccai-prompt-group">
+            <div className="ccai-prompt-group-title">{g.title}</div>
+            {(g.items || []).map((item) => (
+              <PromptItem key={item.name} item={item} />
+            ))}
+          </div>
+        ))}
       </div>
-    </div>
+    </MdDialog>
   );
 }
 

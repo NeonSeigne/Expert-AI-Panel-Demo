@@ -5,7 +5,7 @@
   --neon-avatar-user-bg: #64748b;
 }
 
-.neon-design-root[data-theme='light'] {
+:root[data-theme='light'] {
   --neon-avatar-persona-bg: transparent;
   --neon-avatar-user-bg: #8e8e93;
 }

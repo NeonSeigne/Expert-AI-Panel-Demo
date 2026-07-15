@@ -8,6 +8,7 @@ import ConversationLimitsForm from '../ConversationLimitsForm';
 import PreferenceChoiceCards from './PreferenceChoiceCards';
 import MaterialSwitchRow from './material/MaterialSwitchRow';
 import MaterialSelectField from './material/MaterialSelectField';
+import '../../neon/neon-material.register.js';
 
 /** Material Symbols ligatures keyed by option value id. */
 const OPTION_ICONS = {
@@ -269,23 +270,23 @@ export default function PreferencesForm({
                     Max participants ({maxParticipants})
                   </div>
                   <div className="ccai-stepper-row preferences-stepper-row">
-                    <button
+                    <md-outlined-button
                       type="button"
-                      className="btn-sm btn-outline ccai-stepper-btn"
-                      disabled={maxParticipants <= 3}
+                      className="ccai-stepper-btn"
+                      disabled={maxParticipants <= 3 || undefined}
                       onClick={() => handleMaxParticipantsChange(Math.max(3, maxParticipants - 1))}
                     >
                       −
-                    </button>
+                    </md-outlined-button>
                     <div className="ccai-stepper-val">{maxParticipants}</div>
-                    <button
+                    <md-outlined-button
                       type="button"
-                      className="btn-sm btn-outline ccai-stepper-btn"
-                      disabled={maxParticipants >= 9}
+                      className="ccai-stepper-btn"
+                      disabled={maxParticipants >= 9 || undefined}
                       onClick={() => handleMaxParticipantsChange(Math.min(9, maxParticipants + 1))}
                     >
                       +
-                    </button>
+                    </md-outlined-button>
                     <span className="dev-panel-hint">3–9</span>
                   </div>
                 </div>

@@ -52,15 +52,14 @@ export default function ConversationLimitsForm({
     <div className={`onboarding-limits-form ${className}`.trim()}>
       {showResetAll && (
         <div className="onboarding-limits-form-toolbar">
-          <button
+          <md-outlined-button
             type="button"
-            className="btn-sm btn-outline"
             onClick={handleResetAll}
             title="Restore every knob to the server default"
           >
-            <RotateCcw size={14} style={{ marginRight: 4 }} />
+            <RotateCcw size={14} slot="icon" aria-hidden />
             Reset all
-          </button>
+          </md-outlined-button>
         </div>
       )}
       {grouped.map(({ group, fields }) => (

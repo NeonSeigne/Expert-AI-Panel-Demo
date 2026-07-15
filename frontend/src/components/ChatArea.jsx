@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoundSection from './RoundSection';
+import OrchestratorMessage from './OrchestratorMessage';
 import FailsafePauseBanner from './FailsafePauseBanner';
 import HumanInputSlot from './HumanInputSlot';
 import HumanTurnIndicator from './HumanTurnIndicator';
@@ -12,7 +13,7 @@ import NeonChatBubble from '../neon/NeonChatBubble';
 import { useSettings } from '../context/SettingsContext';
 import { useChatSession } from '../context/ChatSessionContext';
 import { useParticipants } from '../context/ParticipantsContext';
-import { groupMessagesIntoRounds } from '../utils/rounds';
+import { groupMessagesIntoRounds, isOrchestratorOnlyRound } from '../utils/rounds';
 import {
   findBallotMessage,
   findVoteDecisionFromMessages,
@@ -21,9 +22,38 @@ import {
 } from '../utils/voteUi';
 import '../neon/neon-material.register.js';
 
-import { BRAND_NEON_BLUE } from '../constants/brandColors';
+import { HUMAN_TONE } from '../constants/brandColors';
 
-const QUESTION_AVATAR_COLOR = BRAND_NEON_BLUE;
+/** Chair-only RR rounds: render orch/system copy without a RoundSection accordion. */
+function renderOrchestratorOnlyRound(round, globalMessageOffset = 0) {
+  return (
+    <div key={round.key} className="ccai-orch-only-round">
+      {round.messages.map((msg, i) => {
+        const messageIdx = globalMessageOffset + i;
+        if (msg.role === 'system') {
+          return (
+            <div
+              key={msg.message_id || `sys-inline-${round.key}-${i}`}
+              className="system-message md-chat-system"
+            >
+              {msg.text}
+            </div>
+          );
+        }
+        if (msg.role === 'orchestrator') {
+          return (
+            <OrchestratorMessage
+              key={msg.message_id || `orch-${round.key}-${i}`}
+              message={msg}
+              messageIdx={messageIdx}
+            />
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
 
 /**
  * Conversation feed as MD3 surfaces (rounds, bubbles, orch, status, reliability).
@@ -226,7 +256,7 @@ export default function ChatArea({ showCenteredComposer = false }) {
     >
       {showCenteredComposer && (
         <div className="chat-empty">
-          <h2 className="chat-empty-headline">Ask Anything....</h2>
+          <h2 className="chat-empty-headline md-typescale-headline-medium">Ask Anything....</h2>
           <WelcomeParticipantPills />
           <div className="chat-empty-composer">
             <ChatControls centered />
@@ -241,26 +271,32 @@ export default function ChatArea({ showCenteredComposer = false }) {
               senderName={questionSpeakerName}
               content={activeQuestion}
               markdown={false}
+              bubbleColor={HUMAN_TONE.bg}
+              accentColor={HUMAN_TONE.color}
               avatarKind="user"
               avatarLabel={questionSpeakerName.charAt(0).toUpperCase()}
-              avatarColor={QUESTION_AVATAR_COLOR}
+              avatarColor={HUMAN_TONE.color}
               rowClassName="ccai-question-bubble"
             />
           )}
           {completedRounds.map((round) => (
-            <RoundSection
-              key={round.key}
-              round={round}
-              expanded={isRoundExpanded(round)}
-              onToggle={handleToggleSection}
-              expandedMessages={expandedMessages}
-              onToggleMessage={handleToggleMessage}
-              speakerIdxFor={speakerIdxFor}
-              participantNameById={participantNameById}
-              showResponseTime={showResponseTime}
-              globalMessageOffset={roundOffsets[round.key] || 0}
-              liveRound={false}
-            />
+            isOrchestratorOnlyRound(round)
+              ? renderOrchestratorOnlyRound(round, roundOffsets[round.key] || 0)
+              : (
+                <RoundSection
+                  key={round.key}
+                  round={round}
+                  expanded={isRoundExpanded(round)}
+                  onToggle={handleToggleSection}
+                  expandedMessages={expandedMessages}
+                  onToggleMessage={handleToggleMessage}
+                  speakerIdxFor={speakerIdxFor}
+                  participantNameById={participantNameById}
+                  showResponseTime={showResponseTime}
+                  globalMessageOffset={roundOffsets[round.key] || 0}
+                  liveRound={false}
+                />
+              )
           ))}
           <VotePanel
             ballotMessage={ballotMessage}
@@ -306,13 +342,13 @@ export default function ChatArea({ showCenteredComposer = false }) {
         )}
         {!isRunning && hasContent && (
           <div className="chat-start-new-wrap">
-            <button
+            <md-filled-button
               type="button"
-              className="btn-primary chat-start-new-btn"
+              className="chat-start-new-btn"
               onClick={handleStartNewChat}
             >
               Start new chat
-            </button>
+            </md-filled-button>
           </div>
         )}
         <FailsafePauseBanner pause={pause} onContinue={onContinuePause} />
@@ -325,52 +361,55 @@ export default function ChatArea({ showCenteredComposer = false }) {
                 aria-live="polite"
                 aria-label="Live round"
               >
-                <RoundSection
-                  key={activeRound.key}
-                  round={activeRound}
-                  expanded
-                  onToggle={handleToggleSection}
-                  expandedMessages={expandedMessages}
-                  onToggleMessage={handleToggleMessage}
-                  speakerIdxFor={speakerIdxFor}
-                  participantNameById={participantNameById}
-                  showResponseTime={showResponseTime}
-                  globalMessageOffset={roundOffsets[activeRound.key] || 0}
-                  liveRound
-                />
+                {isOrchestratorOnlyRound(activeRound)
+                  ? renderOrchestratorOnlyRound(
+                    activeRound,
+                    roundOffsets[activeRound.key] || 0,
+                  )
+                  : (
+                    <RoundSection
+                      key={activeRound.key}
+                      round={activeRound}
+                      expanded
+                      onToggle={handleToggleSection}
+                      expandedMessages={expandedMessages}
+                      onToggleMessage={handleToggleMessage}
+                      speakerIdxFor={speakerIdxFor}
+                      participantNameById={participantNameById}
+                      showResponseTime={showResponseTime}
+                      globalMessageOffset={roundOffsets[activeRound.key] || 0}
+                      liveRound
+                    />
+                  )}
               </div>
             )}
             <div className="status-bar md-chat-status" role="status" aria-live="polite">
               <div className="md-chat-status-main">
-                {!awaitingHuman && (statusText || liveSummary) ? (
-                  <>
-                    <md-linear-progress indeterminate className="md-chat-status-progress" />
-                    <div className="status-bar-copy">
-                      <span className="status-bar-primary">
-                        {statusText || 'Conversation in progress…'}
-                      </span>
-                      {liveSummary?.secondary && (
-                        <span className="status-bar-secondary">{liveSummary.secondary}</span>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="status-bar-copy">
-                    <span className="status-bar-primary">
-                      {awaitingHuman ? 'Waiting for your response…' : 'Conversation in progress…'}
-                    </span>
-                  </div>
+                {!awaitingHuman && (
+                  <md-linear-progress indeterminate className="md-chat-status-progress" />
                 )}
+                <div className="status-bar-copy">
+                  <span className="status-bar-primary md-typescale-label-large">
+                    {awaitingHuman
+                      ? 'Waiting for your response…'
+                      : (liveSummary?.phaseLabel || statusText || 'Conversation in progress…')}
+                  </span>
+                  {!awaitingHuman && liveSummary?.speakersLine && (
+                    <span className="status-bar-secondary md-typescale-body-small">
+                      {liveSummary.speakersLine}
+                    </span>
+                  )}
+                </div>
               </div>
-              <button
+              <md-filled-icon-button
                 type="button"
-                className="btn-stop md-chat-status-stop"
+                className="md-chat-status-stop"
                 onClick={handleStop}
                 aria-label="Stop chat"
                 title="Stop chat"
               >
-                <span className="btn-stop__square" aria-hidden />
-              </button>
+                <md-icon>stop</md-icon>
+              </md-filled-icon-button>
             </div>
           </div>
         )}

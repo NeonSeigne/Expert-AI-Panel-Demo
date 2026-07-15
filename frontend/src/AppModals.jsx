@@ -68,13 +68,12 @@ export default function AppModals({
         onSave={handleSaveExpert}
         onDelete={handleDeleteExpert}
       />
-      {tableOpen && (
-        <ChatTableView
-          data={tableData}
-          onClose={() => setTableOpen(false)}
-          onExportCsv={handleDownloadCsvTable}
-        />
-      )}
+      <ChatTableView
+        isOpen={tableOpen}
+        data={tableData}
+        onClose={() => setTableOpen(false)}
+        onExportCsv={handleDownloadCsvTable}
+      />
       <CredentialSummaryModal
         isOpen={credentialsOpen}
         data={credentialsData}

@@ -3,11 +3,21 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_FILE = _PROJECT_ROOT / ".env"
+
+# Copied from .env.example historically; if left in project .env they
+# override real values from shared.env and the provider is dropped.
+_API_KEY_PLACEHOLDERS = frozenset({
+    "your-fireworks-api-key-here",
+    "your-together-api-key-here",
+    "your-openai-api-key-here",
+    "your-gemini-api-key-here",
+    "your-mistral-api-key-here",
+})
 
 
 def _shared_env_candidates() -> list[Path]:
@@ -37,6 +47,39 @@ def _settings_env_files() -> tuple[str, ...]:
     if _ENV_FILE.is_file():
         files.append(str(_ENV_FILE))
     return tuple(files)
+
+
+def _parse_dotenv(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, raw = stripped.partition("=")
+        val = raw.strip().strip('"').strip("'")
+        out[key.strip()] = val
+    return out
+
+
+def _is_placeholder_secret(value: str | None) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return True
+    if v in _API_KEY_PLACEHOLDERS:
+        return True
+    low = v.lower()
+    return low.startswith("your-") and low.endswith("-here")
+
+
+def _shared_secret(env_key: str) -> str:
+    shared = _resolve_shared_env()
+    if not shared:
+        return ""
+    return _parse_dotenv(shared).get(env_key, "")
 
 
 class Settings(BaseSettings):
@@ -72,7 +115,7 @@ class Settings(BaseSettings):
     orchestrator_model: str = "gpt-4o-mini"
     # Lightweight model for addressed-to / status classifiers. Falls back
     # to orchestrator_model when unset or unresolvable.
-    orchestrator_fast_model: str = "gemini-2.0-flash"
+    orchestrator_fast_model: str = "gemini-2.5-flash"
     speed_priority: bool = False
 
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
@@ -81,6 +124,27 @@ class Settings(BaseSettings):
         env_file=_settings_env_files(),
         env_file_encoding="utf-8",
     )
+
+    @field_validator(
+        "fireworks_api_key",
+        "together_api_key",
+        "openai_api_key",
+        "gemini_api_key",
+        "mistral_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _restore_shared_secrets_over_placeholders(
+        cls, value: object, info: ValidationInfo,
+    ) -> object:
+        """Project .env placeholders must not blank out shared.env keys."""
+        if not isinstance(value, str) or not _is_placeholder_secret(value):
+            return value
+        env_key = (info.field_name or "").upper()
+        restored = _shared_secret(env_key)
+        if restored and not _is_placeholder_secret(restored):
+            return restored
+        return ""
 
     @field_validator("neon_security_vllm_base_url", mode="before")
     @classmethod
@@ -109,10 +173,10 @@ class Settings(BaseSettings):
         providers: list[dict] = []
         fw_url = "https://api.fireworks.ai/inference/v1"
         fw_key = self.fireworks_api_key
-        fw_ok = fw_key and fw_key != "your-fireworks-api-key-here"
+        fw_ok = not _is_placeholder_secret(fw_key)
         tg_url = "https://api.together.xyz/v1"
         tg_key = self.together_api_key
-        tg_ok = tg_key and tg_key != "your-together-api-key-here"
+        tg_ok = not _is_placeholder_secret(tg_key)
 
         if fw_ok:
             providers.append({
@@ -137,7 +201,7 @@ class Settings(BaseSettings):
                 ],
             })
 
-        oai_ok = self.openai_api_key and self.openai_api_key != "your-openai-api-key-here"
+        oai_ok = not _is_placeholder_secret(self.openai_api_key)
         if oai_ok or fw_ok or tg_ok:
             oai_models = []
             if oai_ok:
@@ -174,7 +238,7 @@ class Settings(BaseSettings):
                     "models": oai_models,
                 })
 
-        mistral_ok = self.mistral_api_key and self.mistral_api_key != "your-mistral-api-key-here"
+        mistral_ok = not _is_placeholder_secret(self.mistral_api_key)
         if mistral_ok:
             providers.append({
                 "id": "mistral",
@@ -207,7 +271,7 @@ class Settings(BaseSettings):
                 ],
             })
 
-        if self.gemini_api_key and self.gemini_api_key != "your-gemini-api-key-here":
+        if not _is_placeholder_secret(self.gemini_api_key):
             providers.append({
                 "id": "gemini",
                 "name": "Google Gemini",

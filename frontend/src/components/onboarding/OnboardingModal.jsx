@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useParticipants } from '../../context/ParticipantsContext';
 import OnboardingStepWelcome from './OnboardingStepWelcome';
 import OnboardingStepIntro from './OnboardingStepIntro';
 import OnboardingStepParticipants from './OnboardingStepParticipants';
 import OnboardingStepHuman from './OnboardingStepHuman';
 import OnboardingStepPreferences from './OnboardingStepPreferences';
+import MdDialog from '../md/MdDialog';
+import '../../neon/neon-material.register.js';
 
 const STEP_COUNT = 5;
 
@@ -160,18 +161,17 @@ export default function OnboardingModal({ isOpen, onDismiss }) {
   useEffect(() => {
     if (!isOpen) return undefined;
     const onKeyDown = (e) => {
-      if (e.key === 'Escape') onDismiss?.();
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onDismiss, goNext, goPrev]);
-
-  if (!isOpen) return null;
+  }, [isOpen, goNext, goPrev]);
 
   const isLast = step === STEP_COUNT - 1;
   const isFirst = step === 0;
+  // Participants (2) and preferences (4) need more vertical room for grids/forms.
+  const isTallStep = step === 2 || step === 4;
 
   let stepContent = null;
   if (step === 0) stepContent = <OnboardingStepWelcome />;
@@ -199,109 +199,76 @@ export default function OnboardingModal({ isOpen, onDismiss }) {
   }
 
   return (
-    <div className="ccai-credentials-overlay onboarding-overlay" role="presentation">
-      <div className="onboarding-frame">
-        {!isFirst && (
-          <button
+    <MdDialog
+      open={Boolean(isOpen)}
+      onClose={onDismiss}
+      size="fullscreen-compact"
+      className={
+        'onboarding-md-dialog'
+        + (isTallStep ? ' onboarding-md-dialog--tall' : '')
+      }
+      actions={(
+        <>
+          <md-text-button type="button" onClick={onDismiss}>
+            Skip
+          </md-text-button>
+          <div className="onboarding-dots" role="tablist" aria-label="Onboarding steps">
+            {Array.from({ length: STEP_COUNT }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                aria-label={`Step ${i + 1}`}
+                aria-current={i === step ? 'step' : undefined}
+                className={
+                  'onboarding-dot'
+                  + (i === step ? ' onboarding-dot--active' : '')
+                  + (i < step ? ' onboarding-dot--done' : '')
+                }
+                onClick={() => {
+                  if (i < step) goToStep(i);
+                }}
+                disabled={i > step}
+              />
+            ))}
+          </div>
+          {!canGoNext && step === 2 && (
+            <p className="onboarding-validation-hint">Select at least 2 participants</p>
+          )}
+          {!canGoNext && step === 3 && includeSelf === true && (
+            <p className="onboarding-validation-hint">
+              Enter a name and profile to continue
+            </p>
+          )}
+          <span style={{ flex: 1 }} />
+          {!isFirst && (
+            <md-outlined-button type="button" onClick={goPrev}>
+              Back
+            </md-outlined-button>
+          )}
+          <md-filled-button
             type="button"
-            className="onboarding-arrow onboarding-arrow--prev"
-            onClick={goPrev}
-            aria-label="Previous step"
+            onClick={goNext}
+            disabled={!canGoNext || undefined}
           >
-            <ChevronLeft size={22} aria-hidden />
-          </button>
-        )}
-
+            {isLast ? 'Finish' : 'Next'}
+          </md-filled-button>
+        </>
+      )}
+    >
+      <div className="onboarding-card-body">
         <div
-          className="ccai-credentials-card onboarding-card"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="onboarding-title"
+          key={step}
+          className={
+            'onboarding-card-slide'
+            + (slideDir === 'back'
+              ? ' onboarding-card-slide--back'
+              : ' onboarding-card-slide--forward')
+          }
         >
-          <button
-            type="button"
-            className="onboarding-card-close"
-            onClick={onDismiss}
-            aria-label="Close"
-          >
-            <X size={18} aria-hidden />
-          </button>
-
-          <div className="onboarding-card-body">
-            <div
-              key={step}
-              className={
-                'onboarding-card-slide'
-                + (slideDir === 'back'
-                  ? ' onboarding-card-slide--back'
-                  : ' onboarding-card-slide--forward')
-              }
-            >
-              {stepContent}
-            </div>
-          </div>
-
-          <div className="onboarding-card-footer">
-            <div className="onboarding-dots" role="tablist" aria-label="Onboarding steps">
-              {Array.from({ length: STEP_COUNT }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  role="tab"
-                  aria-label={`Step ${i + 1}`}
-                  aria-current={i === step ? 'step' : undefined}
-                  className={
-                    'onboarding-dot'
-                    + (i === step ? ' onboarding-dot--active' : '')
-                    + (i < step ? ' onboarding-dot--done' : '')
-                  }
-                  onClick={() => {
-                    if (i < step) goToStep(i);
-                  }}
-                  disabled={i > step}
-                />
-              ))}
-            </div>
-            {!canGoNext && step === 2 && (
-              <p className="onboarding-validation-hint">Select at least 2 participants</p>
-            )}
-            {!canGoNext && step === 3 && includeSelf === true && (
-              <p className="onboarding-validation-hint">
-                Enter a name and profile to continue
-              </p>
-            )}
-          </div>
+          {stepContent}
         </div>
-
-        {!isLast ? (
-          <button
-            type="button"
-            className="onboarding-arrow onboarding-arrow--next"
-            onClick={goNext}
-            disabled={!canGoNext}
-            aria-label="Next step"
-          >
-            <ChevronRight size={22} aria-hidden />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="onboarding-finish-btn onboarding-finish-btn--arrow"
-            onClick={goNext}
-            aria-label="Finish and start"
-          >
-            <Check size={22} strokeWidth={2.5} aria-hidden />
-          </button>
-        )}
       </div>
-
-      <button
-        type="button"
-        className="onboarding-skip"
-        onClick={onDismiss}
-      >
-        Skip
-      </button>
-    </div>
+    </MdDialog>
   );
 }

@@ -97,6 +97,19 @@ export function groupMessagesIntoRounds(messages) {
 }
 
 /**
+ * Robert's Rules chair-only rounds (opening, motion, call the question)
+ * have no participant replies — show orchestrator text without an accordion.
+ */
+export function isOrchestratorOnlyRound(round) {
+  return (
+    typeof round?.phase === 'string'
+    && round.phase.startsWith('rr_')
+    && round.participantCount === 0
+    && (round.messages || []).some((m) => m.role === 'orchestrator')
+  );
+}
+
+/**
  * Ordered speaker reply counts for a round (first-seen order).
  * @returns {Array<{ speaker_id: string, name: string, count: number }>}
  */

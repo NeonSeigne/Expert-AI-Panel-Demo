@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Table2 } from 'lucide-react';
 import DevMenu from './DevMenu';
 import DemoAboutModal from './DemoAboutModal';
 import NeonDesignRoot from './NeonDesignRoot';
@@ -12,23 +11,44 @@ function TableViewButton() {
     <md-outlined-button
       className="header-table-view-btn header-actions-desktop"
       onClick={handleShowTableView}
-      disabled={!hasChat}
+      disabled={!hasChat || undefined}
       title={hasChat
         ? 'Open the conversation summary table'
         : 'Start a chat to view the summary table'}
     >
-      <Table2 size={16} strokeWidth={2} slot="icon" aria-hidden />
+      <md-icon slot="icon">table_chart</md-icon>
       Table View
     </md-outlined-button>
   );
 }
 
+function TableViewIconButton() {
+  const { hasChat, handleShowTableView } = useChatSession();
+  return (
+    <md-icon-button
+      className="header-icon-btn header-actions-mobile"
+      onClick={handleShowTableView}
+      disabled={!hasChat || undefined}
+      aria-label="Table view"
+      title={hasChat
+        ? 'Open the conversation summary table'
+        : 'Start a chat to view the summary table'}
+    >
+      <md-icon>table_chart</md-icon>
+    </md-icon-button>
+  );
+}
+
 export default function Header({
-  sidebarCollapsed = false,
+  navExpanded = true,
+  compactNav = false,
   onToggleSidebar,
   onOpenTutorial,
 }) {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const menuLabel = compactNav
+    ? (navExpanded ? 'Close navigation' : 'Open navigation')
+    : (navExpanded ? 'Collapse sidebar' : 'Expand sidebar');
 
   return (
     <header className="app-header">
@@ -36,18 +56,18 @@ export default function Header({
         <div className="header-left">
           <md-icon-button
             className="header-icon-btn header-menu-btn"
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!sidebarCollapsed}
+            aria-label={menuLabel}
+            title={menuLabel}
+            aria-expanded={navExpanded}
             aria-controls="participant-sidebar"
             onClick={onToggleSidebar}
           >
-            <md-icon>menu</md-icon>
+            <md-icon>{compactNav && navExpanded ? 'close' : 'menu'}</md-icon>
           </md-icon-button>
           <a href="https://www.neon.ai/" target="_blank" rel="noopener noreferrer" className="header-brand-link">
             <img src="/neon-logo.png" alt="Neon.ai" className="app-logo" />
           </a>
-          <h1 className="app-title">Collaborative Conversational Artificial Intelligence</h1>
+          <h1 className="app-title md-typescale-title-large">CCAI Demo</h1>
         </div>
         <div className="header-right">
           <md-text-button
@@ -59,6 +79,7 @@ export default function Header({
             Tutorial
           </md-text-button>
           <TableViewButton />
+          <TableViewIconButton />
           <md-icon-button
             className="header-icon-btn"
             aria-label="About this demo"

@@ -1,4 +1,6 @@
 import React from 'react';
+import MdDialog from './md/MdDialog';
+import '../neon/neon-material.register.js';
 
 function toScore(value) {
   const n = typeof value === 'number' ? value : parseFloat(value);
@@ -21,23 +23,25 @@ function statusLabel(row) {
  * Driven by the GET /api/chat/{id}/table endpoint - so this component
  * just renders the JSON response.
  */
-export default function ChatTableView({ data, onClose, onExportCsv }) {
-  if (!data) return null;
+export default function ChatTableView({ isOpen, data, onClose, onExportCsv }) {
   return (
-    <div className="ccai-table-overlay">
-      <div className="ccai-table-card">
-        <div className="ccai-table-header">
-          <h2>Conversation Summary Table</h2>
-          <div className="ccai-tab-spacer" />
-          <button
-            className="btn-sm btn-outline"
-            onClick={onExportCsv}
-            title="Export this table as CSV"
-          >
+    <MdDialog
+      open={Boolean(isOpen)}
+      onClose={onClose}
+      size="fullscreen-compact"
+      headline="Conversation Summary Table"
+      actions={(
+        <>
+          <md-outlined-button type="button" onClick={onExportCsv}>
             Export CSV
-          </button>
-          <button className="modal-close" onClick={onClose}>&times;</button>
-        </div>
+          </md-outlined-button>
+          <md-filled-button type="button" onClick={onClose}>
+            Close
+          </md-filled-button>
+        </>
+      )}
+    >
+      {data ? (
         <div className="ccai-table-body">
           <div className="ccai-table-question">
             <strong>Question:</strong>
@@ -108,7 +112,9 @@ export default function ChatTableView({ data, onClose, onExportCsv }) {
             </table>
           </div>
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="ccai-credentials-empty">Loading table...</div>
+      )}
+    </MdDialog>
   );
 }

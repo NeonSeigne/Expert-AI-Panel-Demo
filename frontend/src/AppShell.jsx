@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Header from './components/Header';
 import ParticipantSidebar from './components/ParticipantSidebar';
 import ChatArea from './components/ChatArea';
 import AppModals from './AppModals';
+import MdSnackbar from './components/md/MdSnackbar';
 import { useChatSession } from './context/ChatSessionContext';
 
 const SIDEBAR_COLLAPSED_KEY = 'ccai-sidebar-collapsed';
@@ -11,6 +12,7 @@ const TUTORIAL_SEEN_KEY = 'ccai-tutorial-seen';
 const SIDEBAR_DEFAULT_WIDTH = 272;
 const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 480;
+const COMPACT_MQ = '(max-width: 900px)';
 
 function readSidebarCollapsed() {
   try {
@@ -52,17 +54,41 @@ function markTutorialSeen() {
   }
 }
 
+function useCompactNav() {
+  const [compact, setCompact] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia(COMPACT_MQ).matches : false
+  ));
+  useEffect(() => {
+    const mq = window.matchMedia(COMPACT_MQ);
+    const onChange = () => setCompact(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return compact;
+}
+
 export default function AppShell() {
-  const { isRunning, hasContent } = useChatSession();
+  const { isRunning, hasContent, snackbar, clearSnackbar } = useChatSession();
   const showCenteredComposer = !isRunning && !hasContent;
+  const compactNav = useCompactNav();
   const [autoTutorialPending, setAutoTutorialPending] = useState(() => !hasSeenTutorial());
   const [tutorialForced, setTutorialForced] = useState(false);
   const showOnboarding = tutorialForced
     || (autoTutorialPending && !isRunning && !hasContent);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [navOpen, setNavOpen] = useState(false);
+
+  useEffect(() => {
+    if (!compactNav) setNavOpen(false);
+  }, [compactNav]);
 
   const handleToggleSidebar = useCallback(() => {
+    if (compactNav) {
+      setNavOpen((prev) => !prev);
+      return;
+    }
     setSidebarCollapsed((prev) => {
       const next = !prev;
       try {
@@ -72,6 +98,10 @@ export default function AppShell() {
       }
       return next;
     });
+  }, [compactNav]);
+
+  const handleCloseNav = useCallback(() => {
+    setNavOpen(false);
   }, []);
 
   const handleSidebarWidthChange = useCallback((nextWidth) => {
@@ -94,16 +124,30 @@ export default function AppShell() {
     setTutorialForced(true);
   }, []);
 
+  const navExpanded = compactNav ? navOpen : !sidebarCollapsed;
+
   return (
     <div className="app flex h-full min-h-[100dvh] w-full flex-col overflow-hidden">
       <Header
-        sidebarCollapsed={sidebarCollapsed}
+        navExpanded={navExpanded}
+        compactNav={compactNav}
         onToggleSidebar={handleToggleSidebar}
         onOpenTutorial={handleOpenTutorial}
       />
       <main className="app-main flex min-h-0 w-full flex-1 overflow-hidden">
+        {compactNav && navOpen && (
+          <button
+            type="button"
+            className="nav-drawer-scrim"
+            aria-label="Close navigation"
+            onClick={handleCloseNav}
+          />
+        )}
         <ParticipantSidebar
-          collapsed={sidebarCollapsed}
+          collapsed={!compactNav && sidebarCollapsed}
+          temporary={compactNav}
+          temporaryOpen={navOpen}
+          onTemporaryClose={handleCloseNav}
           width={sidebarWidth}
           onWidthChange={handleSidebarWidthChange}
           minWidth={SIDEBAR_MIN_WIDTH}
@@ -113,20 +157,35 @@ export default function AppShell() {
           <ChatArea showCenteredComposer={showCenteredComposer} />
         </div>
       </main>
-      <footer className="app-footer w-full shrink-0 border-t border-border-primary px-6 py-2 text-center text-xs text-text-muted">
-        Copyright Neon.ai. All rights reserved.{' '}
-        <a
-          href="https://www.neon.ai/contact"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent-primary hover:underline"
-        >
-          Patents and licensing
-        </a>
+      <footer className="app-footer md-typescale-label-small">
+        <span className="app-footer-desktop">
+          Copyright Neon.ai. All rights reserved.{' '}
+          <a
+            href="https://www.neon.ai/contact"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Patents and licensing
+          </a>
+        </span>
+        <span className="app-footer-compact">
+          <a
+            href="https://www.neon.ai/contact"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Neon.ai · Patents &amp; licensing
+          </a>
+        </span>
       </footer>
       <AppModals
         showOnboarding={showOnboarding}
         onDismissOnboarding={handleDismissOnboarding}
+      />
+      <MdSnackbar
+        open={Boolean(snackbar?.message)}
+        message={snackbar?.message}
+        onClose={clearSnackbar}
       />
     </div>
   );

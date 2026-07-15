@@ -13,7 +13,7 @@ LOG = logging.getLogger(__name__)
 RACE_DELAY_SECONDS = 5.0
 
 _FALLBACK_CHAIN = [
-    "gemini-2.0-flash",
+    "gemini-2.5-flash",
     "gpt-4.1-mini",
 ]
 

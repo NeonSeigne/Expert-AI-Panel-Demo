@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { SkipForward } from 'lucide-react';
 import NeonDesignRoot from './NeonDesignRoot';
 import NeonComposer from '../neon/NeonComposer';
+import '../neon/neon-material.register.js';
 
 /**
  * Inline input slot rendered in the chat stream when it's the human
@@ -77,16 +78,16 @@ export default function HumanInputSlot({
               <div className="ccai-human-slot-toolbar">
                 <span className="ccai-human-slot-hint">Ctrl+Enter to submit</span>
                 {allowSkip && (
-                  <button
+                  <md-outlined-button
                     type="button"
-                    className="btn-sm btn-outline ccai-human-slot-skip"
+                    className="ccai-human-slot-skip"
                     onClick={() => onSkip?.()}
-                    disabled={sending}
+                    disabled={sending || undefined}
                     title="Skip my turn this round"
                   >
-                    <SkipForward size={14} style={{ marginRight: 4 }} />
+                    <SkipForward size={14} slot="icon" aria-hidden />
                     Skip my turn
-                  </button>
+                  </md-outlined-button>
                 )}
               </div>
             }

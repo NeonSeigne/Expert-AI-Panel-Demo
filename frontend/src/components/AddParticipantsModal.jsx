@@ -5,6 +5,8 @@ import ParticipantDirectory, {
   AUTO_PICK_COUNT,
   pickRandomParticipantIds,
 } from './ParticipantDirectory';
+import MdDialog from './md/MdDialog';
+import '../neon/neon-material.register.js';
 
 export default function AddParticipantsModal() {
   const { maxParticipants } = useSettings();
@@ -47,15 +49,6 @@ export default function AddParticipantsModal() {
     setSessionKey((k) => k + 1);
   }, [participantDirectoryOpen, selectedIds]);
 
-  useEffect(() => {
-    if (!participantDirectoryOpen) return undefined;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') closeParticipantDirectory();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [participantDirectoryOpen, closeParticipantDirectory]);
-
   const selectionChanged = useMemo(() => {
     if (stagedIds.length !== selectedIds.length) return true;
     const sortedStaged = [...stagedIds].sort();
@@ -80,75 +73,44 @@ export default function AddParticipantsModal() {
 
   const canAutoSelect = allCatalog.length > 0 && selectionCap > 0;
 
-  if (!participantDirectoryOpen) return null;
-
   return (
-    <div
-      className="participant-directory-overlay"
-      role="presentation"
-      onClick={closeParticipantDirectory}
-    >
-      <div
-        className="participant-directory-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="participant-directory-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="participant-directory-header">
-          <h2 id="participant-directory-title">Add Participants</h2>
-          <div className="ccai-tab-spacer" />
-          <button
-            type="button"
-            className="modal-close participant-directory-close"
-            onClick={closeParticipantDirectory}
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </header>
-
-        <ParticipantDirectory
-          key={sessionKey}
-          stagedIds={stagedIds}
-          onStagedIdsChange={setStagedIds}
-          focusParticipantId={directoryFocusParticipantId}
-          autoFocusSearch={!directoryFocusParticipantId}
-          onCreateExpert={handleCreateExpert}
-        />
-
-        <footer className="participant-directory-footer">
+    <MdDialog
+      open={Boolean(participantDirectoryOpen)}
+      onClose={closeParticipantDirectory}
+      size="fullscreen-compact"
+      headline="Add Participants"
+      actions={(
+        <>
           <span className="participant-directory-footer-summary">
             {stagedIds.length} of {selectionCap} selected
             {selectionChanged ? '' : ' (unchanged)'}
           </span>
-          <div className="participant-directory-footer-actions">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={closeParticipantDirectory}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={handleAutoSelectFive}
-              disabled={!canAutoSelect}
-              title="Randomly pick up to 5 participants from the catalog"
-            >
-              Select 5 automatically
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handleConfirm}
-            >
-              Confirm Selection
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+          <span style={{ flex: 1 }} />
+          <md-text-button type="button" onClick={closeParticipantDirectory}>
+            Cancel
+          </md-text-button>
+          <md-outlined-button
+            type="button"
+            onClick={handleAutoSelectFive}
+            disabled={!canAutoSelect || undefined}
+            title="Randomly pick up to 5 participants from the catalog"
+          >
+            Select 5 automatically
+          </md-outlined-button>
+          <md-filled-button type="button" onClick={handleConfirm}>
+            Confirm Selection
+          </md-filled-button>
+        </>
+      )}
+    >
+      <ParticipantDirectory
+        key={sessionKey}
+        stagedIds={stagedIds}
+        onStagedIdsChange={setStagedIds}
+        focusParticipantId={directoryFocusParticipantId}
+        autoFocusSearch={!directoryFocusParticipantId}
+        onCreateExpert={handleCreateExpert}
+      />
+    </MdDialog>
   );
 }

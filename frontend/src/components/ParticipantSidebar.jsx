@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Pencil, Plus, Users } from 'lucide-react';
 import '../neon/neon-material.register.js';
 import { useSettings } from '../context/SettingsContext';
 import { useParticipants } from '../context/ParticipantsContext';
@@ -10,6 +9,9 @@ import ChatHistoryList from './ChatHistoryList';
 
 export default function ParticipantSidebar({
   collapsed = false,
+  temporary = false,
+  temporaryOpen = false,
+  onTemporaryClose,
   width = 272,
   onWidthChange,
   minWidth = 200,
@@ -39,9 +41,12 @@ export default function ParticipantSidebar({
   const [resizing, setResizing] = useState(false);
   const dragRef = useRef(null);
 
-  const showAutoPlaceholder = !collapsed && autoSelectMode && participants.length === 0;
-  const showEmptyHelp = !collapsed && !showAutoPlaceholder && participants.length === 0;
-  const showHistory = !collapsed && Array.isArray(chatHistory) && chatHistory.length > 0;
+  const railMode = !temporary && collapsed;
+  const showExpanded = temporary || !collapsed;
+
+  const showAutoPlaceholder = showExpanded && autoSelectMode && participants.length === 0;
+  const showEmptyHelp = showExpanded && !showAutoPlaceholder && participants.length === 0;
+  const showHistory = showExpanded && Array.isArray(chatHistory) && chatHistory.length > 0;
 
   const enabledCount = useMemo(
     () => participants.filter((p) => enabledMap[p.participant_id] !== false).length,
@@ -54,10 +59,11 @@ export default function ParticipantSidebar({
       return;
     }
     openParticipantDirectory(participant.participant_id);
-  }, [handleOpenHumanModal, openParticipantDirectory]);
+    if (temporary) onTemporaryClose?.();
+  }, [handleOpenHumanModal, openParticipantDirectory, temporary, onTemporaryClose]);
 
   const handleResizePointerDown = useCallback((event) => {
-    if (collapsed || typeof onWidthChange !== 'function') return;
+    if (temporary || collapsed || typeof onWidthChange !== 'function') return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = {
@@ -66,7 +72,7 @@ export default function ParticipantSidebar({
       startWidth: width,
     };
     setResizing(true);
-  }, [collapsed, onWidthChange, width]);
+  }, [temporary, collapsed, onWidthChange, width]);
 
   useEffect(() => {
     if (!resizing) return undefined;
@@ -101,7 +107,7 @@ export default function ParticipantSidebar({
     };
   }, [resizing, minWidth, maxWidth, onWidthChange]);
 
-  const widthStyle = collapsed
+  const widthStyle = temporary || railMode
     ? undefined
     : { width: `${width}px`, minWidth: `${width}px` };
 
@@ -110,25 +116,30 @@ export default function ParticipantSidebar({
       id="participant-sidebar"
       className={[
         'sidebar',
-        collapsed ? 'sidebar--collapsed' : '',
+        railMode ? 'sidebar--collapsed' : '',
         resizing ? 'sidebar--resizing' : '',
+        temporary ? 'sidebar--temporary' : '',
+        temporary && temporaryOpen ? 'sidebar--temporary-open' : '',
       ].filter(Boolean).join(' ')}
       style={widthStyle}
       aria-label="Participants"
-      aria-expanded={!collapsed}
+      aria-hidden={temporary && !temporaryOpen ? true : undefined}
     >
-      <NeonDesignRoot className={`neon-participant-sidebar${collapsed ? ' neon-participant-sidebar--collapsed' : ''}`}>
-        {!collapsed && (
+      <NeonDesignRoot className={`neon-participant-sidebar${railMode ? ' neon-participant-sidebar--collapsed' : ''}`}>
+        {showExpanded && (
           <md-filled-tonal-button
             className="neon-participant-sidebar__create-btn"
-            onClick={handleStartNewChat}
+            onClick={() => {
+              handleStartNewChat();
+              if (temporary) onTemporaryClose?.();
+            }}
           >
-            <Pencil size={18} strokeWidth={2.5} slot="icon" aria-hidden />
+            <md-icon slot="icon">edit</md-icon>
             New Chat
           </md-filled-tonal-button>
         )}
 
-        {collapsed && (
+        {railMode && (
           <button
             type="button"
             className="neon-participant-sidebar__add-btn neon-participant-sidebar__add-btn--rail"
@@ -136,11 +147,11 @@ export default function ParticipantSidebar({
             aria-label="New chat"
             title="New Chat"
           >
-            <Pencil size={18} strokeWidth={2.5} aria-hidden />
+            <md-icon>edit</md-icon>
           </button>
         )}
 
-        {!collapsed ? (
+        {showExpanded ? (
           <section className="neon-sidebar-section" aria-label="Participants">
             <button
               type="button"
@@ -149,19 +160,18 @@ export default function ParticipantSidebar({
               aria-expanded={participantsOpen}
             >
               <span className="neon-sidebar-section__heading">
-                <Users size={16} strokeWidth={2.5} className="neon-sidebar-section__icon" aria-hidden />
-                <span className="neon-sidebar-section__title">Participants</span>
+                <md-icon className="neon-sidebar-section__icon">group</md-icon>
+                <span className="neon-sidebar-section__title md-typescale-title-small">Participants</span>
               </span>
               <span className="neon-sidebar-section__meta">
                 <span className="neon-sidebar-section__count" aria-label="Enabled participants">
                   {enabledCount}/{maxParticipants}
                 </span>
-                <ChevronRight
-                  size={16}
-                  strokeWidth={2.5}
+                <md-icon
                   className={`neon-sidebar-section__chevron${participantsOpen ? ' is-open' : ''}`}
-                  aria-hidden
-                />
+                >
+                  chevron_right
+                </md-icon>
               </span>
             </button>
 
@@ -206,9 +216,12 @@ export default function ParticipantSidebar({
                 </div>
                 <md-text-button
                   className="neon-participant-sidebar__add-participant-btn"
-                  onClick={() => openParticipantDirectory()}
+                  onClick={() => {
+                    openParticipantDirectory();
+                    if (temporary) onTemporaryClose?.();
+                  }}
                 >
-                  <Plus size={18} strokeWidth={2.5} slot="icon" aria-hidden />
+                  <md-icon slot="icon">person_add</md-icon>
                   Add Participant
                 </md-text-button>
               </div>
@@ -242,7 +255,7 @@ export default function ParticipantSidebar({
               aria-label="Add participant"
               title="Add Participant"
             >
-              <Plus size={18} strokeWidth={2.5} aria-hidden />
+              <md-icon>person_add</md-icon>
             </button>
           </>
         )}
@@ -253,13 +266,16 @@ export default function ParticipantSidebar({
             activeHistoryId={activeHistoryId}
             open={chatsOpen}
             onToggle={() => setChatsOpen((v) => !v)}
-            onSelect={loadHistoryChat}
+            onSelect={(id) => {
+              loadHistoryChat(id);
+              if (temporary) onTemporaryClose?.();
+            }}
             onDelete={deleteHistoryChat}
           />
         )}
       </NeonDesignRoot>
 
-      {!collapsed && (
+      {!temporary && !collapsed && (
         <div
           className="sidebar-resize-handle"
           role="separator"

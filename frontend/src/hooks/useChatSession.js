@@ -77,6 +77,7 @@ export default function useChatSession() {
   /** Offline wrap-up payload (from finished snapshot or live table fetch). */
   const [savedDecision, setSavedDecision] = useState(null);
   const [savedRows, setSavedRows] = useState(null);
+  const [snackbar, setSnackbar] = useState(null);
   const abortRef = useRef(null);
   const historyEntryIdRef = useRef(null);
   const messagesRef = useRef(messages);
@@ -339,7 +340,11 @@ export default function useChatSession() {
     try {
       const r = await exportChat(sessionId, 'txt');
       downloadFile(r.filename, r.content);
-    } catch (err) { console.error('Export failed:', err); }
+      setSnackbar({ message: 'Chat downloaded as .txt' });
+    } catch (err) {
+      console.error('Export failed:', err);
+      setSnackbar({ message: 'Download failed. Try again.' });
+    }
   }, [sessionId, downloadFile]);
 
   const handleDownloadMd = useCallback(async () => {
@@ -347,7 +352,11 @@ export default function useChatSession() {
     try {
       const r = await exportChat(sessionId, 'md');
       downloadFile(r.filename, r.content);
-    } catch (err) { console.error('Export failed:', err); }
+      setSnackbar({ message: 'Chat downloaded as .md' });
+    } catch (err) {
+      console.error('Export failed:', err);
+      setSnackbar({ message: 'Download failed. Try again.' });
+    }
   }, [sessionId, downloadFile]);
 
   const handleDownloadCsvTable = useCallback(async () => {
@@ -355,7 +364,11 @@ export default function useChatSession() {
     try {
       const r = await exportChat(sessionId, 'csv-table');
       downloadFile(r.filename, r.content, 'text/csv;charset=utf-8');
-    } catch (err) { console.error('CSV export failed:', err); }
+      setSnackbar({ message: 'Summary table downloaded as .csv' });
+    } catch (err) {
+      console.error('CSV export failed:', err);
+      setSnackbar({ message: 'CSV download failed. Try again.' });
+    }
   }, [sessionId, downloadFile]);
 
   const handleDownloadApiLog = useCallback(async () => {
@@ -363,7 +376,11 @@ export default function useChatSession() {
     try {
       const r = await exportApiLog(sessionId);
       downloadFile('api_log.json', JSON.stringify(r, null, 2), 'application/json');
-    } catch (err) { console.error('API log export failed:', err); }
+      setSnackbar({ message: 'API log downloaded' });
+    } catch (err) {
+      console.error('API log export failed:', err);
+      setSnackbar({ message: 'API log download failed. Try again.' });
+    }
   }, [sessionId, downloadFile]);
 
   const handleShowTableView = useCallback(async () => {
@@ -888,5 +905,7 @@ export default function useChatSession() {
     handleShowCredentials,
     handleRefreshCredentials,
     handleEditHumanCredential,
+    snackbar,
+    clearSnackbar: () => setSnackbar(null),
   };
 }

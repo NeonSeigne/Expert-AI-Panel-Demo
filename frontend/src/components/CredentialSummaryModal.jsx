@@ -1,19 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Download, Edit2, Check, X, User } from 'lucide-react';
+import MdDialog from './md/MdDialog';
+import '../neon/neon-material.register.js';
 
 /**
- * Read-only modal that surfaces the orchestrator-generated Credential
- * Summary - the per-participant assessment of expertise, debating
- * style, credibility on this question, and biases to watch.
- *
- * Built concurrently during Phase 1 (as each initial opinion lands).
- * Rebuilt only if a participant's backing LLM model changes. The modal
- * pulls a fresh snapshot via GET
- * /api/chat/{id}/credentials each time it's opened, so the user sees
- * the latest version regardless of when they peek.
- *
- * Layout mirrors ChatTableView (overlay + card + close button) for
- * consistency with the existing transparency surfaces.
+ * Credential Summary modal — orchestrator assessment of each participant.
  */
 export default function CredentialSummaryModal({
   isOpen,
@@ -23,9 +14,6 @@ export default function CredentialSummaryModal({
   humanParticipantId,
   onEditHumanCredential,
 }) {
-  // Hooks must run on every render, so the filename memo lives ABOVE
-  // the early return. The dependency on `isOpen` regenerates the
-  // timestamp each time the modal opens (matches PromptCatalogModal).
   const filename = useMemo(() => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -37,8 +25,6 @@ export default function CredentialSummaryModal({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const credentials = (data && data.credentials) || [];
   const question = data?.question || '';
@@ -56,68 +42,64 @@ export default function CredentialSummaryModal({
   };
 
   return (
-    <div className="ccai-credentials-overlay">
-      <div className="ccai-credentials-card">
-        <div className="ccai-credentials-header">
-          <div>
-            <h2>Credential Summary</h2>
-            <div className="ccai-credentials-subtitle">
-              The orchestrator's neutral assessment of each participant.
-              Built during Phase 1; updated only if a participant&apos;s model changes.
-            </div>
-          </div>
-          <div className="ccai-tab-spacer" />
-          {onRefresh && (
-            <button
-              className="btn-sm btn-outline"
-              onClick={onRefresh}
-              title="Re-fetch from the server"
-            >
+    <MdDialog
+      open={Boolean(isOpen)}
+      onClose={onClose}
+      size="large"
+      headline="Credential Summary"
+      actions={(
+        <>
+          {onRefresh ? (
+            <md-text-button type="button" onClick={onRefresh}>
               Refresh
-            </button>
-          )}
-          <button
-            className="btn-sm btn-outline"
+            </md-text-button>
+          ) : null}
+          <md-outlined-button
+            type="button"
             onClick={handleDownload}
-            disabled={credentials.length === 0}
-            title="Download the credential summary as a .txt file"
+            disabled={credentials.length === 0 || undefined}
           >
-            <Download size={14} style={{ marginRight: 4 }} />
+            <Download size={16} slot="icon" aria-hidden />
             Download as .txt
-          </button>
-          <button className="modal-close" onClick={onClose}>&times;</button>
+          </md-outlined-button>
+          <md-filled-button type="button" onClick={onClose}>
+            Close
+          </md-filled-button>
+        </>
+      )}
+    >
+      <p className="md-typescale-body-medium" style={{ marginTop: 0 }}>
+        The orchestrator&apos;s neutral assessment of each participant.
+        Built during Phase 1; updated only if a participant&apos;s model changes.
+      </p>
+      {question && (
+        <div className="ccai-credentials-question">
+          <strong>Question:</strong>
+          <div>{question}</div>
         </div>
-
-        {question && (
-          <div className="ccai-credentials-question">
-            <strong>Question:</strong>
-            <div>{question}</div>
+      )}
+      <div className="ccai-credentials-body">
+        {credentials.length === 0 ? (
+          <div className="ccai-credentials-empty">
+            No Credential Summary has been generated yet. The
+            orchestrator builds it after Phase 1 (initial opinions).
           </div>
+        ) : (
+          credentials.map((c) => {
+            const isHuman = !!humanParticipantId
+              && c.participant_id === humanParticipantId;
+            return (
+              <CredentialCard
+                key={c.participant_id}
+                cred={c}
+                isHuman={isHuman}
+                onEdit={isHuman ? onEditHumanCredential : null}
+              />
+            );
+          })
         )}
-
-        <div className="ccai-credentials-body">
-          {credentials.length === 0 ? (
-            <div className="ccai-credentials-empty">
-              No Credential Summary has been generated yet. The
-              orchestrator builds it after Phase 1 (initial opinions).
-            </div>
-          ) : (
-            credentials.map((c) => {
-              const isHuman = !!humanParticipantId
-                && c.participant_id === humanParticipantId;
-              return (
-                <CredentialCard
-                  key={c.participant_id}
-                  cred={c}
-                  isHuman={isHuman}
-                  onEdit={isHuman ? onEditHumanCredential : null}
-                />
-              );
-            })
-          )}
-        </div>
       </div>
-    </div>
+    </MdDialog>
   );
 }
 
@@ -187,25 +169,23 @@ function CredentialCard({ cred, isHuman, onEdit }) {
           onChange={v => setDraft(d => ({ ...d, bias_to_watch: v }))}
         />
         <div className="ccai-credential-edit-actions">
-          <button
+          <md-text-button
             type="button"
-            className="btn-sm btn-outline"
             onClick={() => setEditing(false)}
           >
-            <X size={12} style={{ marginRight: 4 }} />
+            <X size={12} slot="icon" aria-hidden />
             Cancel
-          </button>
-          <button
+          </md-text-button>
+          <md-filled-button
             type="button"
-            className="btn btn-primary btn-sm"
             onClick={async () => {
               await onEdit?.(draft);
               setEditing(false);
             }}
           >
-            <Check size={12} style={{ marginRight: 4 }} />
+            <Check size={12} slot="icon" aria-hidden />
             Save
-          </button>
+          </md-filled-button>
         </div>
       </div>
     );
@@ -241,15 +221,15 @@ function CredentialCard({ cred, isHuman, onEdit }) {
           </div>
         )}
         {isHuman && onEdit && (
-          <button
+          <md-outlined-button
             type="button"
-            className="btn-sm btn-outline ccai-credential-edit-btn"
+            className="ccai-credential-edit-btn"
             onClick={() => setEditing(true)}
             title="Edit your credential summary"
           >
-            <Edit2 size={12} style={{ marginRight: 4 }} />
+            <Edit2 size={12} slot="icon" aria-hidden />
             Edit
-          </button>
+          </md-outlined-button>
         )}
       </div>
       <FieldRow label="Expertise" value={cred.expertise} />
